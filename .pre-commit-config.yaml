@@ -1,0 +1,54 @@
+# Asphere Kernel — pre-commit hooks
+#
+# Install:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Or run manually:
+#   pre-commit run --all-files
+#
+# This file is the source of truth for local hooks. Each hook runs in <2 seconds
+# and prevents committing code that would fail CI.
+
+repos:
+  # ---- errorx usage check (custom) ----
+  - repo: local
+    hooks:
+      - id: errorx-usage
+        name: errorx usage check
+        entry: ./scripts/check-errorx-usage.sh
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      # ---- Go formatting ----
+      - id: gofmt
+        name: gofmt
+        entry: gofmt -l -w
+        language: system
+        files: \.go$
+        exclude: ^(.*/)?(vendor|third_party)/
+
+      - id: go-imports
+        name: goimports
+        entry: goimports -l -w
+        language: system
+        files: \.go$
+        exclude: ^(.*/)?(vendor|third_party)/
+
+      # ---- Go vet ----
+      - id: go-vet
+        name: go vet
+        entry: bash -c 'go vet ./...'
+        language: system
+        pass_filenames: false
+        files: \.go$
+
+      # ---- golangci-lint (slower, only on changed files) ----
+      - id: golangci-lint
+        name: golangci-lint
+        entry: golangci-lint run --fix
+        language: system
+        pass_filenames: false
+        files: \.go$
+        stages: [pre-commit]

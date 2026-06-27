@@ -114,12 +114,14 @@ func testWatchFile(t *testing.T, path string) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer f.Close()
 	_, err = f.WriteString(_testJSONUpdate)
 	if err != nil {
 		t.Error(err)
 	}
-	kvs, err := watch.Next()
+	if err := f.Close(); err != nil {
+		t.Error(err)
+	}
+	kvs, err := nextWithTimeout(t, watch)
 	if err != nil {
 		t.Errorf("watch.Next() error(%v)", err)
 	}
@@ -131,7 +133,7 @@ func testWatchFile(t *testing.T, path string) {
 	if err = os.Rename(path, newFilepath); err != nil {
 		t.Error(err)
 	}
-	kvs, err = watch.Next()
+	kvs, err = nextWithTimeout(t, watch)
 	if err == nil {
 		t.Errorf("watch.Next() error(%v)", err)
 	}
@@ -163,13 +165,15 @@ func testWatchDir(t *testing.T, path, file string) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer f.Close()
 	_, err = f.WriteString(_testJSONUpdate)
 	if err != nil {
 		t.Error(err)
 	}
+	if err := f.Close(); err != nil {
+		t.Error(err)
+	}
 
-	kvs, err := watch.Next()
+	kvs, err := nextWithTimeout(t, watch)
 	if err != nil {
 		t.Errorf("watch.Next() error(%v)", err)
 	}
@@ -188,6 +192,28 @@ func testSource(t *testing.T, path string, data []byte) {
 	}
 	if string(kvs[0].Value) != string(data) {
 		t.Errorf("no expected: %s, but got: %s", kvs[0].Value, data)
+	}
+}
+
+func nextWithTimeout(t *testing.T, watch config.Watcher) ([]*config.KeyValue, error) {
+	t.Helper()
+
+	type result struct {
+		kvs []*config.KeyValue
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		kvs, err := watch.Next()
+		ch <- result{kvs: kvs, err: err}
+	}()
+
+	select {
+	case res := <-ch:
+		return res.kvs, res.err
+	case <-time.After(5 * time.Second):
+		t.Fatal("watch.Next() timed out")
+		return nil, nil
 	}
 }
 

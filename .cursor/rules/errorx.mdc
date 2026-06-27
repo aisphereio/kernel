@@ -1,0 +1,184 @@
+---
+description: Aisphere Kernel errorx enforcement — ensures AI uses errorx instead of raw errors.New / fmt.Errorf in business code
+globs:
+  - "**/handler/**/*.go"
+  - "**/service/**/*.go"
+  - "**/repository/**/*.go"
+  - "**/repo/**/*.go"
+  - "**/worker/**/*.go"
+  - "**/controller/**/*.go"
+  - "**/internal/**/*.go"
+  - "**/cmd/**/*.go"
+alwaysApply: true
+---
+
+# errorx enforcement
+
+You are working inside **Aisphere Kernel**. Business code MUST use `github.com/aisphereio/kernel/errorx` for all errors.
+
+## Forbidden patterns (will fail CI)
+
+In `handler/`, `service/`, `repository/`, `worker/`, `controller/`, `internal/`, `cmd/` Go files (NOT in `*_test.go`):
+
+```go
+// ❌ FORBIDDEN — use errorx instead
+return errors.New("...")
+return fmt.Errorf("...")
+return nil, err              // raw error passthrough
+panic(err)
+
+// ❌ FORBIDDEN — dynamic value in error code
+errorx.NotFound(errorx.Code("SKILL_"+id+"_NOT_FOUND"), "...")
+```
+
+## Required patterns
+
+```go
+// ✅ Validation error
+return errorx.BadRequest("AIHUB_SKILL_NAME_REQUIRED", "技能名称不能为空")
+
+// ✅ Not found
+return errorx.NotFound("AIHUB_SKILL_NOT_FOUND", "技能不存在",
+    errorx.WithMetadata("skill_id", id),
+)
+
+// ✅ Permission denied
+return errorx.Forbidden("AIHUB_SKILL_DELETE_DENIED", "没有删除权限")
+
+// ✅ Wrap underlying error
+return errorx.Wrap(err, "AIHUB_SKILL_CREATE_FAILED",
+    errorx.WithMessage("创建技能失败"),
+    errorx.WithRetryable(true),
+    errorx.WithMetadata("skill_id", id),
+)
+```
+
+## Constructor cheatsheet
+
+| Scenario | Constructor | HTTP | gRPC |
+|---|---|---:|---|
+| Validation failed | `errorx.BadRequest` | 400 | InvalidArgument |
+| Not authenticated | `errorx.Unauthorized` | 401 | Unauthenticated |
+| No permission | `errorx.Forbidden` | 403 | PermissionDenied |
+| Resource missing | `errorx.NotFound` | 404 | NotFound |
+| Already exists | `errorx.Conflict` | 409 | AlreadyExists |
+| Request timeout | `errorx.RequestTimeout` | 408 | DeadlineExceeded |
+| Rate limited | `errorx.TooManyRequests` | 429 | ResourceExhausted |
+| Client closed | `errorx.ClientClosed` | 499 | Canceled |
+| Internal error | `errorx.Internal` | 500 | Internal |
+| Upstream down | `errorx.Unavailable` | 503 | Unavailable |
+| Upstream timeout | `errorx.Timeout` | 504 | DeadlineExceeded |
+
+## Error code naming
+
+Format: `{DOMAIN}_{RESOURCE}_{REASON}` — uppercase snake_case.
+
+```
+✅ AIHUB_SKILL_NOT_FOUND
+✅ IAM_TOKEN_INVALID
+✅ MODEL_UPSTREAM_TIMEOUT
+
+❌ skillNotFound         (camelCase)
+❌ SKILL_123_NOT_FOUND   (dynamic ID in code)
+❌ ERROR / FAILED        (too vague)
+```
+
+Dynamic values MUST go into `errorx.WithMetadata(key, value)`, NEVER into the error code.
+
+## Metadata safety
+
+```go
+// ✅ Internal metadata (logs/audit only, auto-redacted for sensitive keys)
+errorx.WithMetadata("raw_error", err.Error())
+errorx.WithMetadata("skill_id", id)
+
+// ✅ Public metadata (safe for HTTP/gRPC responses)
+errorx.WithPublicMetadata("resource", "skill")
+
+// ❌ NEVER put tokens/passwords/cookies in PublicMetadata
+errorx.WithPublicMetadata("token", userToken)  // LEAK!
+```
+
+## 📚 Examples — find by scenario BEFORE writing code
+
+**Before writing errorx code, look up the matching Example.** All examples are runnable
+(`go test ./errorx -run=Example -v`) and show exact output.
+
+### Quick lookup by scenario
+
+| Your scenario | Example function | File |
+|---|---|---|
+| Validation failed | `ExampleBadRequest` | `errorx/example_test.go` |
+| Not authenticated | `ExampleUnauthorized` | `errorx/example_test.go` |
+| No permission | `ExampleForbidden` | `errorx/example_test.go` |
+| Resource missing | `ExampleNotFound` | `errorx/example_test.go` |
+| Already exists | `ExampleConflict` | `errorx/example_test.go` |
+| Upstream timeout | `ExampleTimeout` | `errorx/example_test.go` |
+| Upstream down | `ExampleUnavailable` | `errorx/example_test.go` |
+| Internal error | `ExampleInternal` | `errorx/example_test.go` |
+| Wrap underlying error | `ExampleWrap` | `errorx/example_test.go` |
+| Wrap (nil-safe) | `ExampleWrap_nil` | `errorx/example_test.go` |
+| Convert foreign error | `ExampleFrom` | `errorx/example_test.go` |
+| Add internal metadata | `ExampleWithMetadata` | `errorx/example_test.go` |
+| Add public metadata | `ExampleWithPublicMetadata` | `errorx/example_test.go` |
+| Auto-redact secrets | `ExampleSafeMetadataOf` | `errorx/example_test.go` |
+| Capture call stack | `ExampleWithStack` | `errorx/example_test.go` |
+| Override retryable | `ExampleWithRetryable` | `errorx/example_test.go` |
+| Match by error code | `ExampleIsCode` | `errorx/example_test.go` |
+| Extract from chain | `ExampleAs` | `errorx/example_test.go` |
+| Check if kernel error | `ExampleIsKernelError` | `errorx/example_test.go` |
+| Debug with %+v | `ExampleError_Format` | `errorx/example_test.go` |
+| Validate error code | `ExampleIsValidCode` | `errorx/example_test.go` |
+
+### Business scenario examples (complete flows)
+
+| Scenario | Example | Layer |
+|---|---|---|
+| Repository DB error → errorx | `ExampleBusiness_repositoryLayer` | repository |
+| Service validation + conflict | `ExampleBusiness_serviceLayer` | service |
+| Upstream model timeout | `ExampleBusiness_upstreamTimeout` | service |
+| Authz denied | `ExampleBusiness_authzDenied` | service |
+| Worker retry decision | `ExampleBusiness_workerRetry` | worker |
+| HTTP response JSON shape | `ExampleBusiness_httpResponse` | handler |
+| Audit record | `ExampleBusiness_auditRecord` | auditx |
+| Log entry with redaction | `ExampleBusiness_logEntry` | logx |
+| Metrics labels (low cardinality) | `ExampleBusiness_metricsLabels` | metricsx |
+| Multi-layer wrap (preserve chain) | `ExampleBusiness_multiLayerWrap` | cross-layer |
+
+All business examples are in `errorx/example_business_test.go`.
+
+### Consumer examples (for logx/metricsx/auditx/workerx developers)
+
+| Consumer | Example | What it shows |
+|---|---|---|
+| logx | `ExampleFields`, `ExampleBusiness_logEntry` | Extract log fields, auto-redact secrets |
+| metricsx | `ExampleMetricsLabels`, `ExampleBusiness_metricsLabels` | Low-cardinality Prometheus labels |
+| auditx | `ExampleBusiness_auditRecord` | Build audit record from error |
+| workerx | `ExampleBusiness_workerRetry` | Decide retry vs fail |
+| httpx | `ExampleBusiness_httpResponse` | JSON response shape |
+
+### Runnable HTTP example
+
+For a complete HTTP server with 7 error scenarios (200/400/403/404/409/499/500),
+see `examples/errorx-http/`. Run it with:
+
+```bash
+go run ./examples/errorx-http
+```
+
+Then test with curl commands from `examples/errorx-http/README.md`.
+
+## Reading order before writing code
+
+1. **Look up Example** in the tables above (or run `go doc errorx.Xxx` to see Example inline)
+2. `errorx/README.md` — single entry guide if Example doesn't answer your question
+3. `docs/ai/errorx.md` — 10 scenarios + complete handler example
+4. `errorx/example_business_test.go` — copy entire business scenario
+
+## Pre-commit checks
+
+```bash
+./scripts/check-errorx-usage.sh    # grep for forbidden patterns
+golangci-lint run                   # depguard enforces import rules
+go test ./...                       # includes all Example tests
+```

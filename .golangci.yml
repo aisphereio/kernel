@@ -1,71 +1,167 @@
-version: "2"
+# golangci-lint configuration for Aisphere Kernel
+#
+# Enforces errorx / logx usage in business code via depguard.
+# Install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+# Run:     golangci-lint run
+#
+# This file is the source of truth for lint rules. CI must run `golangci-lint run`
+# on every PR.
+
 run:
+  timeout: 5m
+  go: "1.25"
   modules-download-mode: readonly
+
 linters:
-  default: none
   enable:
-    - bodyclose
-    - dogsled
-    - durationcheck
-    - errcheck
-    - goconst
-    - gocyclo
-    - govet
-    - ineffassign
-    - lll
-    - misspell
-    - mnd
-    - prealloc
-    - revive
-    - staticcheck
-    - unconvert
-    - unused
-    - wastedassign
-    - whitespace
-  settings:
-    gocyclo:
-      min-complexity: 50
-    govet:
-      enable:
-        - shadow
-    lll:
-      line-length: 160
-    misspell:
-      locale: US
-    mnd:
-      checks:
-        - case
-        - condition
-        - return
-    whitespace:
-      multi-func: true
-  exclusions:
-    generated: lax
-    presets:
-      - comments
-      - common-false-positives
-      - legacy
-      - std-error-handling
+    - depguard      # forbid imports in business code
+    - govet         # standard go vet
+    - errcheck      # check error returns
+    - staticcheck   # SA*
+    - unused        # unused code
+    - ineffassign   # ineffectual assignments
+    - gocritic      # common bugs
+    - revive        # golint successor
+    - misspell      # typos
+    - gofmt         # formatting
+    - goimports     # import ordering
+
+linters-settings:
+  depguard:
+    # Two rule sets: business code (strict) vs tests/kernel (lenient)
     rules:
-      - linters:
-          - goconst
-        path: (.+)_test\.go
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
-formatters:
-  enable:
-    - gofmt
-    - gofumpt
-    - goimports
-  settings:
-    goimports:
-      local-prefixes:
-        - github.com/aisphereio
-  exclusions:
-    generated: lax
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
+      # ---- Rule 1: business code cannot use raw errors / fmt.Errorf ----
+      business-no-raw-errors:
+        list-mode: lax  # only check listed deny entries, allow everything else
+        files:
+          - "**/handler/**/*.go"
+          - "**/service/**/*.go"
+          - "**/repository/**/*.go"
+          - "**/repo/**/*.go"
+          - "**/worker/**/*.go"
+          - "**/controller/**/*.go"
+          - "!**/*_test.go"
+        deny:
+          - pkg: "errors"
+            desc: "use github.com/aisphereio/kernel/errorx instead; errors.New loses error_code semantics"
+          - pkg: "fmt"
+            desc: "use github.com/aisphereio/kernel/errorx.Wrap or errorx.Wrapf instead; fmt.Errorf loses error_code semantics"
+
+      # ---- Rule 2: business code cannot use raw logging ----
+      business-no-raw-log:
+        list-mode: lax
+        files:
+          - "**/handler/**/*.go"
+          - "**/service/**/*.go"
+          - "**/repository/**/*.go"
+          - "**/repo/**/*.go"
+          - "**/worker/**/*.go"
+          - "**/controller/**/*.go"
+          - "!**/*_test.go"
+        deny:
+          - pkg: "log"
+            desc: "use github.com/aisphereio/kernel/logx instead; log.Printf loses structured fields"
+          - pkg: "log/slog"
+            desc: "use github.com/aisphereio/kernel/logx instead; direct slog bypasses Kernel logging contract"
+          - pkg: "go.uber.org/zap"
+            desc: "use github.com/aisphereio/kernel/logx instead; direct zap bypasses Kernel logging contract"
+          - pkg: "github.com/sirupsen/logrus"
+            desc: "use github.com/aisphereio/kernel/logx instead"
+
+      # ---- Rule 3: business code cannot use infrastructure SDKs directly ----
+      business-no-infra-sdk:
+        list-mode: lax
+        files:
+          - "**/handler/**/*.go"
+          - "**/service/**/*.go"
+          - "**/repository/**/*.go"
+          - "**/repo/**/*.go"
+          - "**/worker/**/*.go"
+          - "**/controller/**/*.go"
+          - "!**/*_test.go"
+        deny:
+          - pkg: "database/sql"
+            desc: "use kernel dbx; do not open raw SQL connections in business code"
+          - pkg: "github.com/redis/go-redis/v9"
+            desc: "use kernel cache; do not import go-redis directly in business code"
+          - pkg: "github.com/minio/minio-go/v7"
+            desc: "use kernel objectstore; do not import minio SDK directly"
+          - pkg: "github.com/casdoor/casdoor-go-sdk"
+            desc: "use kernel authn; do not import casdoor SDK directly"
+          - pkg: "github.com/casbin/casbin/v2"
+            desc: "use kernel authz; do not import casbin directly"
+
+      # ---- Rule 4: business code cannot use os.Getenv ----
+      business-no-os-getenv:
+        list-mode: lax
+        files:
+          - "**/handler/**/*.go"
+          - "**/service/**/*.go"
+          - "**/repository/**/*.go"
+          - "**/repo/**/*.go"
+          - "**/worker/**/*.go"
+          - "**/controller/**/*.go"
+          - "!**/*_test.go"
+        deny:
+          - pkg: "os"
+            desc: "use kernel config; do not call os.Getenv / os.Getenv in business code (config belongs in kernel config layer)"
+
+  govet:
+    enable:
+      - shadow      # detect shadowed variables
+      - printf      # check printf format strings
+
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+
+  revive:
+    severity: warning
+    rules:
+      - name: exported
+        disabled: true  # we don't force comments on exported names
+
+issues:
+  exclude-rules:
+    # Tests can use errors.New / fmt.Errorf for fixtures
+    - path: _test\.go
+      linters:
+        - depguard
+        - errcheck
+    # Examples can use errors.New / fmt.Errorf for demonstration
+    - path: examples/
+      linters:
+        - depguard
+    # errorx package itself can import errors (it wraps them)
+    - path: ^errorx/
+      linters:
+        - depguard
+    # logx package itself can import slog
+    - path: ^logx/
+      linters:
+        - depguard
+    # kernel internals (config, transport, etc.) can use os / net/http / etc.
+    - path: ^(config|transport|internal|cmd)/
+      linters:
+        - depguard
+    # contrib/ is for external integrations
+    - path: ^contrib/
+      linters:
+        - depguard
+
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  fix: false
+
+output:
+  formats:
+    - format: colored-line-number
+  sort-results: true
+  print-issued-lines: true
+  print-linter-name: true

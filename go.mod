@@ -8,6 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.3
+	go.opentelemetry.io/otel/trace v1.43.0
 	golang.org/x/sync v0.20.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260511170946-3700d4141b60
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260511170946-3700d4141b60
@@ -18,8 +19,10 @@ require (
 
 require (
 	cel.dev/expr v0.25.2 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	go.opentelemetry.io/otel v1.43.0 // indirect
 	golang.org/x/net v0.54.0 // indirect
 	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/text v0.37.0 // indirect

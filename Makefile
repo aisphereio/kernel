@@ -1,4 +1,55 @@
-.PHONY: help deps tools test test-root test-errorx test-logx test-cmd test-race cover cover-html vet vuln lint contract verify verify-errorx bench-errorx fuzz-errorx clean proto generate
+.PHONY: check check-errorx golangci-lint-install pre-commit-install pre-commit-run help deps tools test test-root test-errorx test-logx test-cmd test-race cover cover-html vet vuln lint contract verify verify-errorx bench-errorx fuzz-errorx clean proto generate
+
+# ---- One-command check: errorx usage + lint + vet + test ----
+check: check-errorx vet test
+	@echo "✓ all checks passed"
+
+# ---- errorx usage grep check (fast, no Go toolchain needed) ----
+check-errorx:
+ifeq ($(OS),Windows_NT)
+	@cmd /c scripts\verify-errorx.cmd
+else
+	@chmod +x scripts/check-errorx-usage.sh 2>/dev/null || true
+	@./scripts/check-errorx-usage.sh
+endif
+
+# ---- Install golangci-lint (one-time) ----
+golangci-lint-install:
+ifeq ($(OS),Windows_NT)
+	@echo "install golangci-lint from https://golangci-lint.run/usage/install/"
+else
+	@if ! command -v golangci-lint >/dev/null 2>&1; then \
+		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+			| sh -s -- -b $$($(GO) env GOPATH)/bin v1.62.0; \
+		golangci-lint --version; \
+	else \
+		echo "golangci-lint already installed: $$(golangci-lint --version)"; \
+	fi
+endif
+
+# ---- Run golangci-lint (depguard enforces errorx/logx usage) ----
+lint-ci: golangci-lint-install
+	golangci-lint run --timeout 5m
+
+# ---- Install pre-commit hooks (one-time) ----
+pre-commit-install:
+	@pip install pre-commit 2>/dev/null || pip3 install pre-commit
+	@pre-commit install
+	@echo "pre-commit hooks installed"
+
+# ---- Run pre-commit on all files (manual) ----
+pre-commit-run:
+	@pre-commit run --all-files
+
+# ---- Update help text ----
+# Add these lines to the help target:
+#	@echo "  make check          run all checks (errorx + vet + test)"
+#	@echo "  make check-errorx   run errorx usage grep check"
+#	@echo "  make lint-ci        run golangci-lint (depguard)"
+#	@echo "  make pre-commit-install  install pre-commit hooks"
+#	@echo "  make pre-commit-run      run pre-commit on all files"
+
+
 
 GO ?= go
 LOCAL_BIN := $(CURDIR)/.bin

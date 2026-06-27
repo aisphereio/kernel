@@ -1,0 +1,82 @@
+# Enforces errorx / logx usage rules on every PR.
+#
+# Triggers:
+#   - Pull request to main / develop
+#   - Push to main / develop
+#
+# Jobs:
+#   1. errorx-usage   — grep-based check (fast, no Go toolchain needed)
+#   2. golangci-lint  — depguard enforces import rules (needs Go)
+#   3. unit-tests     — go test ./...
+#
+# All three must pass for PR to merge.
+
+name: errorx enforcement
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  errorx-usage:
+    name: errorx usage check (grep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make check script executable
+        run: chmod +x scripts/check-errorx-usage.sh
+
+      - name: Run errorx usage check
+        run: ./scripts/check-errorx-usage.sh --verbose
+
+  golangci-lint:
+    name: golangci-lint (depguard)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+            | sh -s -- -b $(go env GOPATH)/bin v1.62.0
+          golangci-lint --version
+
+      - name: Download deps
+        run: go mod download
+
+      - name: Run golangci-lint
+        run: golangci-lint run --timeout 5m
+
+  unit-tests:
+    name: unit tests + vet
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Download deps
+        run: go mod download
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run unit tests
+        run: go test ./... -race -count=1
