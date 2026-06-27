@@ -1,0 +1,64 @@
+# Sentry middleware for Aisphere Kernel
+This middleware helps you to catch panics and report them to [sentry](https://sentry.io/)
+
+## Quick Start
+You could check the full demo in example folder.
+```go
+// Step 1:
+// init sentry in the entry of your application
+import "github.com/getsentry/sentry-go"
+
+sentry.Init(sentry.ClientOptions{
+	Dsn: "<your dsn>",
+	AttachStacktrace: true, // recommended
+})
+
+// Step 2:
+// set middleware
+import (
+	"context"
+
+	ksentry "github.com/aisphereio/kernel/contrib/errortracker/sentry/v3"
+	"github.com/aisphereio/kernel/contrib/otel/v3/tracing"
+)
+
+// for HTTP server, new HTTP server with sentry middleware options
+var opts = []http.ServerOption{
+	http.Middleware(
+		recovery.Recovery(),
+		tracing.Server(),
+		ksentry.Server(
+			ksentry.WithTags(map[string]string{
+				"tag": "some-custom-constant-tag",
+			}),
+			ksentry.WithContextTags(func(ctx context.Context) map[string]string {
+				return map[string]string{"trace_id": tracing.TraceID(ctx)}
+			}),
+		), // must after Recovery middleware, because of the exiting order will be reversed
+		logging.Server(logger),
+	),
+}
+
+// for gRPC server, new gRPC server with sentry middleware options
+var opts = []grpc.ServerOption{
+	grpc.Middleware(
+		recovery.Recovery(),
+		tracing.Server(),
+		ksentry.Server(
+			ksentry.WithTags(map[string]string{
+				"tag": "some-custom-constant-tag",
+			}),
+			ksentry.WithContextTags(func(ctx context.Context) map[string]string {
+				return map[string]string{"trace_id": tracing.TraceID(ctx)}
+			}),
+		), // must after Recovery middleware, because of the exiting order will be reversed
+		logging.Server(logger),
+	),
+}
+
+// Then, the framework will report events to Sentry when your trigger panics.
+// Or your can push events to Sentry manually
+```
+
+## Reference
+* [https://docs.sentry.io/platforms/go/](https://docs.sentry.io/platforms/go/)

@@ -1,0 +1,7 @@
+./examples
+./cmd/protoc-gen-go-http
+./cmd/kernel
+./contrib/config/kubernetes
+./contrib/registry/kubernetes
+./contrib/registry/zookeeper
+./contrib/registry/eureka

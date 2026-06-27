@@ -1,0 +1,78 @@
+name: Aisphere Kernel
+module: github.com/aisphereio/kernel
+purpose: AI-native application kernel for Go services
+
+packages:
+  core:
+    import: github.com/aisphereio/kernel/core
+    purpose: app lifecycle, module registration, dependency access
+
+  errorx:
+    import: github.com/aisphereio/kernel/errorx
+    purpose: structured business errors and cross-module error semantics
+    contract: docs/contracts/errorx.md
+    guide: docs/guides/errorx-user-guide.md
+    examples:
+      - examples/errorx-basic
+    must_use_for:
+      - business errors
+      - API errors
+      - wrapping infrastructure failures
+      - worker retry decisions
+      - log/audit/metrics error fields
+    forbidden:
+      - raw fmt.Errorf for business/API errors
+      - raw errors.New in service/API layer
+      - github.com/aisphereio/kernel/errors
+      - dynamic IDs inside error_code
+
+  logx:
+    import: github.com/aisphereio/kernel/logx
+    purpose: structured logging through AppContext
+    must_use_for:
+      - all business logs
+    forbidden:
+      - log.Println
+      - direct zap.New
+      - direct slog.New
+
+  authz:
+    import: github.com/aisphereio/kernel/authz
+    purpose: permission checks
+    must_use_for:
+      - protected commands
+      - sensitive queries
+      - resource access checks
+    forbidden:
+      - direct casdoor calls
+      - direct casbin enforcer calls
+
+  auditx:
+    import: github.com/aisphereio/kernel/auditx
+    purpose: audit recording for sensitive operations
+
+standard_layers:
+  - handler
+  - service
+  - repository
+
+standard_patterns:
+  create_resource:
+    example: examples/crud-resource
+  audited_command:
+    example: examples/audited-command
+  authz_protected_api:
+    example: examples/authz-protected-api
+  repository_transaction:
+    example: examples/repository-transaction
+
+forbidden_imports:
+  business:
+    - database/sql
+    - github.com/redis/go-redis
+    - github.com/minio/minio-go
+    - github.com/casdoor/casdoor-go-sdk
+    - github.com/casbin/casbin/v2
+    - log
+    - log/slog
+    - go.uber.org/zap

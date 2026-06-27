@@ -1,0 +1,25 @@
+# Consul Config
+
+```go
+import (
+    "github.com/hashicorp/consul/api"
+
+    "github.com/aisphereio/kernel/contrib/config/consul/v3"
+)
+
+func main() {
+    consulClient, err := api.NewClient(&api.Config{
+        Address: "127.0.0.1:8500",
+    })
+    if err != nil {
+        panic(err)
+    }
+    cs, err := consul.New(consulClient, consul.WithPath("app/cart/configs/"))
+    // consul中需要标注文件后缀，kernel读取配置需要适配文件后缀
+    // The file suffix needs to be marked, and kernel needs to adapt the file suffix to read the configuration.
+    if err != nil {
+        panic(err)
+    }
+    c := config.New(config.WithSource(cs))
+}
+```
