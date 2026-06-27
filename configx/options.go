@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aisphereio/kernel/encoding"
+	encoding "github.com/aisphereio/kernel/encodingx"
 )
 
 // Decoder is config decoder.

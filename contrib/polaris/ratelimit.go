@@ -7,8 +7,8 @@ import (
 	"github.com/aisphereio/kernel/errorx"
 	"github.com/aisphereio/kernel/middleware"
 	"github.com/aisphereio/kernel/middleware/ratelimit"
-	"github.com/aisphereio/kernel/transport"
-	"github.com/aisphereio/kernel/transport/http"
+	transport "github.com/aisphereio/kernel/transportx"
+	"github.com/aisphereio/kernel/transportx/http"
 
 	"github.com/polarismesh/polaris-go/pkg/model"
 )

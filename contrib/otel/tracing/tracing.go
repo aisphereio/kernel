@@ -8,7 +8,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/aisphereio/kernel/middleware"
-	"github.com/aisphereio/kernel/transport"
+	transport "github.com/aisphereio/kernel/transportx"
 )
 
 // Option is tracing option.

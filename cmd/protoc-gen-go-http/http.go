@@ -17,7 +17,7 @@ import (
 
 const (
 	contextPackage       = protogen.GoImportPath("context")
-	transportHTTPPackage = protogen.GoImportPath("github.com/aisphereio/kernel/transport/http")
+	transportHTTPPackage = protogen.GoImportPath("github.com/aisphereio/kernel/transportx/http")
 	httpBodyFullName     = protoreflect.FullName("google.api.HttpBody")
 )
 

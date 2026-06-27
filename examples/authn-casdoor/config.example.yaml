@@ -1,0 +1,56 @@
+log:
+  service_name: "authn-casdoor-example"
+  env: "dev"
+  version: "dev"
+  level: "debug"
+  format: "console"
+  output: "stdout"
+  add_source: true
+  redact:
+    enabled: true
+    keys:
+      - "client_secret"
+      - "access_token"
+      - "refresh_token"
+      - "id_token"
+      - "certificate"
+      - "jwt_certificate"
+    value: "***"
+
+# This example accepts your current flat Casdoor config shape.
+# New kernel services can also use security.authn.casdoor instead.
+casdoor:
+  endpoint: "http://localhost:18000"
+  client_id: "aisphere-auth"
+  client_secret: "change-me"
+  organization: "aisphere"
+  application: "aisphere"
+  http_timeout: "10s"
+  default_scope: "openid profile email"
+
+  # Prefer jwt_certificate or jwt_certificate_file in new configs.
+  # The legacy certificate key is still accepted for compatibility.
+  jwt_certificate_file: "./configs/casdoor-app.crt"
+  # certificate: |
+  #   -----BEGIN CERTIFICATE-----
+  #   ...
+  #   -----END CERTIFICATE-----
+
+  # Existing Casdoor/Casbin policy fields are ignored by this authn-only demo.
+  policy_enforcer: "aisphere/enforcer_aisphere_aihub"
+  policy_adapter_id: "aisphere/aisphere_aihub_policy_rule_v2"
+  policy_binding_mode: "resource_roles"
+
+authn_example:
+  redirect_uri: "http://localhost:3000/callback"
+  listen_addr: ":3000"
+  state: "kernel-authn-dev"
+  default_scope: "openid profile email"
+  run_invalid_token_check: true
+
+  # Optional non-mutating admin reads. These use the configured Casdoor app by
+  # default; later you can add security.authn.casdoor.admin for a dedicated admin app.
+  run_admin_read: false
+  list_groups: false
+  username: ""
+  email: ""

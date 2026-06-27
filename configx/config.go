@@ -8,10 +8,10 @@ import (
 	"time"
 
 	// init encoding
-	_ "github.com/aisphereio/kernel/encoding/json"
-	_ "github.com/aisphereio/kernel/encoding/proto"
-	_ "github.com/aisphereio/kernel/encoding/xml"
-	_ "github.com/aisphereio/kernel/encoding/yaml"
+	_ "github.com/aisphereio/kernel/encodingx/json"
+	_ "github.com/aisphereio/kernel/encodingx/proto"
+	_ "github.com/aisphereio/kernel/encodingx/xml"
+	_ "github.com/aisphereio/kernel/encodingx/yaml"
 	"github.com/aisphereio/kernel/logx"
 )
 

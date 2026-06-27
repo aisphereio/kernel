@@ -56,7 +56,7 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 
 	"github.com/aisphereio/kernel/contrib/registry/nacos/v3"
-	"github.com/aisphereio/kernel/transport/grpc"
+	"github.com/aisphereio/kernel/transportx/grpc"
 )
 
 func main() {

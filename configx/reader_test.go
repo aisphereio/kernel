@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/aisphereio/kernel/encoding"
+	encoding "github.com/aisphereio/kernel/encodingx"
 )
 
 func TestReader_Merge(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/aisphereio/kernel/registry"
-	"github.com/aisphereio/kernel/transport"
+	transport "github.com/aisphereio/kernel/transportx"
 )
 
 func TestID(t *testing.T) {

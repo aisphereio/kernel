@@ -10,9 +10,9 @@ import (
 	"github.com/getsentry/sentry-go"
 
 	"github.com/aisphereio/kernel/middleware"
-	"github.com/aisphereio/kernel/transport"
-	"github.com/aisphereio/kernel/transport/grpc"
-	"github.com/aisphereio/kernel/transport/http"
+	transport "github.com/aisphereio/kernel/transportx"
+	"github.com/aisphereio/kernel/transportx/grpc"
+	"github.com/aisphereio/kernel/transportx/http"
 )
 
 type ctxKey struct{}

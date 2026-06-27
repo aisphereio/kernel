@@ -6,7 +6,7 @@ package helloworld
 
 import (
 	context "context"
-	http "github.com/aisphereio/kernel/transport/http"
+	http "github.com/aisphereio/kernel/transportx/http"
 )
 
 // This is a compile-time assertion to ensure that this generated file

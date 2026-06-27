@@ -1,0 +1,45 @@
+security:
+  authn:
+    provider: casdoor
+    casdoor:
+      endpoint: "http://localhost:18000"
+
+      # Login/OIDC application. This is the application that user-facing
+      # services redirect to for code exchange and whose tokens are verified.
+      organization_name: "aisphere"
+      application_name: "aisphere-hub"
+      client_id: "${CASDOOR_CLIENT_ID:aisphere-hub}"
+      client_secret: "${CASDOOR_CLIENT_SECRET:change-me}"
+      # jwt_certificate verifies Casdoor-signed access/id tokens. It is not a TLS certificate.
+      # Prefer jwt_certificate_file in production to avoid multi-line env quoting issues.
+      jwt_certificate: "${CASDOOR_JWT_CERTIFICATE:}"
+      jwt_certificate_file: "${CASDOOR_JWT_CERTIFICATE_FILE:}"
+
+      # Management application. Use a dedicated service/admin app in Casdoor
+      # with permission to manage users, organizations, applications and groups.
+      # If omitted, the adapter falls back to the login application, which is
+      # acceptable for local dev but not recommended for production.
+      admin:
+        enabled: true
+        organization_name: "built-in"
+        application_name: "kernel-iam-admin"
+        client_id: "${CASDOOR_ADMIN_CLIENT_ID:kernel-iam-admin}"
+        client_secret: "${CASDOOR_ADMIN_CLIENT_SECRET:change-me}"
+        jwt_certificate: "${CASDOOR_ADMIN_JWT_CERTIFICATE:}"
+        jwt_certificate_file: "${CASDOOR_ADMIN_JWT_CERTIFICATE_FILE:}"
+
+  authz:
+    provider: spicedb
+    spicedb:
+      endpoint: "localhost:50051"
+      token: "${SPICEDB_TOKEN:dev-token}"
+      transport: grpc
+      insecure: true
+      # time.Duration is scanned as nanoseconds by configx/json. 5s = 5000000000.
+      timeout: 5000000000
+      fully_consistent: true
+
+  audit:
+    enabled: true
+    backend: postgres
+    dsn: "${AUDIT_DSN:}"

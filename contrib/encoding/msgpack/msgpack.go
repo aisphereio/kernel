@@ -3,7 +3,7 @@ package msgpack
 import (
 	"github.com/vmihailenco/msgpack/v5"
 
-	"github.com/aisphereio/kernel/encoding"
+	encoding "github.com/aisphereio/kernel/encodingx"
 )
 
 // Name is the name registered for the msgpack compressor.

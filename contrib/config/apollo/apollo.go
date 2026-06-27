@@ -9,7 +9,7 @@ import (
 	"github.com/apolloconfig/agollo/v4/extension"
 
 	"github.com/aisphereio/kernel/configx"
-	"github.com/aisphereio/kernel/encoding"
+	encoding "github.com/aisphereio/kernel/encodingx"
 	"github.com/aisphereio/kernel/logx"
 )
 

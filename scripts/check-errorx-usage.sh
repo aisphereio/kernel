@@ -74,7 +74,7 @@ EXCLUDE_PRUNE=(
   -path './errorx/*' -prune -o
   -path './logx/*' -prune -o
   -path './config/*' -prune -o
-  -path './transport/*' -prune -o
+  -path './transportx/*' -prune -o
   -path './internal/testutil/*' -prune -o
   -path './examples/*' -prune -o
   -path './contrib/*' -prune -o

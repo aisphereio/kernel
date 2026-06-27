@@ -8,7 +8,7 @@ import (
 	"github.com/aisphereio/kernel/errorx"
 	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/middleware"
-	"github.com/aisphereio/kernel/transport"
+	transport "github.com/aisphereio/kernel/transportx"
 )
 
 // Redacter defines how to log an object.

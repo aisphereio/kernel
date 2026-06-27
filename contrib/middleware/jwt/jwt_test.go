@@ -15,7 +15,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/aisphereio/kernel/middleware"
-	"github.com/aisphereio/kernel/transport"
+	transport "github.com/aisphereio/kernel/transportx"
 )
 
 type headerCarrier http.Header

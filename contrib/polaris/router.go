@@ -18,9 +18,9 @@ import (
 
 	"github.com/aisphereio/kernel"
 	"github.com/aisphereio/kernel/logx"
-	"github.com/aisphereio/kernel/selector"
-	"github.com/aisphereio/kernel/transport"
-	"github.com/aisphereio/kernel/transport/http"
+	selector "github.com/aisphereio/kernel/selectorx"
+	transport "github.com/aisphereio/kernel/transportx"
+	"github.com/aisphereio/kernel/transportx/http"
 )
 
 type router struct {

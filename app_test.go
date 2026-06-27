@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/aisphereio/kernel/registry"
-	"github.com/aisphereio/kernel/transport/grpc"
-	"github.com/aisphereio/kernel/transport/http"
+	"github.com/aisphereio/kernel/transportx/grpc"
+	"github.com/aisphereio/kernel/transportx/http"
 )
 
 type mockRegistry struct {

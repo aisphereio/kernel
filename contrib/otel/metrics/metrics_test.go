@@ -18,8 +18,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/aisphereio/kernel/transport"
-	"github.com/aisphereio/kernel/transport/http"
+	transport "github.com/aisphereio/kernel/transportx"
+	"github.com/aisphereio/kernel/transportx/http"
 )
 
 type dummyExporter struct {

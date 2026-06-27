@@ -1,0 +1,67 @@
+package authn
+
+import "context"
+
+// Authenticator verifies a transport credential and returns a normalized Principal.
+type Authenticator interface {
+	Authenticate(ctx context.Context, credential Credential) (Principal, error)
+}
+
+// TokenService covers OAuth/OIDC token flows such as Casdoor code exchange,
+// refresh, validation and revocation.
+type TokenService interface {
+	ExchangeCode(ctx context.Context, req AuthCodeExchangeRequest) (TokenSet, Principal, error)
+	RefreshToken(ctx context.Context, req RefreshTokenRequest) (TokenSet, error)
+	VerifyToken(ctx context.Context, req VerifyTokenRequest) (Principal, error)
+	RevokeToken(ctx context.Context, req RevokeTokenRequest) error
+}
+
+// UserDirectory reads and provisions identity-provider users. Business modules
+// should usually go through Kernel IAM service, not a provider SDK directly.
+type UserDirectory interface {
+	GetUser(ctx context.Context, orgID, userID string) (User, error)
+	FindUsers(ctx context.Context, filter UserFilter) ([]User, error)
+	UpsertUser(ctx context.Context, user User) (User, error)
+	DisableUser(ctx context.Context, orgID, userID string) error
+}
+
+// OrganizationAdmin manages identity-provider organizations.
+type OrganizationAdmin interface {
+	CreateOrganization(ctx context.Context, req CreateOrganizationRequest) (Organization, error)
+	GetOrganization(ctx context.Context, orgID string) (Organization, error)
+	UpdateOrganization(ctx context.Context, req UpdateOrganizationRequest) (Organization, error)
+	DeleteOrganization(ctx context.Context, req DeleteOrganizationRequest) error
+}
+
+// ApplicationAdmin manages identity-provider applications / OAuth clients.
+type ApplicationAdmin interface {
+	CreateApplication(ctx context.Context, req CreateApplicationRequest) (Application, error)
+	GetApplication(ctx context.Context, orgID, appID string) (Application, error)
+	UpdateApplication(ctx context.Context, req UpdateApplicationRequest) (Application, error)
+	DeleteApplication(ctx context.Context, req DeleteApplicationRequest) error
+}
+
+// GroupAdmin manages app/org group trees. Casdoor maps this naturally
+// to organization groups with ParentGroup.
+type GroupAdmin interface {
+	CreateGroup(ctx context.Context, req CreateGroupRequest) (Group, error)
+	GetGroup(ctx context.Context, orgID, groupID string) (Group, error)
+	ListGroups(ctx context.Context, filter GroupFilter) ([]Group, error)
+	UpdateGroup(ctx context.Context, req UpdateGroupRequest) (Group, error)
+	DeleteGroup(ctx context.Context, req DeleteGroupRequest) error
+	AssignUserToGroup(ctx context.Context, req AssignUserToGroupRequest) error
+	RemoveUserFromGroup(ctx context.Context, req AssignUserToGroupRequest) error
+}
+
+// IdentityAdmin is the full identity management surface expected from a Casdoor
+// adapter. Keep it out of normal business services; use it in IAM provisioning.
+type IdentityAdmin interface {
+	TokenService
+	UserDirectory
+	OrganizationAdmin
+	ApplicationAdmin
+	GroupAdmin
+}
+
+// TokenVerifier adapts JWT/OIDC libraries into Authenticator.
+type TokenVerifier func(ctx context.Context, req VerifyTokenRequest) (Principal, error)

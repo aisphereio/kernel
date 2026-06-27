@@ -48,7 +48,7 @@ func main() {
 ```go
 import (
 	"github.com/aisphereio/kernel/contrib/registry/discovery/v3"
-	"github.com/aisphereio/kernel/transport/grpc"
+	"github.com/aisphereio/kernel/transportx/grpc"
 )
 
 func main() {

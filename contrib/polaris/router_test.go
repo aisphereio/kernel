@@ -12,7 +12,7 @@ import (
 
 	"github.com/aisphereio/kernel"
 	"github.com/aisphereio/kernel/registry"
-	"github.com/aisphereio/kernel/selector"
+	selector "github.com/aisphereio/kernel/selectorx"
 )
 
 func TestRouter(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/aisphereio/kernel/metadata"
-	"github.com/aisphereio/kernel/transport"
+	transport "github.com/aisphereio/kernel/transportx"
 )
 
 type headerCarrier http.Header

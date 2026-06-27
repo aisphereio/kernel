@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/aisphereio/kernel/errorx"
-	"github.com/aisphereio/kernel/transport"
+	transport "github.com/aisphereio/kernel/transportx"
 )
 
 type transportMock struct {

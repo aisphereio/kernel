@@ -14,7 +14,7 @@ import (
 
 	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/registry"
-	"github.com/aisphereio/kernel/transport"
+	transport "github.com/aisphereio/kernel/transportx"
 )
 
 // AppInfo is application context value.

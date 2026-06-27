@@ -7,7 +7,7 @@ import (
 	internalbreaker "github.com/aisphereio/kernel/internal/circuitbreaker"
 	"github.com/aisphereio/kernel/internal/group"
 	"github.com/aisphereio/kernel/middleware"
-	"github.com/aisphereio/kernel/transport"
+	transport "github.com/aisphereio/kernel/transportx"
 )
 
 // ErrNotAllowed is request failed due to circuit breaker triggered.

@@ -7,7 +7,7 @@ import (
 
 	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/middleware"
-	"github.com/aisphereio/kernel/transport"
+	transport "github.com/aisphereio/kernel/transportx"
 )
 
 var _ transport.Transporter = (*Transport)(nil)

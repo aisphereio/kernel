@@ -6,7 +6,7 @@ import (
 	"github.com/apolloconfig/agollo/v4/storage"
 
 	"github.com/aisphereio/kernel/configx"
-	"github.com/aisphereio/kernel/encoding"
+	encoding "github.com/aisphereio/kernel/encodingx"
 )
 
 func Test_onChange(t *testing.T) {

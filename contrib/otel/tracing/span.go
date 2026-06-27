@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/aisphereio/kernel/metadata"
-	"github.com/aisphereio/kernel/transport"
-	"github.com/aisphereio/kernel/transport/http"
+	transport "github.com/aisphereio/kernel/transportx"
+	"github.com/aisphereio/kernel/transportx/http"
 
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"

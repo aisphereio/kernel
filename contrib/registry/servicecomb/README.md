@@ -42,7 +42,7 @@ import (
 
 	"github.com/go-chassis/sc-client"
 	"github.com/aisphereio/kernel/contrib/registry/servicecomb/v3"
-	"github.com/aisphereio/kernel/transport/grpc"
+	"github.com/aisphereio/kernel/transportx/grpc"
 )
 
 func main() {

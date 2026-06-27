@@ -6,7 +6,7 @@ import (
 
 	"github.com/aisphereio/kernel/metadata"
 	"github.com/aisphereio/kernel/middleware"
-	"github.com/aisphereio/kernel/transport"
+	transport "github.com/aisphereio/kernel/transportx"
 )
 
 // Option is metadata option.

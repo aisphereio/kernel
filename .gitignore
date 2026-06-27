@@ -50,3 +50,7 @@ temp/
 # Certificates and keys
 *.cert
 *.key
+
+
+## Local configuration files
+examples/authn-casdoor/config.local.yaml
