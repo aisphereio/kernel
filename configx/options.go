@@ -1,4 +1,4 @@
-package config
+package configx
 
 import (
 	"fmt"
@@ -36,7 +36,12 @@ const (
 // WithSource with config source.
 func WithSource(s ...Source) Option {
 	return func(o *options) {
-		o.sources = s
+		o.sources = o.sources[:0]
+		for _, src := range s {
+			if src != nil {
+				o.sources = append(o.sources, src)
+			}
+		}
 	}
 }
 
@@ -188,15 +193,15 @@ var placeholderRegexp = regexp.MustCompile(`\${(.*?)}`)
 
 func expand(s string, mapping func(string) string, toType bool) any {
 	re := placeholderRegexp.FindAllStringSubmatch(s, -1)
-	var ct any
+	if len(re) == 0 {
+		return s
+	}
+	if toType && len(re) == 1 && len(re[0]) == 2 && re[0][0] == s { //nolint:mnd
+		return convertToType(mapping(re[0][1]))
+	}
 	for _, i := range re {
 		if len(i) == 2 { //nolint:mnd
-			m := mapping(i[1])
-			if toType {
-				ct = convertToType(m)
-				return ct
-			}
-			s = strings.ReplaceAll(s, i[0], m)
+			s = strings.ReplaceAll(s, i[0], mapping(i[1]))
 		}
 	}
 	return s

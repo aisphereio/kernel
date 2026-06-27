@@ -5,7 +5,7 @@ import (
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 type watcher struct {
@@ -33,7 +33,7 @@ func newWatcher(s *source) *watcher {
 	return w
 }
 
-func (w *watcher) Next() ([]*config.KeyValue, error) {
+func (w *watcher) Next() ([]*configx.KeyValue, error) {
 	select {
 	case resp := <-w.ch:
 		if err := resp.Err(); err != nil {

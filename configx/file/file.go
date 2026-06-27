@@ -6,21 +6,21 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
-var _ config.Source = (*file)(nil)
+var _ configx.Source = (*file)(nil)
 
 type file struct {
 	path string
 }
 
 // NewSource new a file source.
-func NewSource(path string) config.Source {
+func NewSource(path string) configx.Source {
 	return &file{path: path}
 }
 
-func (f *file) loadFile(path string) (*config.KeyValue, error) {
+func (f *file) loadFile(path string) (*configx.KeyValue, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -34,14 +34,14 @@ func (f *file) loadFile(path string) (*config.KeyValue, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &config.KeyValue{
+	return &configx.KeyValue{
 		Key:    info.Name(),
 		Format: format(info.Name()),
 		Value:  data,
 	}, nil
 }
 
-func (f *file) loadDir(path string) (kvs []*config.KeyValue, err error) {
+func (f *file) loadDir(path string) (kvs []*configx.KeyValue, err error) {
 	files, err := os.ReadDir(path)
 	if err != nil {
 		return nil, err
@@ -60,7 +60,7 @@ func (f *file) loadDir(path string) (kvs []*config.KeyValue, err error) {
 	return
 }
 
-func (f *file) Load() (kvs []*config.KeyValue, err error) {
+func (f *file) Load() (kvs []*configx.KeyValue, err error) {
 	fi, err := os.Stat(f.path)
 	if err != nil {
 		return nil, err
@@ -72,9 +72,9 @@ func (f *file) Load() (kvs []*config.KeyValue, err error) {
 	if err != nil {
 		return nil, err
 	}
-	return []*config.KeyValue{kv}, nil
+	return []*configx.KeyValue{kv}, nil
 }
 
-func (f *file) Watch() (config.Watcher, error) {
+func (f *file) Watch() (configx.Watcher, error) {
 	return newWatcher(f)
 }

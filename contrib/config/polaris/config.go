@@ -9,7 +9,7 @@ import (
 	"github.com/polarismesh/polaris-go"
 	"github.com/polarismesh/polaris-go/pkg/model"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 // Option is polaris config option.
@@ -48,7 +48,7 @@ type source struct {
 	options *options
 }
 
-func New(client polaris.ConfigAPI, opts ...Option) (config.Source, error) {
+func New(client polaris.ConfigAPI, opts ...Option) (configx.Source, error) {
 	options := &options{
 		namespace: "default",
 		fileGroup: "",
@@ -74,7 +74,7 @@ func New(client polaris.ConfigAPI, opts ...Option) (config.Source, error) {
 }
 
 // Load return the config values
-func (s *source) Load() ([]*config.KeyValue, error) {
+func (s *source) Load() ([]*configx.KeyValue, error) {
 	configFile, err := s.client.FetchConfigFile(&polaris.GetConfigFileRequest{
 		GetConfigFileRequest: &model.GetConfigFileRequest{
 			Namespace: s.options.namespace,
@@ -84,7 +84,7 @@ func (s *source) Load() ([]*config.KeyValue, error) {
 		},
 	})
 	if err != nil {
-		fmt.Println("fail to get config.", err)
+		fmt.Println("fail to get configx.", err)
 		return nil, err
 	}
 
@@ -93,7 +93,7 @@ func (s *source) Load() ([]*config.KeyValue, error) {
 
 	s.options.configFile = configFile
 
-	return []*config.KeyValue{
+	return []*configx.KeyValue{
 		{
 			Key:    k,
 			Value:  []byte(content),
@@ -103,6 +103,6 @@ func (s *source) Load() ([]*config.KeyValue, error) {
 }
 
 // Watch return the watcher
-func (s *source) Watch() (config.Watcher, error) {
+func (s *source) Watch() (configx.Watcher, error) {
 	return newWatcher(s.options.configFile), nil
 }

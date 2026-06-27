@@ -1,11 +1,11 @@
-package config
+package configx
 
 import (
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -17,7 +17,7 @@ var (
 	_ Value = (*errValue)(nil)
 )
 
-// Value is config value interface.
+// Value is a typed view over one config value.
 type Value interface {
 	Bool() (bool, error)
 	Int() (int64, error)
@@ -32,11 +32,24 @@ type Value interface {
 }
 
 type atomicValue struct {
-	atomic.Value
+	mu    sync.RWMutex
+	value any
 }
 
 func (v *atomicValue) typeAssertError() error {
-	return fmt.Errorf("type assert to %v failed", reflect.TypeOf(v.Load()))
+	return fmt.Errorf("configx: type assert to %v failed", reflect.TypeOf(v.Load()))
+}
+
+func (v *atomicValue) Load() any {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.value
+}
+
+func (v *atomicValue) Store(value any) {
+	v.mu.Lock()
+	v.value = value
+	v.mu.Unlock()
 }
 
 func (v *atomicValue) Bool() (bool, error) {

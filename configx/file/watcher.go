@@ -6,14 +6,15 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
-var _ config.Watcher = (*watcher)(nil)
+var _ configx.Watcher = (*watcher)(nil)
 
 type watcher struct {
 	f         *file
@@ -22,9 +23,12 @@ type watcher struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	stopOnce sync.Once
+	stopErr  error
 }
 
-func newWatcher(f *file) (config.Watcher, error) {
+func newWatcher(f *file) (configx.Watcher, error) {
 	fw, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -42,7 +46,7 @@ func newWatcher(f *file) (config.Watcher, error) {
 	return &watcher{f: f, fw: fw, watchPath: watchPath, ctx: ctx, cancel: cancel}, nil
 }
 
-func (w *watcher) Next() ([]*config.KeyValue, error) {
+func (w *watcher) Next() ([]*configx.KeyValue, error) {
 	for {
 		select {
 		case <-w.ctx.Done():
@@ -74,7 +78,7 @@ func (w *watcher) Next() ([]*config.KeyValue, error) {
 			if err != nil {
 				return nil, err
 			}
-			return []*config.KeyValue{kv}, nil
+			return []*configx.KeyValue{kv}, nil
 		case err, ok := <-w.fw.Errors:
 			if !ok {
 				return nil, fsnotify.ErrClosed
@@ -105,6 +109,9 @@ func samePath(a, b string) bool {
 }
 
 func (w *watcher) Stop() error {
-	w.cancel()
-	return w.fw.Close()
+	w.stopOnce.Do(func() {
+		w.cancel()
+		w.stopErr = w.fw.Close()
+	})
+	return w.stopErr
 }

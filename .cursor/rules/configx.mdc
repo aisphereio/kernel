@@ -1,0 +1,41 @@
+---
+description: configx module rules
+globs:
+  - "**/*.go"
+  - "configx/**"
+alwaysApply: true
+---
+
+# configx rules
+
+Use `github.com/aisphereio/kernel/configx` for runtime configuration.
+
+## Forbidden
+
+```go
+os.Getenv("X")
+import "github.com/aisphereio/kernel/configx"
+yaml.Unmarshal(data, &cfg)
+```
+
+## Required
+
+```go
+cfg := configx.New(configx.WithSource(file.NewSource("configs/app.yaml")))
+_ = cfg.Load()
+```
+
+## Example lookup
+
+| Scenario | Example |
+|---|---|
+| create config | `ExampleNew` |
+| read typed value | `ExampleGet` |
+| required startup value | `ExampleMustGet` |
+| optional default | `ExampleGetOrDefault` |
+| scan struct | `ExampleConfig_Scan` |
+| watch key | `ExampleConfig_Watch` |
+| layered sources | `ExampleBusiness_layeredFileAndEnv` |
+| required config validation | `ExampleBusiness_validateRequiredConfig` |
+
+Read `configx/README.md` and `docs/ai/configx.md` before writing config code.

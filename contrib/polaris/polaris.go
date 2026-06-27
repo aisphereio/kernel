@@ -6,7 +6,7 @@ import (
 	"github.com/polarismesh/polaris-go"
 	"github.com/polarismesh/polaris-go/api"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 type Polaris struct {
@@ -52,7 +52,7 @@ func New(sdk api.SDKContext, opts ...Option) Polaris {
 	return op
 }
 
-func (p *Polaris) Config(opts ...ConfigOption) (config.Source, error) {
+func (p *Polaris) Config(opts ...ConfigOption) (configx.Source, error) {
 	options := &configOptions{
 		namespace: p.namespace,
 	}

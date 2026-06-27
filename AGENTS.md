@@ -1,6 +1,6 @@
 # Aisphere Kernel Agent Guide
 
-> **You are working inside Aisphere Kernel** — an AI-native Go application kernel.
+> **You are working inside Aisphere Kernel** �?an AI-native Go application kernel.
 > This file is loaded by all AI coding tools (Claude Code via `CLAUDE.md`,
 > Cursor via `.cursor/rules/`, Copilot via `.github/copilot-instructions.md`).
 
@@ -12,7 +12,7 @@
 
 Before writing ANY business code (handler/service/repository/worker), you MUST:
 
-1. **Look up the matching Example** in the table below — Examples are runnable
+1. **Look up the matching Example** in the table below �?Examples are runnable
    and show exact output. Copy the pattern.
 2. Read `docs/ai/errorx.md` for the complete AI recipe (10 scenarios).
 3. Read `errorx/README.md` if Example doesn't answer your question.
@@ -23,23 +23,23 @@ If you skip step 1, your code will fail CI (see "Before finishing" below).
 
 ## 🚫 Hard rules (violations will fail CI)
 
-### Rule 1: Error handling — use errorx, never raw errors
+### Rule 1: Error handling �?use errorx, never raw errors
 
 In `handler/`, `service/`, `repository/`, `worker/` code (NOT in `*_test.go`):
 
 ```go
-// ❌ FORBIDDEN
+// �?FORBIDDEN
 return errors.New("skill not found")
 return fmt.Errorf("create failed: %w", err)
 return nil, err              // raw error passthrough
 panic(err)
 
-// ✅ REQUIRED
+// �?REQUIRED
 return errorx.NotFound("AIHUB_SKILL_NOT_FOUND", "技能不存在",
     errorx.WithMetadata("skill_id", id),
 )
 return errorx.Wrap(err, "AIHUB_SKILL_CREATE_FAILED",
-    errorx.WithMessage("创建技能失败"),
+    errorx.WithMessage("创建技能失�?),
 )
 ```
 
@@ -58,16 +58,16 @@ Constructor cheatsheet:
 
 Error code format: `{DOMAIN}_{RESOURCE}_{REASON}` (uppercase snake). Dynamic values in `WithMetadata`, NEVER in the error code.
 
-### Rule 2: Logging — use logx, never raw log
+### Rule 2: Logging �?use logx, never raw log
 
 ```go
-// ❌ FORBIDDEN in business code
+// �?FORBIDDEN in business code
 log.Printf("...")
 fmt.Println("...")
 slog.Info("...")
 zap.L().Info("...")
 
-// ✅ REQUIRED
+// �?REQUIRED
 logger := logx.FromContext(ctx)
 logger.Info("skill created", logx.String("skill_id", id))
 ```
@@ -75,18 +75,18 @@ logger.Info("skill created", logx.String("skill_id", id))
 ### Rule 3: Forbidden imports in business code
 
 ```text
-database/sql          → use kernel dbx
-net/http (server)     → use kernel httpx
-go-redis              → use kernel cache
-minio SDK             → use kernel objectstore
-casdoor SDK           → use kernel authn
-casbin enforcer       → use kernel authz
-os.Getenv             → use kernel config
+database/sql          �?use kernel dbx
+net/http (server)     �?use kernel httpx
+go-redis              �?use kernel cache
+minio SDK             �?use kernel objectstore
+casdoor SDK           �?use kernel authn
+casbin enforcer       �?use kernel authz
+os.Getenv             �?use kernel configx
 ```
 
 ---
 
-## 📚 Examples — find by scenario BEFORE writing code
+## 📚 Examples �?find by scenario BEFORE writing code
 
 **Before writing errorx code, look up the matching Example.** All examples are
 runnable (`go test ./errorx -run=Example -v`) and show exact output. You can
@@ -152,7 +152,7 @@ also see them inline with `go doc errorx.Xxx`.
 
 | Scenario | Example | Layer |
 |---|---|---|
-| Repository DB error → errorx | `ExampleBusiness_repositoryLayer` | repository |
+| Repository DB error �?errorx | `ExampleBusiness_repositoryLayer` | repository |
 | Service validation + conflict | `ExampleBusiness_serviceLayer` | service |
 | Upstream model timeout | `ExampleBusiness_upstreamTimeout` | service |
 | Authz denied | `ExampleBusiness_authzDenied` | service |
@@ -187,7 +187,7 @@ curl -i 'http://localhost:18080/skills?id=boom'           # 500
 
 ---
 
-## ✅ Allowed work
+## �?Allowed work
 
 You may create or edit:
 
@@ -208,9 +208,9 @@ You may NOT edit (unless explicitly asked):
 ## 📐 Standard flow
 
 ```text
-Handler     → bind input → call service → return response (or errorx)
-Service     → validate rules → check authz → call repo → record audit → return errorx
-Repository  → use kernel dbx → no HTTP/auth/audit logic → return errorx
+Handler     �?bind input �?call service �?return response (or errorx)
+Service     �?validate rules �?check authz �?call repo �?record audit �?return errorx
+Repository  �?use kernel dbx �?no HTTP/auth/audit logic �?return errorx
 ```
 
 ### Handler example (copy from `cmd/kernel/internal/project/templates/handler_template.go`)
@@ -218,7 +218,7 @@ Repository  → use kernel dbx → no HTTP/auth/audit logic → return errorx
 ```go
 func (h *SkillHandler) Create(ctx context.Context, req *CreateSkillRequest) (*Skill, error) {
     if req.Name == "" {
-        return nil, errorx.BadRequest("AIHUB_SKILL_NAME_REQUIRED", "技能名称不能为空")
+        return nil, errorx.BadRequest("AIHUB_SKILL_NAME_REQUIRED", "技能名称不能为�?)
     }
     if err := h.rt.Access.Require(ctx, access.Check{
         Resource: "aihub:skill:*",
@@ -247,7 +247,7 @@ func (r *SkillRepo) Find(ctx context.Context, id string) (*Skill, error) {
     }
     if err != nil {
         return nil, errorx.Wrap(err, "AIHUB_SKILL_QUERY_FAILED",
-            errorx.WithMessage("查询技能失败"),
+            errorx.WithMessage("查询技能失�?),
             errorx.WithRetryable(true),
             errorx.WithMetadata("skill_id", id),
         )
@@ -258,9 +258,9 @@ func (r *SkillRepo) Find(ctx context.Context, id string) (*Skill, error) {
 
 ---
 
-## ✅ Before finishing a task
+## �?Before finishing a task
 
-Run these — **CI will reject the PR if any fails**:
+Run these �?**CI will reject the PR if any fails**:
 
 ```bash
 # 1. Unit tests (includes all Example tests)
@@ -287,7 +287,7 @@ If any check fails, fix the violation before submitting the PR.
 
 | Question | Read this |
 |---|---|
-| How to handle errors? | **Example table above** → `errorx/README.md` → `docs/ai/errorx.md` |
+| How to handle errors? | **Example table above** �?`errorx/README.md` �?`docs/ai/errorx.md` |
 | How to log? | `logx/README.md` + `docs/design/logx.md` |
 | How to add a new module? | `docs/process/module-acceptance.md` |
 | What's the errorx contract? | `docs/contracts/errorx.md` |
@@ -317,5 +317,22 @@ All these files point to the same source of truth: the **Examples table above**
 
 > **errorx is the only error package. logx is the only logger. Kernel APIs are the only infrastructure.**
 > Before writing code: **look up the Example**. If you're about to write
-> `errors.New`, `fmt.Errorf`, `log.Printf`, or `os.Getenv` in business code —
-> STOP, find the matching Example, and copy the pattern.
+> `errors.New`, `fmt.Errorf`, `log.Printf`, or `os.Getenv` in business code �?> STOP, find the matching Example, and copy the pattern.
+
+## configx module rules
+
+Use `github.com/aisphereio/kernel/configx` for all runtime configuration. Do not import the old `github.com/aisphereio/kernel/config` path and do not read `os.Getenv` in business code. Read [configx/README.md](configx/README.md) and [docs/ai/configx.md](docs/ai/configx.md).
+
+### Example configx lookup
+
+| Scenario | Example | File |
+|---|---|---|
+| Create config | `ExampleNew` | `configx/example_test.go` |
+| Read typed value | `ExampleGet` | `configx/example_test.go` |
+| Required startup value | `ExampleMustGet` | `configx/example_test.go` |
+| Optional default | `ExampleGetOrDefault` | `configx/example_test.go` |
+| Combine sources | `ExampleWithSource` | `configx/example_test.go` |
+| Scan struct | `ExampleConfig_Scan` | `configx/example_test.go` |
+| Watch key | `ExampleConfig_Watch` | `configx/example_test.go` |
+| Layered file/env override | `Example_businessLayeredFileAndEnv` | `configx/example_business_test.go` |
+| Validate required config | `Example_businessValidateRequiredConfig` | `configx/example_business_test.go` |

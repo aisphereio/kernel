@@ -5,7 +5,7 @@ import (
 
 	"github.com/apolloconfig/agollo/v4/storage"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 	"github.com/aisphereio/kernel/encoding"
 )
 
@@ -24,7 +24,7 @@ func Test_onChange(t *testing.T) {
 		name      string
 		namespace string
 		changes   map[string]*storage.ConfigChange
-		kvs       []*config.KeyValue
+		kvs       []*configx.KeyValue
 	}{
 		{
 			"test yaml onChange",
@@ -36,7 +36,7 @@ func Test_onChange(t *testing.T) {
 					ChangeType: storage.MODIFIED,
 				},
 			},
-			[]*config.KeyValue{
+			[]*configx.KeyValue{
 				{
 					Key:    "app.yaml",
 					Value:  val,
@@ -54,7 +54,7 @@ func Test_onChange(t *testing.T) {
 					ChangeType: storage.MODIFIED,
 				},
 			},
-			[]*config.KeyValue{
+			[]*configx.KeyValue{
 				{
 					Key:    "app.json",
 					Value:  []byte(`{"name":"new"}`),

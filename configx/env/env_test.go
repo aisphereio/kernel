@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/aisphereio/kernel/config"
-	"github.com/aisphereio/kernel/config/file"
+	"github.com/aisphereio/kernel/configx"
+	"github.com/aisphereio/kernel/configx/file"
 )
 
 const _testJSON = `
@@ -56,7 +56,7 @@ func TestEnvWithPrefix(t *testing.T) {
 		os.Setenv(k, v)
 	}
 
-	c := config.New(config.WithSource(
+	c := configx.New(configx.WithSource(
 		file.NewSource(path),
 		NewSource(prefix1, prefix2),
 	))
@@ -170,7 +170,7 @@ func TestEnvWithoutPrefix(t *testing.T) {
 		os.Setenv(k, v)
 	}
 
-	c := config.New(config.WithSource(
+	c := configx.New(configx.WithSource(
 		NewSource(),
 		file.NewSource(path),
 	))
@@ -270,7 +270,7 @@ func Test_env_load(t *testing.T) {
 		name   string
 		fields fields
 		args   args
-		want   []*config.KeyValue
+		want   []*configx.KeyValue
 	}{
 		{
 			name: "without prefixes",
@@ -284,7 +284,7 @@ func Test_env_load(t *testing.T) {
 					"AGE=20",
 				},
 			},
-			want: []*config.KeyValue{
+			want: []*configx.KeyValue{
 				{Key: "SERVICE_NAME", Value: []byte("kernel_app"), Format: ""},
 				{Key: "ADDR", Value: []byte("192.168.0.1"), Format: ""},
 				{Key: "AGE", Value: []byte("20"), Format: ""},
@@ -303,7 +303,7 @@ func Test_env_load(t *testing.T) {
 					"__AGE=20",
 				},
 			},
-			want: []*config.KeyValue{
+			want: []*configx.KeyValue{
 				{Key: "_SERVICE_NAME", Value: []byte("kernel_app"), Format: ""},
 				{Key: "_ADDR", Value: []byte("192.168.0.1"), Format: ""},
 				{Key: "_AGE", Value: []byte("20"), Format: ""},
@@ -322,7 +322,7 @@ func Test_env_load(t *testing.T) {
 					"__AGE=20",
 				},
 			},
-			want: []*config.KeyValue{
+			want: []*configx.KeyValue{
 				{Key: "SERVICE_NAME", Value: []byte("kernel_app"), Format: ""},
 				{Key: "ADDR", Value: []byte("192.168.0.1"), Format: ""},
 				{Key: "AGE", Value: []byte("20"), Format: ""},
@@ -341,7 +341,7 @@ func Test_env_load(t *testing.T) {
 					"FOO_AGE=20",
 				},
 			},
-			want: []*config.KeyValue{
+			want: []*configx.KeyValue{
 				{Key: "SERVICE_NAME", Value: []byte("kernel_app"), Format: ""},
 				{Key: "ADDR", Value: []byte("192.168.0.1"), Format: ""},
 				{Key: "AGE", Value: []byte("20"), Format: ""},

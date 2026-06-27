@@ -8,7 +8,7 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/clients/config_client"
 	"github.com/nacos-group/nacos-sdk-go/vo"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 type Option func(*options)
@@ -37,7 +37,7 @@ type Config struct {
 	client config_client.IConfigClient
 }
 
-func NewConfigSource(client config_client.IConfigClient, opts ...Option) config.Source {
+func NewConfigSource(client config_client.IConfigClient, opts ...Option) configx.Source {
 	_options := options{}
 	for _, o := range opts {
 		o(&_options)
@@ -45,7 +45,7 @@ func NewConfigSource(client config_client.IConfigClient, opts ...Option) config.
 	return &Config{client: client, opts: _options}
 }
 
-func (c *Config) Load() ([]*config.KeyValue, error) {
+func (c *Config) Load() ([]*configx.KeyValue, error) {
 	content, err := c.client.GetConfig(vo.ConfigParam{
 		DataId: c.opts.dataID,
 		Group:  c.opts.group,
@@ -54,7 +54,7 @@ func (c *Config) Load() ([]*config.KeyValue, error) {
 		return nil, err
 	}
 	k := c.opts.dataID
-	return []*config.KeyValue{
+	return []*configx.KeyValue{
 		{
 			Key:    k,
 			Value:  []byte(content),
@@ -63,7 +63,7 @@ func (c *Config) Load() ([]*config.KeyValue, error) {
 	}, nil
 }
 
-func (c *Config) Watch() (config.Watcher, error) {
+func (c *Config) Watch() (configx.Watcher, error) {
 	watcher := newWatcher(context.Background(), c.opts.dataID, c.opts.group, c.client.CancelListenConfig)
 	err := c.client.ListenConfig(vo.ConfigParam{
 		DataId: c.opts.dataID,

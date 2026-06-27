@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 
 	"github.com/polarismesh/polaris-go"
 )
@@ -369,7 +369,7 @@ func TestGetMultipleConfig(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		m := make(map[string]*config.KeyValue)
+		m := make(map[string]*configx.KeyValue)
 		for _, kv := range kvs {
 			m[kv.Key] = kv
 		}

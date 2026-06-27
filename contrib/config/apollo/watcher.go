@@ -6,30 +6,30 @@ import (
 
 	"github.com/apolloconfig/agollo/v4/storage"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 	"github.com/aisphereio/kernel/encoding"
 	"github.com/aisphereio/kernel/logx"
 )
 
 type watcher struct {
-	out <-chan []*config.KeyValue
+	out <-chan []*configx.KeyValue
 
 	ctx      context.Context
 	cancelFn func()
 }
 
 type customChangeListener struct {
-	in     chan<- []*config.KeyValue
+	in     chan<- []*configx.KeyValue
 	apollo *apollo
 }
 
-func (c *customChangeListener) onChange(namespace string, changes map[string]*storage.ConfigChange) []*config.KeyValue {
-	kv := make([]*config.KeyValue, 0, 2)
+func (c *customChangeListener) onChange(namespace string, changes map[string]*storage.ConfigChange) []*configx.KeyValue {
+	kv := make([]*configx.KeyValue, 0, 2)
 	if strings.Contains(namespace, ".") && !strings.HasSuffix(namespace, "."+properties) &&
 		(format(namespace) == yaml || format(namespace) == yml || format(namespace) == json) {
 		if value, ok := changes[contentKey]; ok {
 			if s, ok := value.NewValue.(string); ok {
-				kv = append(kv, &config.KeyValue{
+				kv = append(kv, &configx.KeyValue{
 					Key:    namespace,
 					Value:  []byte(s),
 					Format: format(namespace),
@@ -53,7 +53,7 @@ func (c *customChangeListener) onChange(namespace string, changes map[string]*st
 		logx.Warn("apollo could not handle namespace", "namespace", namespace, "error", err)
 		return nil
 	}
-	kv = append(kv, &config.KeyValue{
+	kv = append(kv, &configx.KeyValue{
 		Key:    namespace,
 		Value:  val,
 		Format: f,
@@ -73,8 +73,8 @@ func (c *customChangeListener) OnChange(changeEvent *storage.ChangeEvent) {
 
 func (c *customChangeListener) OnNewestChange(_ *storage.FullChangeEvent) {}
 
-func newWatcher(a *apollo) (config.Watcher, error) {
-	changeCh := make(chan []*config.KeyValue)
+func newWatcher(a *apollo) (configx.Watcher, error) {
+	changeCh := make(chan []*configx.KeyValue)
 	listener := &customChangeListener{in: changeCh, apollo: a}
 	a.client.AddChangeListener(listener)
 
@@ -91,7 +91,7 @@ func newWatcher(a *apollo) (config.Watcher, error) {
 }
 
 // Next will be blocked until the Stop method is called
-func (w *watcher) Next() ([]*config.KeyValue, error) {
+func (w *watcher) Next() ([]*configx.KeyValue, error) {
 	select {
 	case kv := <-w.out:
 		return kv, nil

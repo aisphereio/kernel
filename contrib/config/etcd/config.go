@@ -8,7 +8,7 @@ import (
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 // Option is etcd config option.
@@ -46,7 +46,7 @@ type source struct {
 	options *options
 }
 
-func New(client *clientv3.Client, opts ...Option) (config.Source, error) {
+func New(client *clientv3.Client, opts ...Option) (configx.Source, error) {
 	options := &options{
 		ctx:    context.Background(),
 		path:   "",
@@ -68,7 +68,7 @@ func New(client *clientv3.Client, opts ...Option) (config.Source, error) {
 }
 
 // Load return the config values
-func (s *source) Load() ([]*config.KeyValue, error) {
+func (s *source) Load() ([]*configx.KeyValue, error) {
 	var opts []clientv3.OpOption
 	if s.options.prefix {
 		opts = append(opts, clientv3.WithPrefix())
@@ -78,10 +78,10 @@ func (s *source) Load() ([]*config.KeyValue, error) {
 	if err != nil {
 		return nil, err
 	}
-	kvs := make([]*config.KeyValue, 0, len(rsp.Kvs))
+	kvs := make([]*configx.KeyValue, 0, len(rsp.Kvs))
 	for _, item := range rsp.Kvs {
 		k := string(item.Key)
-		kvs = append(kvs, &config.KeyValue{
+		kvs = append(kvs, &configx.KeyValue{
 			Key:    k,
 			Value:  item.Value,
 			Format: strings.TrimPrefix(filepath.Ext(k), "."),
@@ -91,6 +91,6 @@ func (s *source) Load() ([]*config.KeyValue, error) {
 }
 
 // Watch return the watcher
-func (s *source) Watch() (config.Watcher, error) {
+func (s *source) Watch() (configx.Watcher, error) {
 	return newWatcher(s), nil
 }

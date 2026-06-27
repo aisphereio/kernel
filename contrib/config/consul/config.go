@@ -8,7 +8,7 @@ import (
 
 	"github.com/hashicorp/consul/api"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 // Option is consul config option.
@@ -38,7 +38,7 @@ type source struct {
 	options *options
 }
 
-func New(client *api.Client, opts ...Option) (config.Source, error) {
+func New(client *api.Client, opts ...Option) (configx.Source, error) {
 	options := &options{
 		ctx:  context.Background(),
 		path: "",
@@ -59,7 +59,7 @@ func New(client *api.Client, opts ...Option) (config.Source, error) {
 }
 
 // Load return the config values
-func (s *source) Load() ([]*config.KeyValue, error) {
+func (s *source) Load() ([]*configx.KeyValue, error) {
 	kv, _, err := s.client.KV().List(s.options.path, nil)
 	if err != nil {
 		return nil, err
@@ -69,13 +69,13 @@ func (s *source) Load() ([]*config.KeyValue, error) {
 	if !strings.HasSuffix(s.options.path, "/") {
 		pathPrefix = pathPrefix + "/"
 	}
-	kvs := make([]*config.KeyValue, 0)
+	kvs := make([]*configx.KeyValue, 0)
 	for _, item := range kv {
 		k := strings.TrimPrefix(item.Key, pathPrefix)
 		if k == "" {
 			continue
 		}
-		kvs = append(kvs, &config.KeyValue{
+		kvs = append(kvs, &configx.KeyValue{
 			Key:    k,
 			Value:  item.Value,
 			Format: strings.TrimPrefix(filepath.Ext(k), "."),
@@ -85,6 +85,6 @@ func (s *source) Load() ([]*config.KeyValue, error) {
 }
 
 // Watch return the watcher
-func (s *source) Watch() (config.Watcher, error) {
+func (s *source) Watch() (configx.Watcher, error) {
 	return newWatcher(s)
 }

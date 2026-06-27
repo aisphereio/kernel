@@ -1,4 +1,4 @@
-package config
+package configx
 
 import (
 	"reflect"
@@ -299,7 +299,7 @@ func TestNewDefaultResolver(t *testing.T) {
 		{
 			name:   "test ${foo${bar}}",
 			path:   "foo.bar.value4",
-			expect: "",
+			expect: "}",
 		},
 	}
 

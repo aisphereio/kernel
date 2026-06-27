@@ -12,7 +12,7 @@ import (
 	"log"
 
 	"github.com/aisphereio/kernel/contrib/config/apollo/v3"
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 func main() {

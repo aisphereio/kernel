@@ -1,36 +1,36 @@
 # CLAUDE.md
 
 This file is loaded automatically by Claude Code at the start of every session.
-Keep it short ‚Äî full rules live in AGENTS.md and docs/ai/errorx.md.
+Keep it short ‚Ä?full rules live in AGENTS.md and docs/ai/errorx.md.
 
 ## Prime directive
 
-You are working inside **Aisphere Kernel** ‚Äî an AI-native Go application kernel.
+You are working inside **Aisphere Kernel** ‚Ä?an AI-native Go application kernel.
 **Do not invent infrastructure.** Use Kernel APIs only.
 
 Before writing any business code (handler/service/repository/worker), read:
-- `AGENTS.md` ‚Äî full project rules
-- `docs/ai/errorx.md` ‚Äî errorx AI recipe (10 scenarios + forbidden patterns)
+- `AGENTS.md` ‚Ä?full project rules
+- `docs/ai/errorx.md` ‚Ä?errorx AI recipe (10 scenarios + forbidden patterns)
 
 ## Hard rules (violations will fail CI)
 
-### 1. Error handling ‚Äî use errorx, never raw errors
+### 1. Error handling ‚Ä?use errorx, never raw errors
 
 In `handler/`, `service/`, `repository/`, `worker/` code:
 
 ```go
-// ‚ùå FORBIDDEN
+// ‚ù?FORBIDDEN
 return errors.New("skill not found")
 return fmt.Errorf("create failed: %w", err)
 return nil, err
 panic(err)
 
-// ‚úÖ REQUIRED
+// ‚ú?REQUIRED
 return errorx.NotFound("AIHUB_SKILL_NOT_FOUND", "ÊäÄËÉΩ‰∏çÂ≠òÂú®",
     errorx.WithMetadata("skill_id", id),
 )
 return errorx.Wrap(err, "AIHUB_SKILL_CREATE_FAILED",
-    errorx.WithMessage("ÂàõÂª∫ÊäÄËÉΩÂ§±Ë¥•"),
+    errorx.WithMessage("ÂàõÂª∫ÊäÄËÉΩÂ§±Ë¥?),
 )
 ```
 
@@ -50,16 +50,16 @@ Constructor cheatsheet:
 Error code format: `{DOMAIN}_{RESOURCE}_{REASON}` (uppercase snake).
 Dynamic values go in `WithMetadata`, NEVER in the error code.
 
-### 2. Logging ‚Äî use logx, never raw log
+### 2. Logging ‚Ä?use logx, never raw log
 
 ```go
-// ‚ùå FORBIDDEN in business code
+// ‚ù?FORBIDDEN in business code
 log.Printf("...")
 fmt.Println("...")
 slog.Info("...")
 zap.L().Info("...")
 
-// ‚úÖ REQUIRED
+// ‚ú?REQUIRED
 logger := logx.FromContext(ctx)
 logger.Info("skill created", logx.String("skill_id", id))
 ```
@@ -67,24 +67,24 @@ logger.Info("skill created", logx.String("skill_id", id))
 ### 3. Forbidden imports in business code
 
 ```text
-database/sql          ‚Üí use kernel dbx
-net/http (server)     ‚Üí use kernel httpx
-go-redis              ‚Üí use kernel cache
-minio SDK             ‚Üí use kernel objectstore
-casdoor SDK           ‚Üí use kernel authn
-casbin enforcer       ‚Üí use kernel authz
-os.Getenv             ‚Üí use kernel config
+database/sql          ‚Ü?use kernel dbx
+net/http (server)     ‚Ü?use kernel httpx
+go-redis              ‚Ü?use kernel cache
+minio SDK             ‚Ü?use kernel objectstore
+casdoor SDK           ‚Ü?use kernel authn
+casbin enforcer       ‚Ü?use kernel authz
+os.Getenv             ‚Ü?use kernel configx
 ```
 
 ### 4. Standard flow
 
 ```text
-Handler   ‚Üí bind input ‚Üí call service ‚Üí return response (or errorx)
-Service   ‚Üí validate rules ‚Üí check authz ‚Üí call repo ‚Üí record audit ‚Üí return errorx
-Repository ‚Üí use kernel dbx ‚Üí no HTTP/auth/audit logic ‚Üí return errorx
+Handler   ‚Ü?bind input ‚Ü?call service ‚Ü?return response (or errorx)
+Service   ‚Ü?validate rules ‚Ü?check authz ‚Ü?call repo ‚Ü?record audit ‚Ü?return errorx
+Repository ‚Ü?use kernel dbx ‚Ü?no HTTP/auth/audit logic ‚Ü?return errorx
 ```
 
-## üìö Examples ‚Äî find by scenario BEFORE writing code
+## üìö Examples ‚Ä?find by scenario BEFORE writing code
 
 **Before writing errorx code, look up the matching Example.** Examples are
 runnable (`go test ./errorx -run=Example -v`) and show exact output.
@@ -181,7 +181,7 @@ runnable (`go test ./errorx -run=Example -v`) and show exact output.
 
 | Scenario | Example | Layer |
 |---|---|---|
-| Repository DB error ‚Üí errorx | `ExampleBusiness_repositoryLayer` | repository |
+| Repository DB error ‚Ü?errorx | `ExampleBusiness_repositoryLayer` | repository |
 | Service validation + authz + conflict | `ExampleBusiness_serviceLayer` | service |
 | Upstream model timeout | `ExampleBusiness_upstreamTimeout` | service |
 | Authz denied with metadata | `ExampleBusiness_authzDenied` | service |
@@ -224,7 +224,25 @@ golangci-lint run                   # depguard enforces import rules
 
 ## When unsure
 
-- Error handling? ‚Üí `docs/ai/errorx.md` + `errorx/README.md` + Example table above
-- Logging? ‚Üí `logx/README.md` + `docs/design/logx.md`
-- New module? ‚Üí `docs/process/module-acceptance.md`
-- Anything else? ‚Üí `AGENTS.md` + `docs/README.md`
+- Error handling? ‚Ü?`docs/ai/errorx.md` + `errorx/README.md` + Example table above
+- Logging? ‚Ü?`logx/README.md` + `docs/design/logx.md`
+- New module? ‚Ü?`docs/process/module-acceptance.md`
+- Anything else? ‚Ü?`AGENTS.md` + `docs/README.md`
+
+## configx module rules
+
+Use `github.com/aisphereio/kernel/configx` for all runtime configuration. Do not import the old `github.com/aisphereio/kernel/config` path and do not read `os.Getenv` in business code. Read [configx/README.md](configx/README.md) and [docs/ai/configx.md](docs/ai/configx.md).
+
+### Example configx lookup
+
+| Scenario | Example | File |
+|---|---|---|
+| Create config | `ExampleNew` | `configx/example_test.go` |
+| Read typed value | `ExampleGet` | `configx/example_test.go` |
+| Required startup value | `ExampleMustGet` | `configx/example_test.go` |
+| Optional default | `ExampleGetOrDefault` | `configx/example_test.go` |
+| Combine sources | `ExampleWithSource` | `configx/example_test.go` |
+| Scan struct | `ExampleConfig_Scan` | `configx/example_test.go` |
+| Watch key | `ExampleConfig_Watch` | `configx/example_test.go` |
+| Layered file/env override | `Example_businessLayeredFileAndEnv` | `configx/example_business_test.go` |
+| Validate required config | `Example_businessValidateRequiredConfig` | `configx/example_business_test.go` |

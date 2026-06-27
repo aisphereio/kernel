@@ -4,23 +4,23 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 type env struct {
 	prefixes []string
 }
 
-func NewSource(prefixes ...string) config.Source {
+func NewSource(prefixes ...string) configx.Source {
 	return &env{prefixes: prefixes}
 }
 
-func (e *env) Load() (kvs []*config.KeyValue, err error) {
+func (e *env) Load() (kvs []*configx.KeyValue, err error) {
 	return e.load(os.Environ()), nil
 }
 
-func (e *env) load(envs []string) []*config.KeyValue {
-	var kvs []*config.KeyValue
+func (e *env) load(envs []string) []*configx.KeyValue {
+	var kvs []*configx.KeyValue
 	for _, env := range envs {
 		k, v, _ := strings.Cut(env, "=")
 		if k == "" {
@@ -35,7 +35,7 @@ func (e *env) load(envs []string) []*config.KeyValue {
 			k = strings.TrimPrefix(k, "_")
 		}
 		if k != "" {
-			kvs = append(kvs, &config.KeyValue{
+			kvs = append(kvs, &configx.KeyValue{
 				Key:   k,
 				Value: []byte(v),
 			})
@@ -44,7 +44,7 @@ func (e *env) load(envs []string) []*config.KeyValue {
 	return kvs
 }
 
-func (e *env) Watch() (config.Watcher, error) {
+func (e *env) Watch() (configx.Watcher, error) {
 	w, err := NewWatcher()
 	if err != nil {
 		return nil, err

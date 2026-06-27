@@ -15,11 +15,11 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 const (
-	testKey   = "test_config.json"
+	testKey   = "test_configx.json"
 	namespace = "default"
 	name      = "test"
 )
@@ -52,8 +52,8 @@ func TestSource(t *testing.T) {
 }
 
 func ExampleNewSource() {
-	conf := config.New(
-		config.WithSource(
+	conf := configx.New(
+		configx.WithSource(
 			NewSource(
 				Namespace("mesh"),
 				LabelSelector("app=test"),

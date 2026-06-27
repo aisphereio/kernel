@@ -7,7 +7,7 @@ import (
 
 	"github.com/nacos-group/nacos-sdk-go/vo"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 type Watcher struct {
@@ -36,13 +36,13 @@ func newWatcher(ctx context.Context, dataID string, group string, cancelListenCo
 	return w
 }
 
-func (w *Watcher) Next() ([]*config.KeyValue, error) {
+func (w *Watcher) Next() ([]*configx.KeyValue, error) {
 	select {
 	case <-w.ctx.Done():
 		return nil, w.ctx.Err()
 	case content := <-w.content:
 		k := w.dataID
-		return []*config.KeyValue{
+		return []*configx.KeyValue{
 			{
 				Key:    k,
 				Value:  []byte(content),

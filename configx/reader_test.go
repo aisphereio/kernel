@@ -1,4 +1,4 @@
-package config
+package configx
 
 import (
 	"fmt"
@@ -286,36 +286,27 @@ func TestReadValue(t *testing.T) {
 			},
 		},
 	}
-	va := atomicValue{}
-	va.Store(1)
-
-	vbc := atomicValue{}
-	vbc.Store("3")
-
-	vbde := atomicValue{}
-	vbde.Store(true)
-
 	tests := []struct {
 		path string
-		want atomicValue
+		want any
 	}{
 		{
 			path: "a",
-			want: va,
+			want: 1,
 		},
 		{
 			path: "b.c",
-			want: vbc,
+			want: "3",
 		},
 		{
 			path: "b.d.e",
-			want: vbde,
+			want: true,
 		},
 	}
 	for _, tt := range tests {
 		if got, found := readValue(m, tt.path); !found {
 			t.Errorf("expect found %v in %v, but not.", tt.path, m)
-		} else if got.Load() != tt.want.Load() {
+		} else if got.Load() != tt.want {
 			t.Errorf("readValue(%v, %v) = %v, want %v", m, tt.path, got, tt.want)
 		}
 	}

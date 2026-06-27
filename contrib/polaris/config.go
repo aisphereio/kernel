@@ -8,7 +8,7 @@ import (
 	"github.com/polarismesh/polaris-go"
 	"github.com/polarismesh/polaris-go/pkg/model"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 	"github.com/aisphereio/kernel/logx"
 )
 
@@ -39,8 +39,8 @@ type source struct {
 }
 
 // Load return the config values
-func (s *source) Load() ([]*config.KeyValue, error) {
-	kvs := make([]*config.KeyValue, 0, len(s.options.files))
+func (s *source) Load() ([]*configx.KeyValue, error) {
+	kvs := make([]*configx.KeyValue, 0, len(s.options.files))
 	for _, file := range s.options.files {
 		configFile, err := s.client.FetchConfigFile(&polaris.GetConfigFileRequest{
 			GetConfigFileRequest: &model.GetConfigFileRequest{
@@ -54,7 +54,7 @@ func (s *source) Load() ([]*config.KeyValue, error) {
 			return nil, err
 		}
 		s.options.configFile = append(s.options.configFile, configFile)
-		kvs = append(kvs, &config.KeyValue{
+		kvs = append(kvs, &configx.KeyValue{
 			Key:    file.Name,
 			Value:  []byte(configFile.GetContent()),
 			Format: strings.TrimPrefix(filepath.Ext(file.Name), "."),
@@ -64,13 +64,13 @@ func (s *source) Load() ([]*config.KeyValue, error) {
 }
 
 // Watch return the watcher
-func (s *source) Watch() (config.Watcher, error) {
+func (s *source) Watch() (configx.Watcher, error) {
 	return newConfigWatcher(s.options.configFile), nil
 }
 
 type ConfigWatcher struct {
 	event chan model.ConfigFileChangeEvent
-	cfg   []*config.KeyValue
+	cfg   []*configx.KeyValue
 }
 
 func receive(event chan model.ConfigFileChangeEvent) func(m model.ConfigFileChangeEvent) {
@@ -89,7 +89,7 @@ func newConfigWatcher(configFile []polaris.ConfigFile) *ConfigWatcher {
 		event: make(chan model.ConfigFileChangeEvent, len(configFile)),
 	}
 	for _, file := range configFile {
-		w.cfg = append(w.cfg, &config.KeyValue{
+		w.cfg = append(w.cfg, &configx.KeyValue{
 			Key:    file.GetFileName(),
 			Value:  []byte(file.GetContent()),
 			Format: strings.TrimPrefix(filepath.Ext(file.GetFileName()), "."),
@@ -101,18 +101,18 @@ func newConfigWatcher(configFile []polaris.ConfigFile) *ConfigWatcher {
 	return w
 }
 
-func (w *ConfigWatcher) Next() ([]*config.KeyValue, error) {
+func (w *ConfigWatcher) Next() ([]*configx.KeyValue, error) {
 	if event, ok := <-w.event; ok {
-		m := make(map[string]*config.KeyValue)
+		m := make(map[string]*configx.KeyValue)
 		for _, file := range w.cfg {
 			m[file.Key] = file
 		}
-		m[event.ConfigFileMetadata.GetFileName()] = &config.KeyValue{
+		m[event.ConfigFileMetadata.GetFileName()] = &configx.KeyValue{
 			Key:    event.ConfigFileMetadata.GetFileName(),
 			Value:  []byte(event.NewValue),
 			Format: strings.TrimPrefix(filepath.Ext(event.ConfigFileMetadata.GetFileName()), "."),
 		}
-		w.cfg = make([]*config.KeyValue, 0, len(m))
+		w.cfg = make([]*configx.KeyValue, 0, len(m))
 		for _, kv := range m {
 			w.cfg = append(w.cfg, kv)
 		}

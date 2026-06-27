@@ -19,7 +19,7 @@ runnable examples, and an AI coding recipe.
 | `logx/` | ✅ stable | slog-based structured logging | [logx/README.md](logx/README.md) |
 | `transport/http/` | 🚧 in progress | HTTP server / client / middleware | — |
 | `transport/grpc/` | 🚧 in progress | gRPC server / client + errorx adapter | — |
-| `config/` | ✅ stable | Multi-source config (file/env/remote) | [config/README.md](config/README.md) |
+| `configx/` | ✅ stable | Multi-source config (file/env/remote) | [configx/README.md](configx/README.md) |
 | `middleware/` | 🚧 in progress | recovery / ratelimit / logging / selector | — |
 | `selector/` | ✅ stable | Load balancing (wrr/p2c/random/ewma) | — |
 | `registry/` | ✅ stable | Service discovery | [registry/README.md](registry/README.md) |
@@ -130,14 +130,18 @@ Quick start (everyone)
 ├── AGENTS.md                  ← AI work rules
 ├── errorx/README.md           ← error handling
 ├── logx/README.md             ← logging
+├── configx/README.md          ← configuration
 └── docs/README.md             ← full doc index
 
 AI coding guides
-└── docs/ai/errorx.md          ← complete errorx recipe (10 scenarios + forbidden patterns)
+├── docs/ai/errorx.md          ← complete errorx recipe (10 scenarios + forbidden patterns)
+└── docs/ai/configx.md         ← complete configx recipe (Source + Scan + Watch)
 
 Deep specs (architects / PR review)
 ├── docs/design/errorx.md      ← 1250-line design spec
 ├── docs/contracts/errorx.md   ← unbreakable contract
+├── docs/design/configx.md     ← configx design spec
+├── docs/contracts/configx.md  ← configx contract
 └── docs/design/logx.md        ← logx design
 
 Acceptance & ops (CI/CD)

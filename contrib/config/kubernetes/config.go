@@ -13,7 +13,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 // Option is kubernetes option.
@@ -53,7 +53,7 @@ func FieldSelector(field string) Option {
 	}
 }
 
-// KubeConfig with kubernetes config.
+// KubeConfig with kubernetes configx.
 func KubeConfig(config string) Option {
 	return func(o *options) {
 		o.KubeConfig = config
@@ -73,7 +73,7 @@ type kube struct {
 }
 
 // NewSource new a kubernetes config source.
-func NewSource(opts ...Option) config.Source {
+func NewSource(opts ...Option) configx.Source {
 	op := options{}
 	for _, o := range opts {
 		o(&op)
@@ -100,7 +100,7 @@ func (k *kube) init() (err error) {
 	return nil
 }
 
-func (k *kube) load() (kvs []*config.KeyValue, err error) {
+func (k *kube) load() (kvs []*configx.KeyValue, err error) {
 	cmList, err := k.client.
 		CoreV1().
 		ConfigMaps(k.opts.Namespace).
@@ -117,11 +117,11 @@ func (k *kube) load() (kvs []*config.KeyValue, err error) {
 	return kvs, nil
 }
 
-func (k *kube) configMap(cm v1.ConfigMap) (kvs []*config.KeyValue) {
+func (k *kube) configMap(cm v1.ConfigMap) (kvs []*configx.KeyValue) {
 	for name, val := range cm.Data {
 		k := fmt.Sprintf("%s/%s/%s", k.opts.Namespace, cm.Name, name)
 
-		kvs = append(kvs, &config.KeyValue{
+		kvs = append(kvs, &configx.KeyValue{
 			Key:    k,
 			Value:  []byte(val),
 			Format: strings.TrimPrefix(filepath.Ext(k), "."),
@@ -130,7 +130,7 @@ func (k *kube) configMap(cm v1.ConfigMap) (kvs []*config.KeyValue) {
 	return kvs
 }
 
-func (k *kube) Load() ([]*config.KeyValue, error) {
+func (k *kube) Load() ([]*configx.KeyValue, error) {
 	if k.opts.Namespace == "" {
 		return nil, errors.New("options namespace not full")
 	}
@@ -140,6 +140,6 @@ func (k *kube) Load() ([]*config.KeyValue, error) {
 	return k.load()
 }
 
-func (k *kube) Watch() (config.Watcher, error) {
+func (k *kube) Watch() (configx.Watcher, error) {
 	return newWatcher(k)
 }

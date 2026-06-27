@@ -9,7 +9,7 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/common/constant"
 	"github.com/nacos-group/nacos-sdk-go/vo"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 func TestConfig_Load(t *testing.T) {
@@ -37,12 +37,12 @@ func TestConfig_Load(t *testing.T) {
 	source := NewConfigSource(client, WithGroup("test"), WithDataID("test.yaml"))
 
 	type fields struct {
-		source config.Source
+		source configx.Source
 	}
 	tests := []struct {
 		name      string
 		fields    fields
-		want      []*config.KeyValue
+		want      []*configx.KeyValue
 		wantErr   bool
 		preFunc   func(t *testing.T)
 		deferFunc func(t *testing.T)
@@ -66,7 +66,7 @@ func TestConfig_Load(t *testing.T) {
 					t.Error(dErr)
 				}
 			},
-			want: []*config.KeyValue{{
+			want: []*configx.KeyValue{{
 				Key:    "test.yaml",
 				Value:  []byte("test: test"),
 				Format: "yaml",
@@ -91,7 +91,7 @@ func TestConfig_Load(t *testing.T) {
 					t.Error(dErr)
 				}
 			},
-			want: []*config.KeyValue{{
+			want: []*configx.KeyValue{{
 				Key:    "test.yaml",
 				Value:  []byte{},
 				Format: "yaml",
@@ -146,15 +146,15 @@ func TestConfig_Watch(t *testing.T) {
 	source := NewConfigSource(client, WithGroup("test"), WithDataID("test.yaml"))
 
 	type fields struct {
-		source config.Source
+		source configx.Source
 	}
 	tests := []struct {
 		name        string
 		fields      fields
-		want        []*config.KeyValue
+		want        []*configx.KeyValue
 		wantErr     bool
-		processFunc func(t *testing.T, w config.Watcher)
-		deferFunc   func(t *testing.T, w config.Watcher)
+		processFunc func(t *testing.T, w configx.Watcher)
+		deferFunc   func(t *testing.T, w configx.Watcher)
 	}{
 		{
 			name: "normal",
@@ -162,19 +162,19 @@ func TestConfig_Watch(t *testing.T) {
 				source: source,
 			},
 			wantErr: false,
-			processFunc: func(t *testing.T, _ config.Watcher) {
+			processFunc: func(t *testing.T, _ configx.Watcher) {
 				_, pErr := client.PublishConfig(vo.ConfigParam{DataId: "test.yaml", Group: "test", Content: "test: test"})
 				if pErr != nil {
 					t.Error(pErr)
 				}
 			},
-			deferFunc: func(t *testing.T, _ config.Watcher) {
+			deferFunc: func(t *testing.T, _ configx.Watcher) {
 				_, dErr := client.DeleteConfig(vo.ConfigParam{DataId: "test.yaml", Group: "test"})
 				if dErr != nil {
 					t.Error(dErr)
 				}
 			},
-			want: []*config.KeyValue{{
+			want: []*configx.KeyValue{{
 				Key:    "test.yaml",
 				Value:  []byte("test: test"),
 				Format: "yaml",

@@ -1,4 +1,4 @@
-package config
+package configx
 
 // KeyValue is config key value.
 type KeyValue struct {

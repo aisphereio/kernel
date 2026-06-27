@@ -8,7 +8,7 @@ import (
 	"github.com/polarismesh/polaris-go"
 	"github.com/polarismesh/polaris-go/pkg/model"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 	"github.com/aisphereio/kernel/logx"
 )
 
@@ -58,10 +58,10 @@ func newWatcher(configFile polaris.ConfigFile) *Watcher {
 	return w
 }
 
-func (w *Watcher) Next() ([]*config.KeyValue, error) {
+func (w *Watcher) Next() ([]*configx.KeyValue, error) {
 	ec := eventChanMap[w.fullPath]
 	event := <-ec.event
-	return []*config.KeyValue{
+	return []*configx.KeyValue{
 		{
 			Key:    w.configFile.GetFileName(),
 			Value:  []byte(event.NewValue),

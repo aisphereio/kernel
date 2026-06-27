@@ -7,7 +7,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 
 	cfg "github.com/aisphereio/kernel/contrib/config/etcd/v3"
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 // create an etcd client

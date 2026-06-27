@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 const (
@@ -195,11 +195,11 @@ func testSource(t *testing.T, path string, data []byte) {
 	}
 }
 
-func nextWithTimeout(t *testing.T, watch config.Watcher) ([]*config.KeyValue, error) {
+func nextWithTimeout(t *testing.T, watch configx.Watcher) ([]*configx.KeyValue, error) {
 	t.Helper()
 
 	type result struct {
-		kvs []*config.KeyValue
+		kvs []*configx.KeyValue
 		err error
 	}
 	ch := make(chan result, 1)
@@ -218,12 +218,12 @@ func nextWithTimeout(t *testing.T, watch config.Watcher) ([]*config.KeyValue, er
 }
 
 func TestConfig(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "test_config.json")
+	path := filepath.Join(t.TempDir(), "test_configx.json")
 	defer os.Remove(path)
 	if err := os.WriteFile(path, []byte(_testJSON), 0o666); err != nil {
 		t.Error(err)
 	}
-	c := config.New(config.WithSource(
+	c := configx.New(configx.WithSource(
 		NewSource(path),
 	))
 	testScan(t, c)
@@ -231,7 +231,7 @@ func TestConfig(t *testing.T) {
 	testConfig(t, c)
 }
 
-func testConfig(t *testing.T, c config.Config) {
+func testConfig(t *testing.T, c configx.Config) {
 	expected := map[string]any{
 		"test.settings.int_key":      int64(1000),
 		"test.settings.float_key":    1000.1,
@@ -295,12 +295,12 @@ func testConfig(t *testing.T, c config.Config) {
 	}
 
 	// not found
-	if _, err := c.Value("not_found_key").Bool(); errors.Is(err, config.ErrNotFound) {
+	if _, err := c.Value("not_found_key").Bool(); errors.Is(err, configx.ErrNotFound) {
 		t.Logf("not_found_key not match: %v", err)
 	}
 }
 
-func testScan(t *testing.T, c config.Config) {
+func testScan(t *testing.T, c configx.Config) {
 	type TestJSON struct {
 		Test struct {
 			Settings struct {
@@ -330,12 +330,12 @@ func testScan(t *testing.T, c config.Config) {
 }
 
 func TestMergeDataRace(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "test_config.json")
+	path := filepath.Join(t.TempDir(), "test_configx.json")
 	defer os.Remove(path)
 	if err := os.WriteFile(path, []byte(_testJSON), 0o666); err != nil {
 		t.Error(err)
 	}
-	c := config.New(config.WithSource(
+	c := configx.New(configx.WithSource(
 		NewSource(path),
 	))
 	const count = 80

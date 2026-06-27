@@ -8,12 +8,12 @@ import (
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/consul/api/watch"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 type watcher struct {
 	source          *source
-	ch              chan []*config.KeyValue
+	ch              chan []*configx.KeyValue
 	wp              *watch.Plan
 	fileModifyIndex map[string]uint64
 	ctx             context.Context
@@ -34,7 +34,7 @@ func (w *watcher) handle(_ uint64, data any) {
 	if !strings.HasSuffix(w.source.options.path, "/") {
 		pathPrefix = pathPrefix + "/"
 	}
-	kvs := make([]*config.KeyValue, 0, len(kv))
+	kvs := make([]*configx.KeyValue, 0, len(kv))
 	for _, item := range kv {
 		if index, ok := w.fileModifyIndex[item.Key]; ok && item.ModifyIndex == index {
 			continue
@@ -43,7 +43,7 @@ func (w *watcher) handle(_ uint64, data any) {
 		if k == "" {
 			continue
 		}
-		kvs = append(kvs, &config.KeyValue{
+		kvs = append(kvs, &configx.KeyValue{
 			Key:    k,
 			Value:  item.Value,
 			Format: strings.TrimPrefix(filepath.Ext(k), "."),
@@ -62,7 +62,7 @@ func newWatcher(s *source) (*watcher, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	w := &watcher{
 		source:          s,
-		ch:              make(chan []*config.KeyValue),
+		ch:              make(chan []*configx.KeyValue),
 		fileModifyIndex: make(map[string]uint64),
 		ctx:             ctx,
 		cancel:          cancel,
@@ -87,7 +87,7 @@ func newWatcher(s *source) (*watcher, error) {
 	return w, nil
 }
 
-func (w *watcher) Next() ([]*config.KeyValue, error) {
+func (w *watcher) Next() ([]*configx.KeyValue, error) {
 	select {
 	case kv := <-w.ch:
 		return kv, nil

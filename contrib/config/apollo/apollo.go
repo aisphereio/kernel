@@ -8,7 +8,7 @@ import (
 	apolloconfig "github.com/apolloconfig/agollo/v4/env/config"
 	"github.com/apolloconfig/agollo/v4/extension"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 	"github.com/aisphereio/kernel/encoding"
 	"github.com/aisphereio/kernel/logx"
 )
@@ -107,7 +107,7 @@ func WithOriginalConfig() Option {
 	}
 }
 
-func NewSource(opts ...Option) config.Source {
+func NewSource(opts ...Option) configx.Source {
 	op := options{}
 	for _, o := range opts {
 		o(&op)
@@ -143,8 +143,8 @@ func format(ns string) string {
 	return suffix
 }
 
-func (e *apollo) load() []*config.KeyValue {
-	kvs := make([]*config.KeyValue, 0)
+func (e *apollo) load() []*configx.KeyValue {
+	kvs := make([]*configx.KeyValue, 0)
 	namespaces := strings.Split(e.opt.namespace, ",")
 
 	for _, ns := range namespaces {
@@ -177,7 +177,7 @@ func (e *apollo) load() []*config.KeyValue {
 	return kvs
 }
 
-func (e *apollo) getConfig(ns string) (*config.KeyValue, error) {
+func (e *apollo) getConfig(ns string) (*configx.KeyValue, error) {
 	next := map[string]any{}
 	e.client.GetConfigCache(ns).Range(func(key, value any) bool {
 		// all values are out properties format
@@ -190,31 +190,31 @@ func (e *apollo) getConfig(ns string) (*config.KeyValue, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &config.KeyValue{
+	return &configx.KeyValue{
 		Key:    ns,
 		Value:  val,
 		Format: f,
 	}, nil
 }
 
-func (e apollo) getOriginConfig(ns string) (*config.KeyValue, error) {
+func (e apollo) getOriginConfig(ns string) (*configx.KeyValue, error) {
 	value, err := e.client.GetConfigCache(ns).Get(contentKey)
 	if err != nil {
 		return nil, err
 	}
 	// serialize the namespace content KeyValue into bytes.
-	return &config.KeyValue{
+	return &configx.KeyValue{
 		Key:    ns,
 		Value:  []byte(value.(string)),
 		Format: format(ns),
 	}, nil
 }
 
-func (e *apollo) Load() (kv []*config.KeyValue, err error) {
+func (e *apollo) Load() (kv []*configx.KeyValue, err error) {
 	return e.load(), nil
 }
 
-func (e *apollo) Watch() (config.Watcher, error) {
+func (e *apollo) Watch() (configx.Watcher, error) {
 	w, err := newWatcher(e)
 	if err != nil {
 		return nil, err
@@ -255,7 +255,7 @@ func resolve(key string, value any, target map[string]any) {
 	}
 }
 
-// genKey got the key of config.KeyValue pair.
+// genKey got the key of configx.KeyValue pair.
 // eg: namespace.ext with subKey got namespace.subKey
 func genKey(ns, sub string) string {
 	arr := strings.Split(ns, ".")

@@ -5,7 +5,7 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/clients"
 	"github.com/nacos-group/nacos-sdk-go/common/constant"
 
-	kconfig "github.com/aisphereio/kernel/config"
+	kconfig "github.com/aisphereio/kernel/configx"
 )
 
 sc := []constant.ServerConfig{

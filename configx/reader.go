@@ -1,8 +1,6 @@
-package config
+package configx
 
 import (
-	"bytes"
-	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -14,7 +12,7 @@ import (
 	"github.com/aisphereio/kernel/logx"
 )
 
-// Reader is config reader.
+// Reader is the internal merged config tree reader.
 type Reader interface {
 	Merge(...*KeyValue) error
 	Value(string) (Value, bool)
@@ -25,14 +23,13 @@ type Reader interface {
 type reader struct {
 	opts   options
 	values map[string]any
-	lock   sync.Mutex
+	lock   sync.RWMutex
 }
 
 func newReader(opts options) Reader {
 	return &reader{
 		opts:   opts,
 		values: make(map[string]any),
-		lock:   sync.Mutex{},
 	}
 }
 
@@ -42,13 +39,16 @@ func (r *reader) Merge(kvs ...*KeyValue) error {
 		return err
 	}
 	for _, kv := range kvs {
+		if kv == nil {
+			continue
+		}
 		next := make(map[string]any)
 		if err := r.opts.decoder(kv, next); err != nil {
-			logx.Error("failed to decode config", "error", err, "key", kv.Key, "value", string(kv.Value))
+			logx.Error("failed to decode config", "error", err, "key", kv.Key)
 			return err
 		}
 		if err := r.opts.merge(&merged, convertMap(next)); err != nil {
-			logx.Error("failed to merge config", "error", err, "key", kv.Key, "value", string(kv.Value))
+			logx.Error("failed to merge config", "error", err, "key", kv.Key)
 			return err
 		}
 	}
@@ -59,14 +59,14 @@ func (r *reader) Merge(kvs ...*KeyValue) error {
 }
 
 func (r *reader) Value(path string) (Value, bool) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return readValue(r.values, path)
 }
 
 func (r *reader) Source() ([]byte, error) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return marshalJSON(convertMap(r.values))
 }
 
@@ -77,28 +77,20 @@ func (r *reader) Resolve() error {
 }
 
 func (r *reader) cloneMap() (map[string]any, error) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return cloneMap(r.values)
 }
 
 func cloneMap(src map[string]any) (map[string]any, error) {
-	// https://gist.github.com/soroushjp/0ec92102641ddfc3ad5515ca76405f4d
-	var buf bytes.Buffer
-	gob.Register(map[string]any{})
-	gob.Register([]any{})
-	enc := gob.NewEncoder(&buf)
-	dec := gob.NewDecoder(&buf)
-	err := enc.Encode(src)
-	if err != nil {
-		return nil, err
+	if src == nil {
+		return map[string]any{}, nil
 	}
-	var clone map[string]any
-	err = dec.Decode(&clone)
-	if err != nil {
-		return nil, err
+	cloned, ok := cloneMergeValue(convertMap(src)).(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("configx: clone source must be map[string]any, got %T", src)
 	}
-	return clone, nil
+	return cloned, nil
 }
 
 func convertMap(src any) any {
@@ -122,16 +114,20 @@ func convertMap(src any) any {
 		}
 		return dst
 	case []byte:
-		// there will be no binary data in the config data
+		// There is no binary data in config values; env/file raw values become strings.
 		return string(m)
 	default:
 		return src
 	}
 }
 
-// readValue read Value in given map[string]interface{}
-// by the given path, will return false if not found.
+// readValue reads Value in the given map by dot path, returning false if missing.
 func readValue(values map[string]any, path string) (Value, bool) {
+	if path == "" {
+		av := &atomicValue{}
+		av.Store(values)
+		return av, true
+	}
 	var (
 		next = values
 		keys = strings.Split(path, ".")

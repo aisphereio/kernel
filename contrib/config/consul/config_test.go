@@ -7,7 +7,7 @@ import (
 
 	"github.com/hashicorp/consul/api"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 const testPath = "kernel/test/config"
@@ -117,7 +117,7 @@ func Test_source_Watch(t *testing.T) {
 	}
 
 	type fields struct {
-		source config.Source
+		source configx.Source
 	}
 
 	type args struct {
@@ -203,13 +203,13 @@ func Test_source_Load(t *testing.T) {
 		value string
 	}
 	type fields struct {
-		source config.Source
+		source configx.Source
 	}
 	tests := []struct {
 		name      string
 		args      args
 		fields    fields
-		want      []*config.KeyValue
+		want      []*configx.KeyValue
 		wantErr   bool
 		deferFunc func(t *testing.T)
 	}{
@@ -222,7 +222,7 @@ func Test_source_Load(t *testing.T) {
 			fields: fields{
 				source: source,
 			},
-			want: []*config.KeyValue{
+			want: []*configx.KeyValue{
 				{
 					Key:   "key",
 					Value: []byte("test value"),

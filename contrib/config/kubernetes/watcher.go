@@ -8,7 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 
-	"github.com/aisphereio/kernel/config"
+	"github.com/aisphereio/kernel/configx"
 )
 
 type watcher struct {
@@ -16,7 +16,7 @@ type watcher struct {
 	watcher watch.Interface
 }
 
-func newWatcher(k *kube) (config.Watcher, error) {
+func newWatcher(k *kube) (configx.Watcher, error) {
 	w, err := k.client.CoreV1().ConfigMaps(k.opts.Namespace).Watch(context.Background(), metav1.ListOptions{
 		LabelSelector: k.opts.LabelSelector,
 		FieldSelector: k.opts.FieldSelector,
@@ -30,7 +30,7 @@ func newWatcher(k *kube) (config.Watcher, error) {
 	}, nil
 }
 
-func (w *watcher) Next() ([]*config.KeyValue, error) {
+func (w *watcher) Next() ([]*configx.KeyValue, error) {
 ResultChan:
 	ch := <-w.watcher.ResultChan()
 	if ch.Object == nil {
