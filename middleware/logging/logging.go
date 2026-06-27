@@ -3,90 +3,67 @@ package logging
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/aisphereio/kernel/errorx"
+	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/middleware"
 	"github.com/aisphereio/kernel/transport"
 )
 
-// Redacter defines how to log an object
+// Redacter defines how to log an object.
 type Redacter interface {
 	Redact() string
 }
 
-// Server is an server logging middleware.
-func Server(logger *slog.Logger) middleware.Middleware {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return func(handler middleware.Handler) middleware.Handler {
-		return func(ctx context.Context, req any) (reply any, err error) {
-			var (
-				kind      string
-				operation string
-			)
-			startTime := time.Now()
-			if info, ok := transport.FromServerContext(ctx); ok {
-				kind = info.Kind().String()
-				operation = info.Operation()
-			}
-			reply, err = handler(ctx, req)
-			level, stack := extractError(err)
-			attrs := []slog.Attr{
-				slog.String("kind", "server"),
-				slog.String("component", kind),
-				slog.String("operation", operation),
-				slog.String("args", extractArgs(req)),
-				slog.Float64("latency", time.Since(startTime).Seconds()),
-			}
-			attrs = append(attrs, errorAttrs(err)...)
-			if err != nil && stack != "" {
-				attrs = append(attrs, slog.String("stack", stack))
-			}
-			logger.LogAttrs(ctx, level, "server request", attrs...)
-			return
-		}
-	}
+// Server is a server logging middleware.
+func Server(logger logx.Logger) middleware.Middleware {
+	return access(logger, "server", transport.FromServerContext)
 }
 
 // Client is a client logging middleware.
-func Client(logger *slog.Logger) middleware.Middleware {
+func Client(logger logx.Logger) middleware.Middleware {
+	return access(logger, "client", transport.FromClientContext)
+}
+
+type transportExtractor func(context.Context) (transport.Transporter, bool)
+
+func access(logger logx.Logger, side string, extract transportExtractor) middleware.Middleware {
 	if logger == nil {
-		logger = slog.Default()
+		logger = logx.Noop()
 	}
 	return func(handler middleware.Handler) middleware.Handler {
 		return func(ctx context.Context, req any) (reply any, err error) {
-			var (
-				kind      string
-				operation string
-			)
+			var kind, operation string
 			startTime := time.Now()
-			if info, ok := transport.FromClientContext(ctx); ok {
+			if info, ok := extract(ctx); ok {
 				kind = info.Kind().String()
 				operation = info.Operation()
 			}
 			reply, err = handler(ctx, req)
-			level, stack := extractError(err)
-			attrs := []slog.Attr{
-				slog.String("kind", "client"),
-				slog.String("component", kind),
-				slog.String("operation", operation),
-				slog.String("args", extractArgs(req)),
-				slog.Float64("latency", time.Since(startTime).Seconds()),
+
+			fields := []logx.Field{
+				logx.Event("rpc_access"),
+				logx.String("side", side),
+				logx.String("component", kind),
+				logx.String("operation", operation),
+				logx.String("args", extractArgs(req)),
+				logx.Duration("latency", time.Since(startTime)),
 			}
-			attrs = append(attrs, errorAttrs(err)...)
-			if err != nil && stack != "" {
-				attrs = append(attrs, slog.String("stack", stack))
+			fields = append(fields, errorFields(err)...)
+
+			l := logx.FromContextOr(ctx, logger)
+			if err != nil {
+				l.Error(side+" request failed", fields...)
+			} else {
+				l.Info(side+" request completed", fields...)
 			}
-			logger.LogAttrs(ctx, level, "client request", attrs...)
 			return
 		}
 	}
 }
 
-// extractArgs returns the string of the req
+// extractArgs returns the string of the req.
 func extractArgs(req any) string {
 	if redacter, ok := req.(Redacter); ok {
 		return redacter.Redact()
@@ -97,19 +74,13 @@ func extractArgs(req any) string {
 	return fmt.Sprintf("%+v", req)
 }
 
-// extractError returns the level and stack to attach for err.
-func extractError(err error) (slog.Level, string) {
-	if err != nil {
-		return slog.LevelError, fmt.Sprintf("%+v", err)
+func errorFields(err error) []logx.Field {
+	if err == nil {
+		return nil
 	}
-	return slog.LevelInfo, ""
-}
-
-func errorAttrs(err error) []slog.Attr {
-	fields := errorx.Fields(err)
-	attrs := make([]slog.Attr, 0, len(fields))
-	for k, v := range fields {
-		attrs = append(attrs, slog.Any(k, v))
+	fields := []logx.Field{logx.Err(err)}
+	for k, v := range errorx.Fields(err) {
+		fields = append(fields, logx.Any(k, v))
 	}
-	return attrs
+	return fields
 }

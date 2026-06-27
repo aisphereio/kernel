@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/registry"
 
 	"github.com/hashicorp/consul/api"
@@ -244,7 +244,7 @@ func (c *Client) Register(ctx context.Context, svc *registry.ServiceInstance, en
 			defer close(cc.done)
 			err = c.cli.Agent().UpdateTTL("service:"+svc.ID, "pass", "pass")
 			if err != nil {
-				log.Error("[Consul] update ttl heartbeat to consul failed", "error", err)
+				logx.Error("[Consul] update ttl heartbeat to consul failed", "error", err)
 			}
 			ticker := time.NewTicker(time.Second * time.Duration(c.healthcheckInterval))
 			defer ticker.Stop()
@@ -260,16 +260,16 @@ func (c *Client) Register(ctx context.Context, svc *registry.ServiceInstance, en
 						return
 					}
 					if err != nil {
-						log.Error("[Consul] update ttl heartbeat to consul failed", "error", err)
+						logx.Error("[Consul] update ttl heartbeat to consul failed", "error", err)
 						// when the previous report fails, try to re register the service
 						if err := sleepCtx(cc.ctx, time.Duration(rand.IntN(5))*time.Second); err != nil {
 							_ = c.cli.Agent().ServiceDeregister(svc.ID)
 							return
 						}
 						if err := c.cli.Agent().ServiceRegisterOpts(asr, api.ServiceRegisterOpts{}.WithContext(cc.ctx)); err != nil {
-							log.Error("[Consul] re registry service failed", "error", err)
+							logx.Error("[Consul] re registry service failed", "error", err)
 						} else {
-							log.Warn("[Consul] re registry of service occurred success")
+							logx.Warn("[Consul] re registry of service occurred success")
 						}
 					}
 				}

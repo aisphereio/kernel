@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 
 	"github.com/aisphereio/kernel/registry"
 
@@ -242,7 +242,7 @@ func (r *Registry) Register(_ context.Context, serviceInstance *registry.Service
 						},
 					})
 					if err != nil {
-						log.Error(err.Error())
+						logx.Error(err.Error())
 						continue
 					}
 				}

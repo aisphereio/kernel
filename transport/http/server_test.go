@@ -20,7 +20,7 @@ import (
 
 	"github.com/aisphereio/kernel/errorx"
 	"github.com/aisphereio/kernel/internal/host"
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 )
 
 var h = func(w http.ResponseWriter, r *http.Request) {
@@ -417,12 +417,12 @@ func TestStop(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			old := log.Default()
-			defer log.SetDefault(old)
+			old := logx.Default()
+			defer logx.SetDefault(old)
 
 			// Create a logger to capture logs
 			var logs safeBytesBuffer
-			log.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+			logx.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 
 			testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				t := time.NewTimer(tt.sleep)

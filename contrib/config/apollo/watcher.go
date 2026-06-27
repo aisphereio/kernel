@@ -8,7 +8,7 @@ import (
 
 	"github.com/aisphereio/kernel/config"
 	"github.com/aisphereio/kernel/encoding"
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 )
 
 type watcher struct {
@@ -50,7 +50,7 @@ func (c *customChangeListener) onChange(namespace string, changes map[string]*st
 	codec := encoding.GetCodec(f)
 	val, err := codec.Marshal(next)
 	if err != nil {
-		log.Warn("apollo could not handle namespace", "namespace", namespace, "error", err)
+		logx.Warn("apollo could not handle namespace", "namespace", namespace, "error", err)
 		return nil
 	}
 	kv = append(kv, &config.KeyValue{

@@ -1,4 +1,4 @@
-.PHONY: help deps tools test test-root test-errorx test-cmd test-race cover cover-html vet vuln lint contract verify verify-errorx bench-errorx fuzz-errorx clean proto generate
+.PHONY: help deps tools test test-root test-errorx test-logx test-cmd test-race cover cover-html vet vuln lint contract verify verify-errorx bench-errorx fuzz-errorx clean proto generate
 
 GO ?= go
 LOCAL_BIN := $(CURDIR)/.bin
@@ -18,6 +18,7 @@ help:
 	@echo "  make test          run root module tests"
 	@echo "  make test-cmd      run command submodule tests"
 	@echo "  make test-errorx   run errorx tests"
+	@echo "  make test-logx     run logx tests"
 	@echo "  make test-race     run root tests with race detector"
 	@echo "  make cover         generate coverage profile and summary"
 	@echo "  make vet           run go vet on root module"
@@ -62,6 +63,9 @@ test-root:
 
 test-errorx:
 	$(GO) test ./errorx -v
+
+test-logx:
+	$(GO) test ./logx -v
 
 test-cmd:
 ifeq ($(OS),Windows_NT)

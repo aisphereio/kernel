@@ -9,7 +9,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/registry"
 )
 
@@ -44,7 +44,7 @@ func (d *Discovery) Register(ctx context.Context, service *registry.ServiceInsta
 
 	// renew the current register_service
 	go func() {
-		defer log.Warn("Discovery:register_service goroutine quit")
+		defer logx.Warn("Discovery:register_service goroutine quit")
 		ticker := time.NewTicker(_registerGap)
 		defer ticker.Stop()
 		for {
@@ -71,7 +71,7 @@ func (d *Discovery) register(ctx context.Context, ins *discoveryInstance) (err e
 	var metadata []byte
 	if ins.Metadata != nil {
 		if metadata, err = json.Marshal(ins.Metadata); err != nil {
-			log.Error("Discovery: register instance marshal metadata failed", "metadata", ins.Metadata, "error", err)
+			logx.Error("Discovery: register instance marshal metadata failed", "metadata", ins.Metadata, "error", err)
 		}
 	}
 	res := new(struct {
@@ -101,18 +101,18 @@ func (d *Discovery) register(ctx context.Context, ins *discoveryInstance) (err e
 		SetResult(&res).
 		Post(uri); err != nil {
 		d.switchNode()
-		log.Error("Discovery: register client.Get failed",
+		logx.Error("Discovery: register client.Get failed",
 			"uri", uri+"?"+p.Encode(), "zone", c.Zone, "env", c.Env, "appid", ins.AppID, "addrs", ins.Addrs, "error", err)
 		return
 	}
 
 	if res.Code != 0 {
 		err = fmt.Errorf("ErrorCode: %d", res.Code)
-		log.Error("Discovery: register client.Get returned code",
+		logx.Error("Discovery: register client.Get returned code",
 			"uri", uri, "env", c.Env, "appid", ins.AppID, "addrs", ins.Addrs, "code", res.Code)
 	}
 
-	log.Info("Discovery: register client.Get succeeded", "uri", uri, "env", c.Env, "appid", ins.AppID, "addrs", ins.Addrs)
+	logx.Info("Discovery: register client.Get succeeded", "uri", uri, "env", c.Env, "appid", ins.AppID, "addrs", ins.Addrs)
 
 	return
 }

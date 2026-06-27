@@ -9,7 +9,7 @@ import (
 	"go.opentelemetry.io/otel/log/logtest"
 	"go.opentelemetry.io/otel/trace"
 
-	klog "github.com/aisphereio/kernel/log"
+	klog "github.com/aisphereio/kernel/logx"
 )
 
 func TestTraceAttrs(t *testing.T) {
@@ -147,7 +147,7 @@ func onlyRecording(t *testing.T, results logtest.Recording) (logtest.Scope, []lo
 func recordAttrs(record logtest.Record) map[string]string {
 	attrs := map[string]string{}
 	for _, kv := range record.Attributes {
-		if kv.Value.Kind() == otellog.KindString {
+		if kv.Value.Kind() == otellogx.KindString {
 			attrs[kv.Key] = kv.Value.AsString()
 		}
 	}

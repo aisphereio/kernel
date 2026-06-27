@@ -11,7 +11,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 )
 
 // Reader is config reader.
@@ -44,11 +44,11 @@ func (r *reader) Merge(kvs ...*KeyValue) error {
 	for _, kv := range kvs {
 		next := make(map[string]any)
 		if err := r.opts.decoder(kv, next); err != nil {
-			log.Error("failed to decode config", "error", err, "key", kv.Key, "value", string(kv.Value))
+			logx.Error("failed to decode config", "error", err, "key", kv.Key, "value", string(kv.Value))
 			return err
 		}
 		if err := r.opts.merge(&merged, convertMap(next)); err != nil {
-			log.Error("failed to merge config", "error", err, "key", kv.Key, "value", string(kv.Value))
+			logx.Error("failed to merge config", "error", err, "key", kv.Key, "value", string(kv.Value))
 			return err
 		}
 	}

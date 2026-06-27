@@ -125,12 +125,35 @@ func TestBindForm(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := bindForm(tt.args.req, tt.args.target)
-			if !reflect.DeepEqual(err, tt.err) {
-				t.Fatalf("bindForm() error = %v, err %v", err, tt.err)
-			}
+			assertBindError(t, err, tt.err)
 			if err == nil && !reflect.DeepEqual(tt.args.target, tt.want) {
 				t.Errorf("bindForm() target = %v, want %v", tt.args.target, tt.want)
 			}
 		})
+	}
+}
+
+func assertBindError(t *testing.T, got, want error) {
+	t.Helper()
+	if want == nil {
+		if got != nil {
+			t.Fatalf("expected nil error, got %v", got)
+		}
+		return
+	}
+	if got == nil {
+		t.Fatalf("expected error %v, got nil", want)
+	}
+	if errorx.IsKernelError(want) {
+		if !errors.Is(got, want) {
+			t.Fatalf("expected kernel error %v, got %v", want, got)
+		}
+		if errorx.MessageOf(got) != errorx.MessageOf(want) {
+			t.Fatalf("expected error message %q, got %q", errorx.MessageOf(want), errorx.MessageOf(got))
+		}
+		return
+	}
+	if got.Error() != want.Error() {
+		t.Fatalf("expected error %q, got %q", want.Error(), got.Error())
 	}
 }

@@ -1,0 +1,3600 @@
+diff --git a/Makefile b/Makefile
+index 1a3e34e..08c6e2f 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,4 +1,4 @@
+-.PHONY: help deps tools test test-root test-errorx test-cmd test-race cover cover-html vet vuln lint contract verify verify-errorx bench-errorx fuzz-errorx clean proto generate
++.PHONY: help deps tools test test-root test-errorx test-logx test-cmd test-race cover cover-html vet vuln lint contract verify verify-errorx bench-errorx fuzz-errorx clean proto generate
+ 
+ GO ?= go
+ LOCAL_BIN := $(CURDIR)/.bin
+@@ -18,6 +18,7 @@ help:
+ 	@echo "  make test          run root module tests"
+ 	@echo "  make test-cmd      run command submodule tests"
+ 	@echo "  make test-errorx   run errorx tests"
++	@echo "  make test-logx     run logx tests"
+ 	@echo "  make test-race     run root tests with race detector"
+ 	@echo "  make cover         generate coverage profile and summary"
+ 	@echo "  make vet           run go vet on root module"
+@@ -63,6 +64,9 @@ test-root:
+ test-errorx:
+ 	$(GO) test ./errorx -v
+ 
++test-logx:
++	$(GO) test ./logx -v
++
+ test-cmd:
+ ifeq ($(OS),Windows_NT)
+ 	@cmd /c scripts\test-cmd.cmd
+diff --git a/README.md b/README.md
+index c6344ee..d26eaab 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,28 @@ Current direction:
+ - Business code must not return raw `errors.New` or `fmt.Errorf` as API/business errors.
+ - Transport layers expose stable `error_code` values instead of Kratos-style `code + reason` status objects.
+ 
++
++## Logging model
++
++Use `github.com/aisphereio/kernel/logx` for logging. The old root `log/` package
++has been renamed to `logx/` and extended with the slog-based Kernel logging
++contract. Framework internals can still use slog-compatible helpers such as
++`logx.Info`, `logx.NewHandler`, and `logx.NewLogger`; business code should prefer
++`logx.Logger` plus typed `logx.Field` values.
++
++```go
++cfg := logx.DefaultConfig("dev")
++cfg.ServiceName = "aihub"
++logger, _, err := logx.New(cfg)
++if err != nil {
++    panic(err)
++}
++
++logger.Info("service started", logx.String("addr", ":8000"))
++```
++
++See `logx/README.md` and `docs/design/logx.md`.
++
+ ## Error model
+ 
+ Use `github.com/aisphereio/kernel/errorx` everywhere in handler, service, repository, worker and adapter code.
+@@ -115,6 +137,8 @@ scripts\verify-errorx.cmd
+ Start with:
+ 
+ - `errorx/README.md`
++- `logx/README.md`
++- `docs/design/logx.md`
+ - `docs/guides/errorx-user-guide.md`
+ - `docs/contracts/errorx.md`
+ - `docs/process/errorx-acceptance-checklist.md`
+diff --git a/app.go b/app.go
+index 77e2cd4..4662303 100644
+--- a/app.go
++++ b/app.go
+@@ -12,7 +12,7 @@ import (
+ 	"github.com/google/uuid"
+ 	"golang.org/x/sync/errgroup"
+ 
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ 	"github.com/aisphereio/kernel/registry"
+ 	"github.com/aisphereio/kernel/transport"
+ )
+@@ -49,7 +49,7 @@ func New(opts ...Option) *App {
+ 		opt(&o)
+ 	}
+ 	if o.logger != nil {
+-		log.SetDefault(o.logger)
++		logx.SetDefault(o.logger)
+ 	}
+ 	ctx, cancel := context.WithCancel(o.ctx)
+ 	return &App{
+diff --git a/config/config.go b/config/config.go
+index bdc595b..ae0561e 100644
+--- a/config/config.go
++++ b/config/config.go
+@@ -12,7 +12,7 @@ import (
+ 	_ "github.com/aisphereio/kernel/encoding/proto"
+ 	_ "github.com/aisphereio/kernel/encoding/xml"
+ 	_ "github.com/aisphereio/kernel/encoding/yaml"
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ )
+ 
+ var _ Config = (*config)(nil)
+@@ -60,19 +60,19 @@ func (c *config) watch(w Watcher) {
+ 		kvs, err := w.Next()
+ 		if err != nil {
+ 			if errors.Is(err, context.Canceled) {
+-				log.Info("watcher's ctx cancel", "error", err)
++				logx.Info("watcher's ctx cancel", "error", err)
+ 				return
+ 			}
+ 			time.Sleep(time.Second)
+-			log.Error("failed to watch next config", "error", err)
++			logx.Error("failed to watch next config", "error", err)
+ 			continue
+ 		}
+ 		if err := c.reader.Merge(kvs...); err != nil {
+-			log.Error("failed to merge next config", "error", err)
++			logx.Error("failed to merge next config", "error", err)
+ 			continue
+ 		}
+ 		if err := c.reader.Resolve(); err != nil {
+-			log.Error("failed to resolve next config", "error", err)
++			logx.Error("failed to resolve next config", "error", err)
+ 			continue
+ 		}
+ 		c.cached.Range(func(key, value any) bool {
+@@ -96,22 +96,22 @@ func (c *config) Load() error {
+ 			return err
+ 		}
+ 		for _, v := range kvs {
+-			log.Debug("config loaded", "key", v.Key, "format", v.Format)
++			logx.Debug("config loaded", "key", v.Key, "format", v.Format)
+ 		}
+ 		if err = c.reader.Merge(kvs...); err != nil {
+-			log.Error("failed to merge config source", "error", err)
++			logx.Error("failed to merge config source", "error", err)
+ 			return err
+ 		}
+ 		w, err := src.Watch()
+ 		if err != nil {
+-			log.Error("failed to watch config source", "error", err)
++			logx.Error("failed to watch config source", "error", err)
+ 			return err
+ 		}
+ 		c.watchers = append(c.watchers, w)
+ 		go c.watch(w)
+ 	}
+ 	if err := c.reader.Resolve(); err != nil {
+-		log.Error("failed to resolve config source", "error", err)
++		logx.Error("failed to resolve config source", "error", err)
+ 		return err
+ 	}
+ 	return nil
+diff --git a/config/reader.go b/config/reader.go
+index 1a66804..3d83081 100644
+--- a/config/reader.go
++++ b/config/reader.go
+@@ -11,7 +11,7 @@ import (
+ 	"google.golang.org/protobuf/encoding/protojson"
+ 	"google.golang.org/protobuf/proto"
+ 
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ )
+ 
+ // Reader is config reader.
+@@ -44,11 +44,11 @@ func (r *reader) Merge(kvs ...*KeyValue) error {
+ 	for _, kv := range kvs {
+ 		next := make(map[string]any)
+ 		if err := r.opts.decoder(kv, next); err != nil {
+-			log.Error("failed to decode config", "error", err, "key", kv.Key, "value", string(kv.Value))
++			logx.Error("failed to decode config", "error", err, "key", kv.Key, "value", string(kv.Value))
+ 			return err
+ 		}
+ 		if err := r.opts.merge(&merged, convertMap(next)); err != nil {
+-			log.Error("failed to merge config", "error", err, "key", kv.Key, "value", string(kv.Value))
++			logx.Error("failed to merge config", "error", err, "key", kv.Key, "value", string(kv.Value))
+ 			return err
+ 		}
+ 	}
+diff --git a/contextx/context.go b/contextx/context.go
+new file mode 100644
+index 0000000..de6b7e9
+--- /dev/null
++++ b/contextx/context.go
+@@ -0,0 +1,27 @@
++package contextx
++
++import (
++	"context"
++
++	"github.com/aisphereio/kernel/logx"
++)
++
++// Context is an optional ergonomic wrapper that enables ctx.Log(). It is kept
++// outside logx to avoid making logx depend on an application context package.
++type Context struct {
++	context.Context
++	fallback logx.Logger
++}
++
++func New(ctx context.Context, fallback logx.Logger) Context {
++	if ctx == nil {
++		ctx = context.Background()
++	}
++	return Context{Context: ctx, fallback: fallback}
++}
++
++func (c Context) Log() logx.Logger {
++	return logx.FromContextOr(c.Context, c.fallback)
++}
++
++func (c Context) GoContext() context.Context { return c.Context }
+diff --git a/contrib/config/apollo/apollo.go b/contrib/config/apollo/apollo.go
+index 775c918..88eb231 100644
+--- a/contrib/config/apollo/apollo.go
++++ b/contrib/config/apollo/apollo.go
+@@ -10,7 +10,7 @@ import (
+ 
+ 	"github.com/aisphereio/kernel/config"
+ 	"github.com/aisphereio/kernel/encoding"
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ )
+ 
+ type apollo struct {
+@@ -151,7 +151,7 @@ func (e *apollo) load() []*config.KeyValue {
+ 		if !e.opt.originConfig {
+ 			kv, err := e.getConfig(ns)
+ 			if err != nil {
+-				log.Error("apollo get config failed", "error", err)
++				logx.Error("apollo get config failed", "error", err)
+ 				continue
+ 			}
+ 			kvs = append(kvs, kv)
+@@ -161,7 +161,7 @@ func (e *apollo) load() []*config.KeyValue {
+ 			(format(ns) == yaml || format(ns) == yml || format(ns) == json) {
+ 			kv, err := e.getOriginConfig(ns)
+ 			if err != nil {
+-				log.Error("apollo get config failed", "error", err)
++				logx.Error("apollo get config failed", "error", err)
+ 				continue
+ 			}
+ 			kvs = append(kvs, kv)
+@@ -169,7 +169,7 @@ func (e *apollo) load() []*config.KeyValue {
+ 		}
+ 		kv, err := e.getConfig(ns)
+ 		if err != nil {
+-			log.Error("apollo get config failed", "error", err)
++			logx.Error("apollo get config failed", "error", err)
+ 			continue
+ 		}
+ 		kvs = append(kvs, kv)
+@@ -249,7 +249,7 @@ func resolve(key string, value any, target map[string]any) {
+ 		// current exists, then check existing value type, if it's not map
+ 		// that means duplicate keys, and at least one is not map instance.
+ 		if cursor, ok = v.(map[string]any); !ok {
+-			log.Warn("duplicate key", "key", strings.Join(keys[:i+1], "."))
++			logx.Warn("duplicate key", "key", strings.Join(keys[:i+1], "."))
+ 			break
+ 		}
+ 	}
+diff --git a/contrib/config/apollo/watcher.go b/contrib/config/apollo/watcher.go
+index f90167a..1fe2477 100644
+--- a/contrib/config/apollo/watcher.go
++++ b/contrib/config/apollo/watcher.go
+@@ -8,7 +8,7 @@ import (
+ 
+ 	"github.com/aisphereio/kernel/config"
+ 	"github.com/aisphereio/kernel/encoding"
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ )
+ 
+ type watcher struct {
+@@ -50,7 +50,7 @@ func (c *customChangeListener) onChange(namespace string, changes map[string]*st
+ 	codec := encoding.GetCodec(f)
+ 	val, err := codec.Marshal(next)
+ 	if err != nil {
+-		log.Warn("apollo could not handle namespace", "namespace", namespace, "error", err)
++		logx.Warn("apollo could not handle namespace", "namespace", namespace, "error", err)
+ 		return nil
+ 	}
+ 	kv = append(kv, &config.KeyValue{
+diff --git a/contrib/config/polaris/watcher.go b/contrib/config/polaris/watcher.go
+index 634e9bf..445fb7e 100644
+--- a/contrib/config/polaris/watcher.go
++++ b/contrib/config/polaris/watcher.go
+@@ -9,7 +9,7 @@ import (
+ 	"github.com/polarismesh/polaris-go/pkg/model"
+ 
+ 	"github.com/aisphereio/kernel/config"
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ )
+ 
+ type Watcher struct {
+@@ -33,7 +33,7 @@ func receive(event model.ConfigFileChangeEvent) {
+ 	ec := eventChanMap[getFullPath(meta.GetNamespace(), meta.GetFileGroup(), meta.GetFileName())]
+ 	defer func() {
+ 		if err := recover(); err != nil {
+-			log.Error("panic recovered", "err", err)
++			logx.Error("panic recovered", "err", err)
+ 		}
+ 	}()
+ 	if !ec.closed {
+diff --git a/contrib/otel/log/log_test.go b/contrib/otel/log/log_test.go
+index 9ddfda3..9b463b6 100644
+--- a/contrib/otel/log/log_test.go
++++ b/contrib/otel/log/log_test.go
+@@ -9,7 +9,7 @@ import (
+ 	"go.opentelemetry.io/otel/log/logtest"
+ 	"go.opentelemetry.io/otel/trace"
+ 
+-	klog "github.com/aisphereio/kernel/log"
++	klog "github.com/aisphereio/kernel/logx"
+ )
+ 
+ func TestTraceAttrs(t *testing.T) {
+@@ -147,7 +147,7 @@ func onlyRecording(t *testing.T, results logtest.Recording) (logtest.Scope, []lo
+ func recordAttrs(record logtest.Record) map[string]string {
+ 	attrs := map[string]string{}
+ 	for _, kv := range record.Attributes {
+-		if kv.Value.Kind() == otellog.KindString {
++		if kv.Value.Kind() == otellogx.KindString {
+ 			attrs[kv.Key] = kv.Value.AsString()
+ 		}
+ 	}
+diff --git a/contrib/polaris/config.go b/contrib/polaris/config.go
+index add9489..10d4efb 100644
+--- a/contrib/polaris/config.go
++++ b/contrib/polaris/config.go
+@@ -9,7 +9,7 @@ import (
+ 	"github.com/polarismesh/polaris-go/pkg/model"
+ 
+ 	"github.com/aisphereio/kernel/config"
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ )
+ 
+ // ConfigOption is polaris config option.
+@@ -77,7 +77,7 @@ func receive(event chan model.ConfigFileChangeEvent) func(m model.ConfigFileChan
+ 	return func(m model.ConfigFileChangeEvent) {
+ 		defer func() {
+ 			if err := recover(); err != nil {
+-				log.Error("panic recovered", "err", err)
++				logx.Error("panic recovered", "err", err)
+ 			}
+ 		}()
+ 		event <- m
+diff --git a/contrib/polaris/router.go b/contrib/polaris/router.go
+index 445826c..7562379 100644
+--- a/contrib/polaris/router.go
++++ b/contrib/polaris/router.go
+@@ -17,7 +17,7 @@ import (
+ 	"google.golang.org/protobuf/types/known/wrapperspb"
+ 
+ 	"github.com/aisphereio/kernel"
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ 	"github.com/aisphereio/kernel/selector"
+ 	"github.com/aisphereio/kernel/transport"
+ 	"github.com/aisphereio/kernel/transport/http"
+@@ -90,7 +90,7 @@ func (p *Polaris) NodeFilter(opts ...RouterOption) selector.NodeFilter {
+ 
+ 		instances, err := p.processRouters(sourceService, buildPolarisInstance(p.namespace, nodes))
+ 		if err != nil {
+-			log.Error("polaris process routers failed", "error", err)
++			logx.Error("polaris process routers failed", "error", err)
+ 			return nodes
+ 		}
+ 
+@@ -223,12 +223,12 @@ func buildPolarisInstance(namespace string, nodes []selector.Node) *pb.ServiceIn
+ 	for _, node := range nodes {
+ 		host, port, err := net.SplitHostPort(node.Address())
+ 		if err != nil {
+-			log.Error("split host port failed", "error", err)
++			logx.Error("split host port failed", "error", err)
+ 			return nil
+ 		}
+ 		portUint64, err := strconv.ParseUint(port, 10, 32)
+ 		if err != nil {
+-			log.Error("parse port failed", "error", err)
++			logx.Error("parse port failed", "error", err)
+ 			return nil
+ 		}
+ 		ins = append(ins, &v1.Instance{
+diff --git a/contrib/registry/consul/client.go b/contrib/registry/consul/client.go
+index 90bfcbd..82a65e6 100644
+--- a/contrib/registry/consul/client.go
++++ b/contrib/registry/consul/client.go
+@@ -12,7 +12,7 @@ import (
+ 	"sync"
+ 	"time"
+ 
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ 	"github.com/aisphereio/kernel/registry"
+ 
+ 	"github.com/hashicorp/consul/api"
+@@ -244,7 +244,7 @@ func (c *Client) Register(ctx context.Context, svc *registry.ServiceInstance, en
+ 			defer close(cc.done)
+ 			err = c.cli.Agent().UpdateTTL("service:"+svc.ID, "pass", "pass")
+ 			if err != nil {
+-				log.Error("[Consul] update ttl heartbeat to consul failed", "error", err)
++				logx.Error("[Consul] update ttl heartbeat to consul failed", "error", err)
+ 			}
+ 			ticker := time.NewTicker(time.Second * time.Duration(c.healthcheckInterval))
+ 			defer ticker.Stop()
+@@ -260,16 +260,16 @@ func (c *Client) Register(ctx context.Context, svc *registry.ServiceInstance, en
+ 						return
+ 					}
+ 					if err != nil {
+-						log.Error("[Consul] update ttl heartbeat to consul failed", "error", err)
++						logx.Error("[Consul] update ttl heartbeat to consul failed", "error", err)
+ 						// when the previous report fails, try to re register the service
+ 						if err := sleepCtx(cc.ctx, time.Duration(rand.IntN(5))*time.Second); err != nil {
+ 							_ = c.cli.Agent().ServiceDeregister(svc.ID)
+ 							return
+ 						}
+ 						if err := c.cli.Agent().ServiceRegisterOpts(asr, api.ServiceRegisterOpts{}.WithContext(cc.ctx)); err != nil {
+-							log.Error("[Consul] re registry service failed", "error", err)
++							logx.Error("[Consul] re registry service failed", "error", err)
+ 						} else {
+-							log.Warn("[Consul] re registry of service occurred success")
++							logx.Warn("[Consul] re registry of service occurred success")
+ 						}
+ 					}
+ 				}
+diff --git a/contrib/registry/discovery/discovery.go b/contrib/registry/discovery/discovery.go
+index 75e8027..ee73cad 100644
+--- a/contrib/registry/discovery/discovery.go
++++ b/contrib/registry/discovery/discovery.go
+@@ -13,7 +13,7 @@ import (
+ 	"github.com/go-resty/resty/v2"
+ 	"github.com/pkg/errors"
+ 
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ )
+ 
+ type Discovery struct {
+@@ -162,7 +162,7 @@ func (d *Discovery) resolveBuild(appID string) *Resolve {
+ 		}
+ 	}
+ 
+-	log.Debug("Discovery: AddWatch already watched", "appid", appID, "already_watch", ok)
++	logx.Debug("Discovery: AddWatch already watched", "appid", appID, "already_watch", ok)
+ 	d.once.Do(func() {
+ 		go d.serverProc()
+ 	})
+@@ -170,7 +170,7 @@ func (d *Discovery) resolveBuild(appID string) *Resolve {
+ }
+ 
+ func (d *Discovery) serverProc() {
+-	defer log.Debug("Discovery serverProc quit")
++	defer logx.Debug("Discovery serverProc quit")
+ 
+ 	var (
+ 		ctx    context.Context
+@@ -241,7 +241,7 @@ func (d *Discovery) renew(ctx context.Context, ins *discoveryInstance) (err erro
+ 		SetResult(&res).
+ 		Post(uri); err != nil {
+ 		d.switchNode()
+-		log.Error("Discovery: renew client.Get failed", "uri", uri, "env", c.Env, "appid", ins.AppID, "hostname", c.Host, "error", err)
++		logx.Error("Discovery: renew client.Get failed", "uri", uri, "env", c.Env, "appid", ins.AppID, "hostname", c.Host, "error", err)
+ 		return
+ 	}
+ 
+@@ -254,7 +254,7 @@ func (d *Discovery) renew(ctx context.Context, ins *discoveryInstance) (err erro
+ 			return
+ 		}
+ 
+-		log.Error("Discovery: renew client.Get returned code", "uri", uri, "env", c.Env, "appid", ins.AppID, "hostname", c.Host, "code", res.Code)
++		logx.Error("Discovery: renew client.Get returned code", "uri", uri, "env", c.Env, "appid", ins.AppID, "hostname", c.Host, "code", res.Code)
+ 	}
+ 
+ 	return
+@@ -279,7 +279,7 @@ func (d *Discovery) cancel(ins *discoveryInstance) (err error) {
+ 		SetResult(&res).
+ 		Post(uri); err != nil {
+ 		d.switchNode()
+-		log.Error("Discovery: cancel client.Get failed", "uri", uri, "env", config.Env, "appid", ins.AppID, "hostname", config.Host, "error", err)
++		logx.Error("Discovery: cancel client.Get failed", "uri", uri, "env", config.Env, "appid", ins.AppID, "hostname", config.Host, "error", err)
+ 		return
+ 	}
+ 
+@@ -289,7 +289,7 @@ func (d *Discovery) cancel(ins *discoveryInstance) (err error) {
+ 			return nil
+ 		}
+ 
+-		log.Warn("Discovery: cancel client.Get returned code", "uri", uri, "env", config.Env, "appid", ins.AppID, "hostname", config.Host, "code", res.Code)
++		logx.Warn("Discovery: cancel client.Get returned code", "uri", uri, "env", config.Env, "appid", ins.AppID, "hostname", config.Host, "code", res.Code)
+ 		err = fmt.Errorf("ErrorCode: %d", res.Code)
+ 		return
+ 	}
+@@ -380,13 +380,13 @@ func (d *Discovery) polls(ctx context.Context) (apps map[string]*disInstancesInf
+ 		SetQueryParamsFromValues(p).
+ 		SetResult(res).Get(uri); err != nil {
+ 		d.switchNode()
+-		log.Error("Discovery: client.Get failed", "uri", reqURI, "error", err)
++		logx.Error("Discovery: client.Get failed", "uri", reqURI, "error", err)
+ 		return nil, err
+ 	}
+ 
+ 	if res.Code != _codeOK {
+ 		if res.Code != _codeNotModified {
+-			log.Error("Discovery: client.Get returned code", "uri", reqURI, "code", res.Code)
++			logx.Error("Discovery: client.Get returned code", "uri", reqURI, "code", res.Code)
+ 		}
+ 		err = fmt.Errorf("discovery.polls failed ErrCode: %d", res.Code)
+ 		return
+@@ -395,12 +395,12 @@ func (d *Discovery) polls(ctx context.Context) (apps map[string]*disInstancesInf
+ 	for _, app := range res.Data {
+ 		if app.LastTs == 0 {
+ 			err = ErrServerError
+-			log.Error("Discovery: client.Get latest_timestamp is 0", "uri", reqURI, "instances", res.Data)
++			logx.Error("Discovery: client.Get latest_timestamp is 0", "uri", reqURI, "instances", res.Data)
+ 			return
+ 		}
+ 	}
+ 
+-	log.Debug("Discovery: successfully polls", "uri", reqURI, "instances", res.Data)
++	logx.Debug("Discovery: successfully polls", "uri", reqURI, "instances", res.Data)
+ 	apps = res.Data
+ 	return
+ }
+diff --git a/contrib/registry/discovery/impl_registrar.go b/contrib/registry/discovery/impl_registrar.go
+index ebe70c9..864d219 100644
+--- a/contrib/registry/discovery/impl_registrar.go
++++ b/contrib/registry/discovery/impl_registrar.go
+@@ -9,7 +9,7 @@ import (
+ 
+ 	"github.com/pkg/errors"
+ 
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ 	"github.com/aisphereio/kernel/registry"
+ )
+ 
+@@ -44,7 +44,7 @@ func (d *Discovery) Register(ctx context.Context, service *registry.ServiceInsta
+ 
+ 	// renew the current register_service
+ 	go func() {
+-		defer log.Warn("Discovery:register_service goroutine quit")
++		defer logx.Warn("Discovery:register_service goroutine quit")
+ 		ticker := time.NewTicker(_registerGap)
+ 		defer ticker.Stop()
+ 		for {
+@@ -71,7 +71,7 @@ func (d *Discovery) register(ctx context.Context, ins *discoveryInstance) (err e
+ 	var metadata []byte
+ 	if ins.Metadata != nil {
+ 		if metadata, err = json.Marshal(ins.Metadata); err != nil {
+-			log.Error("Discovery: register instance marshal metadata failed", "metadata", ins.Metadata, "error", err)
++			logx.Error("Discovery: register instance marshal metadata failed", "metadata", ins.Metadata, "error", err)
+ 		}
+ 	}
+ 	res := new(struct {
+@@ -101,18 +101,18 @@ func (d *Discovery) register(ctx context.Context, ins *discoveryInstance) (err e
+ 		SetResult(&res).
+ 		Post(uri); err != nil {
+ 		d.switchNode()
+-		log.Error("Discovery: register client.Get failed",
++		logx.Error("Discovery: register client.Get failed",
+ 			"uri", uri+"?"+p.Encode(), "zone", c.Zone, "env", c.Env, "appid", ins.AppID, "addrs", ins.Addrs, "error", err)
+ 		return
+ 	}
+ 
+ 	if res.Code != 0 {
+ 		err = fmt.Errorf("ErrorCode: %d", res.Code)
+-		log.Error("Discovery: register client.Get returned code",
++		logx.Error("Discovery: register client.Get returned code",
+ 			"uri", uri, "env", c.Env, "appid", ins.AppID, "addrs", ins.Addrs, "code", res.Code)
+ 	}
+ 
+-	log.Info("Discovery: register client.Get succeeded", "uri", uri, "env", c.Env, "appid", ins.AppID, "addrs", ins.Addrs)
++	logx.Info("Discovery: register client.Get succeeded", "uri", uri, "env", c.Env, "appid", ins.AppID, "addrs", ins.Addrs)
+ 
+ 	return
+ }
+diff --git a/contrib/registry/polaris/registry.go b/contrib/registry/polaris/registry.go
+index e55745b..9960cb3 100644
+--- a/contrib/registry/polaris/registry.go
++++ b/contrib/registry/polaris/registry.go
+@@ -8,7 +8,7 @@ import (
+ 	"strings"
+ 	"time"
+ 
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ 
+ 	"github.com/aisphereio/kernel/registry"
+ 
+@@ -242,7 +242,7 @@ func (r *Registry) Register(_ context.Context, serviceInstance *registry.Service
+ 						},
+ 					})
+ 					if err != nil {
+-						log.Error(err.Error())
++						logx.Error(err.Error())
+ 						continue
+ 					}
+ 				}
+diff --git a/contrib/registry/servicecomb/registry.go b/contrib/registry/servicecomb/registry.go
+index f451255..d8f4560 100644
+--- a/contrib/registry/servicecomb/registry.go
++++ b/contrib/registry/servicecomb/registry.go
+@@ -11,7 +11,7 @@ import (
+ 	"github.com/go-chassis/sc-client"
+ 	"github.com/gofrs/uuid"
+ 
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ 	"github.com/aisphereio/kernel/registry"
+ )
+ 
+@@ -154,7 +154,7 @@ func (r *Registry) Register(_ context.Context, svcIns *registry.ServiceInstance)
+ 			<-ticker.C
+ 			_, err = r.cli.Heartbeat(sid, svcIns.ID)
+ 			if err != nil {
+-				log.Error("failed to send heartbeat", "error", err)
++				logx.Error("failed to send heartbeat", "error", err)
+ 				continue
+ 			}
+ 		}
+diff --git a/log/README.md b/log/README.md
+deleted file mode 100644
+index 02becc9..0000000
+--- a/log/README.md
++++ /dev/null
+@@ -1,89 +0,0 @@
+-# Logger
+-
+-## Usage
+-
+-### slog
+-
+-```go
+-logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+-	Level: slog.LevelInfo,
+-}))
+-
+-log.SetDefault(logger)
+-
+-logger.InfoContext(ctx, "user created",
+-	"user_id", userID,
+-	"service.name", "helloworld",
+-)
+-```
+-
+-### Global logger
+-
+-Common global helpers are still available for gradual migration. The signatures
+-now mirror slog: the first argument is the message, followed by key/value pairs
+-or `slog.Attr` values.
+-
+-```go
+-log.Info("started")
+-log.Info("listening", "addr", addr)
+-log.Info("service started", "service.name", "helloworld", "service.version", "v1.0.0")
+-log.InfoContext(ctx, "user created", "user_id", userID)
+-```
+-
+-### Builder
+-
+-`log.NewHandler` builds a default handler. `log.NewLogger` wraps an existing
+-handler with Aisphere Kernel decorators. Attach fixed service attrs with `logger.With`.
+-
+-```go
+-logger := log.NewLogger(
+-	slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+-		Level: slog.LevelInfo,
+-	}),
+-	log.WithFilter(log.FilterKey("password")), // redact sensitive keys
+-).With(
+-	slog.String("service.id", id),
+-	slog.String("service.name", name),
+-	slog.String("service.version", version),
+-)
+-log.SetDefault(logger)
+-```
+-
+-### Context attrs
+-
+-Attach attributes to a `context.Context` and they will flow through any
+-ctx-aware log call automatically.
+-
+-```go
+-ctx = log.ContextWithAttrs(ctx, slog.String("request_id", id))
+-log.InfoContext(ctx, "handling request")
+-```
+-
+-### OpenTelemetry
+-
+-```go
+-import (
+-	otel "github.com/aisphereio/kernel/contrib/otel/v3/log"
+-	"github.com/aisphereio/kernel/log"
+-)
+-
+-logger := log.NewLogger(otel.NewHandler("helloworld"))
+-log.SetDefault(logger)
+-```
+-
+-The `github.com/aisphereio/kernel/contrib/otel/v3/log` handler bridges slog records to
+-OpenTelemetry Logs. Use the core log builder when you need Aisphere Kernel logger options:
+-
+-```go
+-import (
+-	"log/slog"
+-
+-	otel "github.com/aisphereio/kernel/contrib/otel/v3/log"
+-	"github.com/aisphereio/kernel/log"
+-)
+-
+-logger := log.NewLogger(
+-	otel.NewHandler("helloworld"),
+-	log.WithFilter(log.FilterKey("password")),
+-).With(slog.String("service.name", "helloworld"))
+-```
+diff --git a/logx/README.md b/logx/README.md
+new file mode 100644
+index 0000000..e781d82
+--- /dev/null
++++ b/logx/README.md
+@@ -0,0 +1,87 @@
++# logx
++
++`logx` is the Aisphere Kernel logging package. It keeps slog as the internal
++engine, but exposes a Kernel-facing API for business code:
++
++- `logx.Logger` and `logx.Field` for service/application code.
++- `logx.NewHandler` / `logx.NewLogger` for framework adapters that still need
++  direct slog compatibility.
++- `logx.ContextWithFields` / `logx.Inject` for request-scoped fields.
++- built-in redaction, sampling, access events, external-call events and test
++  logger support.
++
++## Business logger
++
++```go
++cfg := logx.DefaultConfig("dev")
++cfg.ServiceName = "aihub"
++logger, levelCtl, err := logx.New(cfg)
++if err != nil {
++    panic(err)
++}
++defer logger.Sync()
++
++logger.Info("service started",
++    logx.String("addr", ":8000"),
++    logx.String("version", "v0.1.0"),
++)
++
++_ = levelCtl.SetLevel("debug")
++```
++
++## Context fields
++
++```go
++ctx = logx.ContextWithFields(ctx,
++    logx.String("request_id", requestID),
++    logx.String("trace_id", traceID),
++    logx.String("subject_id", subjectID),
++)
++
++logx.FromContextOr(ctx, logger).Info("request accepted")
++```
++
++## Framework slog compatibility
++
++Kernel internals can still use slog-compatible helpers while migrating:
++
++```go
++handler := logx.NewHandler(
++    logx.WithWriter(os.Stdout),
++    logx.WithFormat(logx.FormatJSON),
++    logx.WithFilter(logx.FilterKey("password", "token")),
++)
++logx.SetDefault(slog.New(handler))
++logx.Info("listening", "addr", addr)
++```
++
++## Error logs
++
++```go
++logger.Error("create skill failed",
++    logx.String("operation", "aihub.skill.create"),
++    logx.Err(err),
++)
++```
++
++`logx.Err` extracts common weak error interfaces such as `ErrorCode`,
++`HTTPStatus`, `StatusCode`, `GRPCCode`, and `Retryable`, so it works with
++`errorx` without importing `errorx` and creating cycles.
++
++## Access logs
++
++```go
++logx.LogAccess(logger, logx.AccessEvent{
++    Side:       "server",
++    Protocol:   "http",
++    Operation:  "POST /v1/skills",
++    StatusCode: 201,
++    Latency:    latency,
++})
++```
++
++## OpenTelemetry extractor
++
++The optional `logx/otelx` package is behind the `otel` build tag and can extract
++`trace_id` / `span_id` from OpenTelemetry contexts without making core `logx`
++depend on OTel.
+diff --git a/logx/access.go b/logx/access.go
+new file mode 100644
+index 0000000..e7705c5
+--- /dev/null
++++ b/logx/access.go
+@@ -0,0 +1,54 @@
++package logx
++
++import "time"
++
++type AccessEvent struct {
++	Side       string
++	Protocol   string
++	Operation  string
++	Component  string
++	Method     string
++	Path       string
++	StatusCode int
++	Code       string
++	Reason     string
++	Latency    time.Duration
++	Err        error
++	Fields     []Field
++}
++
++func LogAccess(logger Logger, e AccessEvent) {
++	if logger == nil {
++		logger = Noop()
++	}
++	fields := []Field{
++		Event("access"),
++		String("side", e.Side),
++		String("protocol", e.Protocol),
++		String("component", e.Component),
++		String("operation", e.Operation),
++		String("method", e.Method),
++		String("path", e.Path),
++		Int("status", e.StatusCode),
++		String("code", e.Code),
++		String("reason", e.Reason),
++		Duration("latency", e.Latency),
++		Int64("latency_ms", e.Latency.Milliseconds()),
++	}
++	if e.Err != nil {
++		fields = append(fields, Err(e.Err))
++	}
++	fields = append(fields, e.Fields...)
++	msg := "request completed"
++	if e.Operation != "" {
++		msg = e.Operation + " completed"
++	}
++	switch {
++	case e.Err != nil || e.StatusCode >= 500:
++		logger.Error(msg, fields...)
++	case e.StatusCode >= 400:
++		logger.Warn(msg, fields...)
++	default:
++		logger.Info(msg, fields...)
++	}
++}
+diff --git a/logx/audit_hint.go b/logx/audit_hint.go
+new file mode 100644
+index 0000000..1c1b977
+--- /dev/null
++++ b/logx/audit_hint.go
+@@ -0,0 +1,29 @@
++package logx
++
++// AuditHint is intentionally not an audit record. It only leaves an operational
++// log breadcrumb saying an auditable operation happened. Compliance-grade
++// records must go through auditx.
++type AuditHint struct {
++	Action       string
++	ActorID      string
++	ResourceType string
++	ResourceID   string
++	Result       string
++	Fields       []Field
++}
++
++func LogAuditHint(logger Logger, hint AuditHint) {
++	if logger == nil {
++		logger = Noop()
++	}
++	fields := []Field{
++		Event("audit_hint"),
++		String("action", hint.Action),
++		String("actor_id", hint.ActorID),
++		String("resource_type", hint.ResourceType),
++		String("resource_id", hint.ResourceID),
++		String("result", hint.Result),
++	}
++	fields = append(fields, hint.Fields...)
++	logger.Info("audit hint", fields...)
++}
+diff --git a/log/builder.go b/logx/builder.go
+similarity index 70%
+rename from log/builder.go
+rename to logx/builder.go
+index 5df3fd1..efe2d6a 100644
+--- a/log/builder.go
++++ b/logx/builder.go
+@@ -1,4 +1,4 @@
+-package log
++package logx
+ 
+ import (
+ 	"context"
+@@ -8,13 +8,15 @@ import (
+ )
+ 
+ // Format selects the encoding used by the default handler builder.
+-type Format int
++type Format string
+ 
+ const (
+ 	// FormatText writes records using [slog.NewTextHandler].
+-	FormatText Format = iota
++	FormatText Format = "console"
++	// FormatConsole is an alias of FormatText for config files.
++	FormatConsole Format = FormatText
+ 	// FormatJSON writes records using [slog.NewJSONHandler].
+-	FormatJSON
++	FormatJSON Format = "json"
+ )
+ 
+ // Option configures [NewHandler] and the decorators applied by [NewLogger].
+@@ -24,16 +26,24 @@ type Option func(*handlerConfig)
+ type Extractor func(context.Context) []slog.Attr
+ 
+ type handlerConfig struct {
+-	writer      io.Writer
+-	format      Format
+-	level       Leveler
+-	addSource   bool
+-	replaceAttr func(groups []string, a slog.Attr) slog.Attr
+-	extractors  []Extractor
+-	filter      []FilterOption
++	writer          io.Writer
++	format          Format
++	level           Leveler
++	addSource       bool
++	replaceAttr     func(groups []string, a slog.Attr) slog.Attr
++	extractors      []Extractor
++	filter          []FilterOption
++	fieldExtractors []FieldExtractor
++	dropFilters     []DropFilter
+ }
+ 
+ // WithExtractor appends attrs extracted from each log call context.
++// FieldExtractor extracts logx fields from a log call context.
++type FieldExtractor func(context.Context) []Field
++
++// DropFilter returns true when a structured log entry should be dropped.
++type DropFilter func(context.Context, Entry) bool
++
+ func WithExtractor(extractors ...Extractor) Option {
+ 	return func(c *handlerConfig) {
+ 		for _, e := range extractors {
+@@ -44,6 +54,28 @@ func WithExtractor(extractors ...Extractor) Option {
+ 	}
+ }
+ 
++// WithFieldExtractor appends business-facing field extractors used by New/NewSlog.
++func WithFieldExtractor(extractors ...FieldExtractor) Option {
++	return func(c *handlerConfig) {
++		for _, e := range extractors {
++			if e != nil {
++				c.fieldExtractors = append(c.fieldExtractors, e)
++			}
++		}
++	}
++}
++
++// WithDropFilter appends entry drop filters used by New/NewSlog.
++func WithDropFilter(filters ...DropFilter) Option {
++	return func(c *handlerConfig) {
++		for _, f := range filters {
++			if f != nil {
++				c.dropFilters = append(c.dropFilters, f)
++			}
++		}
++	}
++}
++
+ // WithWriter sets the destination writer for the base handler. Defaults to
+ // [os.Stderr].
+ func WithWriter(w io.Writer) Option {
+@@ -120,7 +152,7 @@ func newBaseHandler(cfg *handlerConfig) slog.Handler {
+ 		AddSource:   cfg.addSource,
+ 		ReplaceAttr: cfg.replaceAttr,
+ 	}
+-	switch cfg.format {
++	switch normalizeFormat(cfg.format) {
+ 	case FormatJSON:
+ 		return slog.NewJSONHandler(cfg.writer, hopts)
+ 	default:
+diff --git a/log/builder_test.go b/logx/builder_test.go
+similarity index 99%
+rename from log/builder_test.go
+rename to logx/builder_test.go
+index b0d2d13..6be4815 100644
+--- a/log/builder_test.go
++++ b/logx/builder_test.go
+@@ -1,4 +1,4 @@
+-package log
++package logx
+ 
+ import (
+ 	"bytes"
+diff --git a/logx/config.go b/logx/config.go
+new file mode 100644
+index 0000000..889832a
+--- /dev/null
++++ b/logx/config.go
+@@ -0,0 +1,88 @@
++package logx
++
++import "time"
++
++type Output string
++
++const (
++	OutputStdout Output = "stdout"
++	OutputStderr Output = "stderr"
++)
++
++type Config struct {
++	ServiceName string          `json:"service_name" yaml:"service_name"`
++	Env         string          `json:"env" yaml:"env"`
++	Version     string          `json:"version" yaml:"version"`
++	NodeID      string          `json:"node_id" yaml:"node_id"`
++	Level       string          `json:"level" yaml:"level"`
++	Format      Format          `json:"format" yaml:"format"`
++	Output      string          `json:"output" yaml:"output"` // stdout, stderr, or file path
++	AddSource   bool            `json:"add_source" yaml:"add_source"`
++	Redact      RedactConfig    `json:"redact" yaml:"redact"`
++	Sampling    SamplingConfig  `json:"sampling" yaml:"sampling"`
++	AccessLog   AccessLogConfig `json:"access_log" yaml:"access_log"`
++}
++
++type RedactConfig struct {
++	Enabled bool     `json:"enabled" yaml:"enabled"`
++	Keys    []string `json:"keys" yaml:"keys"`
++	Value   string   `json:"value" yaml:"value"`
++}
++
++type SamplingConfig struct {
++	Enabled  bool          `json:"enabled" yaml:"enabled"`
++	Every    int           `json:"every" yaml:"every"`         // keep 1 of every N records after First
++	First    int           `json:"first" yaml:"first"`         // always keep first N records per level/message key
++	Window   time.Duration `json:"window" yaml:"window"`       // reset sampling counters periodically
++	MinLevel string        `json:"min_level" yaml:"min_level"` // only sample levels <= min_level, default debug
++}
++
++type AccessLogConfig struct {
++	Enabled         bool          `json:"enabled" yaml:"enabled"`
++	SkipPaths       []string      `json:"skip_paths" yaml:"skip_paths"`
++	SlowThreshold   time.Duration `json:"slow_threshold" yaml:"slow_threshold"`
++	RequestIDHeader string        `json:"request_id_header" yaml:"request_id_header"`
++	RouteHeader     string        `json:"route_header" yaml:"route_header"`
++	LogUserAgent    bool          `json:"log_user_agent" yaml:"log_user_agent"`
++	LogReferer      bool          `json:"log_referer" yaml:"log_referer"`
++}
++
++func DefaultConfig(env string) Config {
++	if env == "" {
++		env = "dev"
++	}
++	format := FormatJSON
++	if env == "dev" || env == "local" {
++		format = FormatConsole
++	}
++	return Config{
++		ServiceName: "app",
++		Env:         env,
++		Version:     "dev",
++		Level:       InfoLevel.String(),
++		Format:      format,
++		Output:      string(OutputStdout),
++		AddSource:   env == "dev" || env == "local",
++		Redact: RedactConfig{
++			Enabled: true,
++			Keys:    DefaultRedactKeys(),
++			Value:   "***",
++		},
++		Sampling: SamplingConfig{
++			Enabled:  false,
++			Every:    100,
++			First:    100,
++			Window:   time.Second,
++			MinLevel: DebugLevel.String(),
++		},
++		AccessLog: AccessLogConfig{
++			Enabled:         true,
++			SkipPaths:       []string{"/healthz", "/readyz", "/metrics"},
++			SlowThreshold:   time.Second,
++			RequestIDHeader: "X-Request-ID",
++			RouteHeader:     "X-Route-Pattern",
++			LogUserAgent:    true,
++			LogReferer:      false,
++		},
++	}
++}
+diff --git a/log/context.go b/logx/context.go
+similarity index 99%
+rename from log/context.go
+rename to logx/context.go
+index 990373f..2630ec9 100644
+--- a/log/context.go
++++ b/logx/context.go
+@@ -1,4 +1,4 @@
+-package log
++package logx
+ 
+ import (
+ 	"context"
+diff --git a/log/context_test.go b/logx/context_test.go
+similarity index 99%
+rename from log/context_test.go
+rename to logx/context_test.go
+index 18ea2d2..f42cdce 100644
+--- a/log/context_test.go
++++ b/logx/context_test.go
+@@ -1,4 +1,4 @@
+-package log
++package logx
+ 
+ import (
+ 	"context"
+diff --git a/logx/drop_filter.go b/logx/drop_filter.go
+new file mode 100644
+index 0000000..c3bfa6c
+--- /dev/null
++++ b/logx/drop_filter.go
+@@ -0,0 +1,93 @@
++package logx
++
++import (
++	"context"
++	"log/slog"
++)
++
++// Entry is a normalized log record used by filters and test loggers.
++type Entry struct {
++	Level   LogLevel
++	Message string
++	Fields  []Field
++}
++
++func newDropFilterHandler(next slog.Handler, filters ...DropFilter) slog.Handler {
++	compact := make([]DropFilter, 0, len(filters))
++	for _, filter := range filters {
++		if filter != nil {
++			compact = append(compact, filter)
++		}
++	}
++	if len(compact) == 0 {
++		return next
++	}
++	return &dropFilterHandler{next: next, filters: compact}
++}
++
++type dropFilterHandler struct {
++	next    slog.Handler
++	filters []DropFilter
++}
++
++func (h *dropFilterHandler) Enabled(ctx context.Context, level slog.Level) bool {
++	return h.next.Enabled(ctx, level)
++}
++
++func (h *dropFilterHandler) Handle(ctx context.Context, record slog.Record) error {
++	entry := entryFromRecord(record)
++	for _, filter := range h.filters {
++		if filter(ctx, entry) {
++			return nil
++		}
++	}
++	return h.next.Handle(ctx, record)
++}
++
++func (h *dropFilterHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
++	return &dropFilterHandler{next: h.next.WithAttrs(attrs), filters: h.filters}
++}
++
++func (h *dropFilterHandler) WithGroup(name string) slog.Handler {
++	return &dropFilterHandler{next: h.next.WithGroup(name), filters: h.filters}
++}
++
++func entryFromRecord(record slog.Record) Entry {
++	fields := make([]Field, 0, record.NumAttrs())
++	record.Attrs(func(attr slog.Attr) bool {
++		fields = append(fields, Field{Key: attr.Key, Value: attr.Value.Any()})
++		return true
++	})
++	return Entry{Level: logLevelFromSlog(record.Level), Message: record.Message, Fields: fields}
++}
++
++func DropEvents(events ...string) DropFilter {
++	set := make(map[string]struct{}, len(events))
++	for _, event := range events {
++		if event != "" {
++			set[event] = struct{}{}
++		}
++	}
++	return func(_ context.Context, e Entry) bool {
++		for _, field := range e.Fields {
++			if field.Key == "event" {
++				_, ok := set[stringify(field.Value)]
++				return ok
++			}
++		}
++		return false
++	}
++}
++
++func DropMessages(messages ...string) DropFilter {
++	set := make(map[string]struct{}, len(messages))
++	for _, msg := range messages {
++		if msg != "" {
++			set[msg] = struct{}{}
++		}
++	}
++	return func(_ context.Context, e Entry) bool {
++		_, ok := set[e.Message]
++		return ok
++	}
++}
+diff --git a/logx/errorx.go b/logx/errorx.go
+new file mode 100644
+index 0000000..e923eda
+--- /dev/null
++++ b/logx/errorx.go
+@@ -0,0 +1,42 @@
++package logx
++
++// Weak interfaces for future errorx integration. logx must not import errorx,
++// otherwise errorx and logx can easily form an import cycle.
++type codeCarrier interface{ Code() string }
++type errorCodeCarrier interface{ ErrorCode() string }
++type reasonCarrier interface{ Reason() string }
++type httpStatusCarrier interface{ HTTPStatus() int }
++type statusCodeCarrier interface{ StatusCode() int }
++type retryableCarrier interface{ Retryable() bool }
++type grpcCodeStringCarrier interface{ GRPCCode() string }
++type grpcCodeIntCarrier interface{ GRPCCode() int }
++
++// ErrorLog is a standard helper for business error logs.
++type ErrorLog struct {
++	Operation    string
++	ResourceType string
++	ResourceID   string
++	Code         string
++	Reason       string
++	Err          error
++	Fields       []Field
++}
++
++func LogError(logger Logger, msg string, e ErrorLog) {
++	if logger == nil {
++		logger = Noop()
++	}
++	fields := []Field{
++		Event("error"),
++		String("operation", e.Operation),
++		String("resource_type", e.ResourceType),
++		String("resource_id", e.ResourceID),
++		String("error_code", e.Code),
++		String("error_reason", e.Reason),
++	}
++	if e.Err != nil {
++		fields = append(fields, Err(e.Err))
++	}
++	fields = append(fields, e.Fields...)
++	logger.Error(msg, fields...)
++}
+diff --git a/logx/external_call.go b/logx/external_call.go
+new file mode 100644
+index 0000000..279c2ec
+--- /dev/null
++++ b/logx/external_call.go
+@@ -0,0 +1,47 @@
++package logx
++
++import "time"
++
++type ExternalCall struct {
++	Provider       string
++	Service        string
++	Operation      string
++	Model          string
++	Endpoint       string
++	StatusCode     int
++	UpstreamStatus string
++	Latency        time.Duration
++	Err            error
++	Fields         []Field
++}
++
++func LogExternalCall(logger Logger, call ExternalCall) {
++	if logger == nil {
++		logger = Noop()
++	}
++	fields := []Field{
++		Event("external_call"),
++		String("provider", call.Provider),
++		String("upstream_service", call.Service),
++		String("operation", call.Operation),
++		String("model", call.Model),
++		String("endpoint", call.Endpoint),
++		Int("status", call.StatusCode),
++		String("upstream_status", call.UpstreamStatus),
++		Duration("latency", call.Latency),
++		Int64("latency_ms", call.Latency.Milliseconds()),
++	}
++	if call.Err != nil {
++		fields = append(fields, Err(call.Err))
++	}
++	fields = append(fields, call.Fields...)
++	if call.Err != nil || call.StatusCode >= 500 {
++		logger.Error("external call failed", fields...)
++		return
++	}
++	if call.StatusCode >= 400 {
++		logger.Warn("external call completed with client error", fields...)
++		return
++	}
++	logger.Info("external call completed", fields...)
++}
+diff --git a/logx/field.go b/logx/field.go
+new file mode 100644
+index 0000000..9e07455
+--- /dev/null
++++ b/logx/field.go
+@@ -0,0 +1,161 @@
++package logx
++
++import (
++	"fmt"
++	"log/slog"
++	"reflect"
++	"runtime"
++	"time"
++)
++
++// Field is the only field type exposed to business code.
++// Do not alias slog.Attr here, otherwise the Kernel ABI leaks the engine.
++type Field struct {
++	Key   string
++	Value any
++}
++
++func String(key, value string) Field                 { return Field{Key: key, Value: value} }
++func Int(key string, value int) Field                { return Field{Key: key, Value: value} }
++func Int64(key string, value int64) Field            { return Field{Key: key, Value: value} }
++func Uint64(key string, value uint64) Field          { return Field{Key: key, Value: value} }
++func Bool(key string, value bool) Field              { return Field{Key: key, Value: value} }
++func Float64(key string, value float64) Field        { return Field{Key: key, Value: value} }
++func Duration(key string, value time.Duration) Field { return Field{Key: key, Value: value} }
++func Time(key string, value time.Time) Field         { return Field{Key: key, Value: value} }
++func Any(key string, value any) Field                { return Field{Key: key, Value: value} }
++func Event(name string) Field                        { return String("event", name) }
++func Err(err error) Field                            { return Field{Key: "error", Value: err} }
++
++// Group is useful when a value is naturally nested, but most platform fields
++// should stay flat for Loki/ELK/ClickHouse indexing.
++func Group(key string, fields ...Field) Field { return Field{Key: key, Value: fields} }
++
++// Redacter can be implemented by request/response objects that explicitly know
++// how to produce a safe log representation. Unlike Kratos, logx does not print
++// arbitrary request objects by default.
++type Redacter interface {
++	Redact() any
++}
++
++func fieldsToAttrs(fields []Field, redactor Redactor) []slog.Attr {
++	attrs := make([]slog.Attr, 0, len(fields)+4)
++	for _, field := range fields {
++		attrs = appendField(attrs, field, redactor)
++	}
++	return attrs
++}
++
++func appendField(attrs []slog.Attr, field Field, redactor Redactor) []slog.Attr {
++	if field.Key == "" {
++		return attrs
++	}
++	if redactor != nil {
++		field = redactor.Redact(field)
++	}
++	if field.Value == nil {
++		return append(attrs, slog.Any(field.Key, nil))
++	}
++	if field.Key == "error" {
++		if err, ok := field.Value.(error); ok {
++			return appendErrorAttrs(attrs, err)
++		}
++	}
++	if nested, ok := field.Value.([]Field); ok {
++		groupAttrs := fieldsToAttrs(nested, redactor)
++		return append(attrs, slog.Group(field.Key, attrsToAny(groupAttrs)...))
++	}
++	switch v := field.Value.(type) {
++	case string:
++		return append(attrs, slog.String(field.Key, v))
++	case int:
++		return append(attrs, slog.Int(field.Key, v))
++	case int64:
++		return append(attrs, slog.Int64(field.Key, v))
++	case uint64:
++		return append(attrs, slog.Uint64(field.Key, v))
++	case bool:
++		return append(attrs, slog.Bool(field.Key, v))
++	case float64:
++		return append(attrs, slog.Float64(field.Key, v))
++	case time.Duration:
++		return append(attrs, slog.Duration(field.Key, v), slog.Int64(field.Key+"_ms", v.Milliseconds()))
++	case time.Time:
++		return append(attrs, slog.Time(field.Key, v))
++	case error:
++		return append(attrs, slog.String(field.Key, v.Error()))
++	case Redacter:
++		return append(attrs, slog.Any(field.Key, v.Redact()))
++	default:
++		return append(attrs, slog.Any(field.Key, v))
++	}
++}
++
++func attrsToAny(attrs []slog.Attr) []any {
++	out := make([]any, 0, len(attrs))
++	for _, a := range attrs {
++		out = append(out, a)
++	}
++	return out
++}
++
++func appendErrorAttrs(attrs []slog.Attr, err error) []slog.Attr {
++	if err == nil {
++		return attrs
++	}
++	attrs = append(attrs,
++		slog.String("error", err.Error()),
++		slog.String("error_type", typeName(err)),
++	)
++	if e, ok := err.(codeCarrier); ok && e.Code() != "" {
++		attrs = append(attrs, slog.String("error_code", e.Code()))
++	} else if e, ok := err.(errorCodeCarrier); ok && e.ErrorCode() != "" {
++		attrs = append(attrs, slog.String("error_code", e.ErrorCode()))
++	}
++	if e, ok := err.(reasonCarrier); ok && e.Reason() != "" {
++		attrs = append(attrs, slog.String("error_reason", e.Reason()))
++	}
++	if e, ok := err.(httpStatusCarrier); ok && e.HTTPStatus() > 0 {
++		attrs = append(attrs, slog.Int("http_status", e.HTTPStatus()))
++	} else if e, ok := err.(statusCodeCarrier); ok && e.StatusCode() > 0 {
++		attrs = append(attrs, slog.Int("http_status", e.StatusCode()))
++	}
++	if e, ok := err.(retryableCarrier); ok {
++		attrs = append(attrs, slog.Bool("retryable", e.Retryable()))
++	}
++	if e, ok := err.(grpcCodeStringCarrier); ok && e.GRPCCode() != "" {
++		attrs = append(attrs, slog.String("grpc_code", e.GRPCCode()))
++	} else if e, ok := err.(grpcCodeIntCarrier); ok {
++		attrs = append(attrs, slog.Int("grpc_code", e.GRPCCode()))
++	}
++	return attrs
++}
++
++func typeName(v any) string {
++	if v == nil {
++		return ""
++	}
++	t := reflect.TypeOf(v)
++	if t == nil {
++		return ""
++	}
++	return t.String()
++}
++
++func sourcePC(skip int) uintptr {
++	pcs := make([]uintptr, 1)
++	if runtime.Callers(skip, pcs) == 0 {
++		return 0
++	}
++	return pcs[0]
++}
++
++func stringify(v any) string {
++	if v == nil {
++		return ""
++	}
++	if s, ok := v.(fmt.Stringer); ok {
++		return s.String()
++	}
++	return fmt.Sprint(v)
++}
+diff --git a/logx/field_context.go b/logx/field_context.go
+new file mode 100644
+index 0000000..5304b3d
+--- /dev/null
++++ b/logx/field_context.go
+@@ -0,0 +1,113 @@
++package logx
++
++import (
++	"context"
++	"log/slog"
++)
++
++type ctxFieldsKey struct{}
++type ctxLoggerKey struct{}
++
++func ContextWithFields(ctx context.Context, fields ...Field) context.Context {
++	if ctx == nil {
++		ctx = context.Background()
++	}
++	if len(fields) == 0 {
++		return ctx
++	}
++	prev := FieldsFromContext(ctx)
++	merged := make([]Field, 0, len(prev)+len(fields))
++	merged = append(merged, prev...)
++	merged = append(merged, fields...)
++	return context.WithValue(ctx, ctxFieldsKey{}, merged)
++}
++
++func FieldsFromContext(ctx context.Context) []Field {
++	if ctx == nil {
++		return nil
++	}
++	fields, _ := ctx.Value(ctxFieldsKey{}).([]Field)
++	return fields
++}
++
++// Inject stores request-scoped fields and a context-bound logger in ctx. It is
++// the single primitive adapters should call after extracting request identity,
++// trace identity, tenant/project info, etc.
++func Inject(ctx context.Context, logger Logger, fields ...Field) context.Context {
++	ctx = ContextWithFields(ctx, fields...)
++	if logger == nil {
++		logger = Noop()
++	}
++	return context.WithValue(ctx, ctxLoggerKey{}, logger.WithContext(ctx))
++}
++
++func FromContext(ctx context.Context) Logger {
++	if ctx == nil {
++		return Noop()
++	}
++	if logger, ok := ctx.Value(ctxLoggerKey{}).(Logger); ok && logger != nil {
++		return logger
++	}
++	return Noop()
++}
++
++func FromContextOr(ctx context.Context, fallback Logger) Logger {
++	if ctx == nil {
++		if fallback == nil {
++			return Noop()
++		}
++		return fallback
++	}
++	if logger, ok := ctx.Value(ctxLoggerKey{}).(Logger); ok && logger != nil {
++		return logger
++	}
++	if fallback == nil {
++		return Noop()
++	}
++	return fallback.WithContext(ctx)
++}
++
++func newFieldContextHandler(next slog.Handler, extractors ...FieldExtractor) slog.Handler {
++	if next == nil {
++		next = discardHandler{}
++	}
++	compact := extractors[:0]
++	for _, fn := range extractors {
++		if fn != nil {
++			compact = append(compact, fn)
++		}
++	}
++	if len(compact) == 0 {
++		return next
++	}
++	return &fieldContextHandler{next: next, extractors: compact}
++}
++
++type fieldContextHandler struct {
++	next       slog.Handler
++	extractors []FieldExtractor
++}
++
++func (h *fieldContextHandler) Enabled(ctx context.Context, level slog.Level) bool {
++	return h.next.Enabled(ctx, level)
++}
++
++func (h *fieldContextHandler) Handle(ctx context.Context, record slog.Record) error {
++	var fields []Field
++	for _, fn := range h.extractors {
++		fields = append(fields, fn(ctx)...)
++	}
++	if len(fields) > 0 {
++		record = record.Clone()
++		record.AddAttrs(fieldsToAttrs(fields, nil)...)
++	}
++	return h.next.Handle(ctx, record)
++}
++
++func (h *fieldContextHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
++	return &fieldContextHandler{next: h.next.WithAttrs(attrs), extractors: h.extractors}
++}
++
++func (h *fieldContextHandler) WithGroup(name string) slog.Handler {
++	return &fieldContextHandler{next: h.next.WithGroup(name), extractors: h.extractors}
++}
+diff --git a/log/filter.go b/logx/filter.go
+similarity index 99%
+rename from log/filter.go
+rename to logx/filter.go
+index 97c2fde..dee3e78 100644
+--- a/log/filter.go
++++ b/logx/filter.go
+@@ -1,4 +1,4 @@
+-package log
++package logx
+ 
+ import (
+ 	"context"
+diff --git a/log/filter_test.go b/logx/filter_test.go
+similarity index 99%
+rename from log/filter_test.go
+rename to logx/filter_test.go
+index 0f0518f..248fb5a 100644
+--- a/log/filter_test.go
++++ b/logx/filter_test.go
+@@ -1,4 +1,4 @@
+-package log
++package logx
+ 
+ import (
+ 	"bytes"
+diff --git a/log/handler.go b/logx/handler.go
+similarity index 97%
+rename from log/handler.go
+rename to logx/handler.go
+index 115f9f0..f8a6307 100644
+--- a/log/handler.go
++++ b/logx/handler.go
+@@ -1,4 +1,4 @@
+-package log
++package logx
+ 
+ import (
+ 	"context"
+diff --git a/logx/http_access.go b/logx/http_access.go
+new file mode 100644
+index 0000000..49a1b36
+--- /dev/null
++++ b/logx/http_access.go
+@@ -0,0 +1,247 @@
++package logx
++
++import (
++	"bufio"
++	"context"
++	"crypto/rand"
++	"encoding/hex"
++	"errors"
++	"net"
++	"net/http"
++	"strconv"
++	"strings"
++	"time"
++)
++
++var errHijackNotSupported = errors.New("response writer does not support hijacking")
++
++type PrincipalResolver func(*http.Request) []Field
++type RouteResolver func(*http.Request) string
++
++type HTTPAccessOption func(*httpAccessOptions)
++
++type httpAccessOptions struct {
++	principalResolver PrincipalResolver
++	routeResolver     RouteResolver
++	requestIDHeader   string
++}
++
++func WithPrincipalResolver(fn PrincipalResolver) HTTPAccessOption {
++	return func(o *httpAccessOptions) { o.principalResolver = fn }
++}
++
++func WithRouteResolver(fn RouteResolver) HTTPAccessOption {
++	return func(o *httpAccessOptions) { o.routeResolver = fn }
++}
++
++func WithRequestIDHeader(header string) HTTPAccessOption {
++	return func(o *httpAccessOptions) { o.requestIDHeader = header }
++}
++
++func HTTPAccessLog(base Logger, cfg AccessLogConfig, opts ...HTTPAccessOption) func(http.Handler) http.Handler {
++	if base == nil {
++		base = Noop()
++	}
++	if cfg.RequestIDHeader == "" {
++		cfg.RequestIDHeader = "X-Request-ID"
++	}
++	if cfg.RouteHeader == "" {
++		cfg.RouteHeader = "X-Route-Pattern"
++	}
++	options := &httpAccessOptions{requestIDHeader: cfg.RequestIDHeader}
++	for _, opt := range opts {
++		if opt != nil {
++			opt(options)
++		}
++	}
++	skip := make(map[string]struct{}, len(cfg.SkipPaths))
++	for _, path := range cfg.SkipPaths {
++		if path != "" {
++			skip[path] = struct{}{}
++		}
++	}
++	return func(next http.Handler) http.Handler {
++		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++			start := time.Now()
++			requestID := r.Header.Get(options.requestIDHeader)
++			if requestID == "" {
++				requestID = newRequestID()
++			}
++			w.Header().Set(options.requestIDHeader, requestID)
++
++			ctx := r.Context()
++			ctxFields := []Field{
++				String("request_id", requestID),
++				String("client_ip", clientIP(r)),
++			}
++			ctxFields = append(ctxFields, traceFieldsFromHTTPRequest(r)...)
++			if options.principalResolver != nil {
++				ctxFields = append(ctxFields, options.principalResolver(r)...)
++			}
++			ctx = Inject(ctx, base, ctxFields...)
++			r = r.WithContext(ctx)
++
++			rw := &statusResponseWriter{ResponseWriter: w, status: http.StatusOK}
++			next.ServeHTTP(rw, r)
++
++			if !cfg.Enabled || shouldSkipAccess(skip, r.URL.Path) {
++				return
++			}
++
++			latency := time.Since(start)
++			route := ""
++			if options.routeResolver != nil {
++				route = options.routeResolver(r)
++			}
++			if route == "" {
++				route = r.Header.Get(cfg.RouteHeader)
++			}
++			fields := []Field{
++				Event("access"),
++				String("side", "server"),
++				String("protocol", "http"),
++				String("method", r.Method),
++				String("path", r.URL.Path),
++				String("route", route),
++				String("query", r.URL.RawQuery),
++				Int("status", rw.status),
++				String("status_class", strconv.Itoa(rw.status/100)+"xx"),
++				Duration("latency", latency),
++				Int64("latency_ms", latency.Milliseconds()),
++				Int64("request_size", requestSize(r)),
++				Int("response_size", rw.bytes),
++			}
++			if cfg.LogUserAgent {
++				fields = append(fields, String("user_agent", r.UserAgent()))
++			}
++			if cfg.LogReferer {
++				fields = append(fields, String("referer", r.Referer()))
++			}
++
++			logger := FromContextOr(ctx, base)
++			msg := "http request completed"
++			switch {
++			case rw.status >= 500:
++				logger.Error(msg, fields...)
++			case rw.status >= 400:
++				logger.Warn(msg, fields...)
++			case cfg.SlowThreshold > 0 && latency >= cfg.SlowThreshold:
++				logger.Warn("http request slow", fields...)
++			default:
++				logger.Info(msg, fields...)
++			}
++		})
++	}
++}
++
++func shouldSkipAccess(skip map[string]struct{}, path string) bool {
++	if _, ok := skip[path]; ok {
++		return true
++	}
++	for pattern := range skip {
++		if strings.HasSuffix(pattern, "*") && strings.HasPrefix(path, strings.TrimSuffix(pattern, "*")) {
++			return true
++		}
++	}
++	return false
++}
++
++type statusResponseWriter struct {
++	http.ResponseWriter
++	status      int
++	bytes       int
++	wroteHeader bool
++}
++
++func (w *statusResponseWriter) WriteHeader(status int) {
++	if w.wroteHeader {
++		return
++	}
++	w.status = status
++	w.wroteHeader = true
++	w.ResponseWriter.WriteHeader(status)
++}
++
++func (w *statusResponseWriter) Write(b []byte) (int, error) {
++	if !w.wroteHeader {
++		w.WriteHeader(http.StatusOK)
++	}
++	n, err := w.ResponseWriter.Write(b)
++	w.bytes += n
++	return n, err
++}
++
++func (w *statusResponseWriter) Flush() {
++	if f, ok := w.ResponseWriter.(http.Flusher); ok {
++		f.Flush()
++	}
++}
++
++func (w *statusResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
++	h, ok := w.ResponseWriter.(http.Hijacker)
++	if !ok {
++		return nil, nil, errHijackNotSupported
++	}
++	return h.Hijack()
++}
++
++func (w *statusResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
++
++func requestSize(r *http.Request) int64 {
++	if r.ContentLength > 0 {
++		return r.ContentLength
++	}
++	return 0
++}
++
++func clientIP(r *http.Request) string {
++	if r == nil {
++		return ""
++	}
++	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
++		parts := strings.Split(xff, ",")
++		return strings.TrimSpace(parts[0])
++	}
++	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
++		return realIP
++	}
++	host, _, err := net.SplitHostPort(r.RemoteAddr)
++	if err == nil {
++		return host
++	}
++	return r.RemoteAddr
++}
++
++func newRequestID() string {
++	var b [16]byte
++	if _, err := rand.Read(b[:]); err == nil {
++		return hex.EncodeToString(b[:])
++	}
++	return strconv.FormatInt(time.Now().UnixNano(), 36)
++}
++
++// traceFieldsFromHTTPRequest extracts W3C traceparent without importing OTel.
++// An OTel-based extractor can be added in logx/otelx when the app already uses OTel.
++func traceFieldsFromHTTPRequest(r *http.Request) []Field {
++	traceparent := r.Header.Get("traceparent")
++	if traceparent == "" {
++		return nil
++	}
++	parts := strings.Split(traceparent, "-")
++	if len(parts) < 4 {
++		return nil
++	}
++	traceID := parts[1]
++	spanID := parts[2]
++	if len(traceID) != 32 || len(spanID) != 16 {
++		return nil
++	}
++	return []Field{String("trace_id", traceID), String("span_id", spanID)}
++}
++
++func WithHTTPContext(ctx context.Context, logger Logger, r *http.Request, fields ...Field) context.Context {
++	if r != nil {
++		fields = append(fields, traceFieldsFromHTTPRequest(r)...)
++	}
++	return Inject(ctx, logger, fields...)
++}
+diff --git a/logx/http_recovery.go b/logx/http_recovery.go
+new file mode 100644
+index 0000000..cd7e62b
+--- /dev/null
++++ b/logx/http_recovery.go
+@@ -0,0 +1,61 @@
++package logx
++
++import (
++	"context"
++	"net/http"
++	"runtime/debug"
++)
++
++type PanicHandler func(ctx context.Context, panicValue any) (status int, body any)
++
++type RecoveryOption func(*recoveryOptions)
++
++type recoveryOptions struct {
++	handler PanicHandler
++}
++
++func WithPanicHandler(handler PanicHandler) RecoveryOption {
++	return func(o *recoveryOptions) { o.handler = handler }
++}
++
++func Recovery(base Logger, opts ...RecoveryOption) func(http.Handler) http.Handler {
++	if base == nil {
++		base = Noop()
++	}
++	options := recoveryOptions{
++		handler: func(context.Context, any) (int, any) {
++			return http.StatusInternalServerError, map[string]any{
++				"code":    "INTERNAL_SERVER_ERROR",
++				"message": "internal server error",
++			}
++		},
++	}
++	for _, opt := range opts {
++		if opt != nil {
++			opt(&options)
++		}
++	}
++	return func(next http.Handler) http.Handler {
++		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++			defer func() {
++				if rec := recover(); rec != nil {
++					ctx := r.Context()
++					logger := FromContextOr(ctx, base)
++					logger.Error("panic recovered",
++						Event("panic"),
++						Any("panic", rec),
++						String("stack", string(debug.Stack())),
++						String("method", r.Method),
++						String("path", r.URL.Path),
++					)
++					status, body := options.handler(ctx, rec)
++					if status == 0 {
++						status = http.StatusInternalServerError
++					}
++					writeJSON(w, status, body)
++				}
++			}()
++			next.ServeHTTP(w, r)
++		})
++	}
++}
+diff --git a/log/level.go b/logx/level.go
+similarity index 98%
+rename from log/level.go
+rename to logx/level.go
+index 29beaf9..45745d0 100644
+--- a/log/level.go
++++ b/logx/level.go
+@@ -1,4 +1,4 @@
+-package log
++package logx
+ 
+ import (
+ 	"log/slog"
+diff --git a/logx/level_http.go b/logx/level_http.go
+new file mode 100644
+index 0000000..66ffea8
+--- /dev/null
++++ b/logx/level_http.go
+@@ -0,0 +1,41 @@
++package logx
++
++import (
++	"encoding/json"
++	"net/http"
++)
++
++func LevelHTTPHandler(controller LevelController) http.Handler {
++	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if controller == nil {
++			http.Error(w, "log level controller is not configured", http.StatusNotFound)
++			return
++		}
++		switch r.Method {
++		case http.MethodGet:
++			writeJSON(w, http.StatusOK, map[string]string{"level": controller.GetLevel()})
++		case http.MethodPut, http.MethodPost:
++			var req struct {
++				Level string `json:"level"`
++			}
++			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
++				http.Error(w, err.Error(), http.StatusBadRequest)
++				return
++			}
++			if err := controller.SetLevel(req.Level); err != nil {
++				http.Error(w, err.Error(), http.StatusBadRequest)
++				return
++			}
++			writeJSON(w, http.StatusOK, map[string]string{"level": controller.GetLevel()})
++		default:
++			w.Header().Set("Allow", "GET, PUT, POST")
++			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
++		}
++	})
++}
++
++func writeJSON(w http.ResponseWriter, status int, v any) {
++	w.Header().Set("Content-Type", "application/json")
++	w.WriteHeader(status)
++	_ = json.NewEncoder(w).Encode(v)
++}
+diff --git a/log/level_test.go b/logx/level_test.go
+similarity index 98%
+rename from log/level_test.go
+rename to logx/level_test.go
+index 2503e66..0f52fd3 100644
+--- a/log/level_test.go
++++ b/logx/level_test.go
+@@ -1,4 +1,4 @@
+-package log
++package logx
+ 
+ import (
+ 	"log/slog"
+diff --git a/log/log.go b/logx/log.go
+similarity index 99%
+rename from log/log.go
+rename to logx/log.go
+index a30d880..35ba133 100644
+--- a/log/log.go
++++ b/logx/log.go
+@@ -1,4 +1,4 @@
+-package log
++package logx
+ 
+ import (
+ 	"context"
+diff --git a/log/log_benchmark_test.go b/logx/log_benchmark_test.go
+similarity index 99%
+rename from log/log_benchmark_test.go
+rename to logx/log_benchmark_test.go
+index a085c92..66a18b8 100644
+--- a/log/log_benchmark_test.go
++++ b/logx/log_benchmark_test.go
+@@ -1,4 +1,4 @@
+-package log
++package logx
+ 
+ import (
+ 	"context"
+diff --git a/log/log_test.go b/logx/log_test.go
+similarity index 97%
+rename from log/log_test.go
+rename to logx/log_test.go
+index a3a52bb..9d31a79 100644
+--- a/log/log_test.go
++++ b/logx/log_test.go
+@@ -1,4 +1,4 @@
+-package log
++package logx
+ 
+ import (
+ 	"bytes"
+@@ -190,8 +190,8 @@ func assertLogSource(t *testing.T, out *bytes.Buffer) {
+ 		t.Fatalf("source = %v, want object", got["source"])
+ 	}
+ 	file, _ := source["file"].(string)
+-	if !strings.HasSuffix(file, "log/log_test.go") {
+-		t.Fatalf("source.file = %q, want log/log_test.go suffix", file)
++	if !strings.HasSuffix(file, "logx/log_test.go") {
++		t.Fatalf("source.file = %q, want logx/log_test.go suffix", file)
+ 	}
+ }
+ 
+diff --git a/logx/loggerx.go b/logx/loggerx.go
+new file mode 100644
+index 0000000..5dbcb7a
+--- /dev/null
++++ b/logx/loggerx.go
+@@ -0,0 +1,229 @@
++package logx
++
++import (
++	"context"
++	"errors"
++	"io"
++	"log/slog"
++	"os"
++	"path/filepath"
++	"strings"
++	"time"
++)
++
++// Logger is the business-facing Kernel logger. It does not expose slog.Logger
++// or slog.Attr to application packages.
++type Logger interface {
++	Debug(msg string, fields ...Field)
++	Info(msg string, fields ...Field)
++	Warn(msg string, fields ...Field)
++	Error(msg string, fields ...Field)
++	With(fields ...Field) Logger
++	Named(name string) Logger
++	WithContext(ctx context.Context) Logger
++	Enabled(level LogLevel) bool
++	Sync() error
++}
++
++type slogLogger struct {
++	l        *slog.Logger
++	ctx      context.Context
++	redactor Redactor
++	closer   io.Closer
++}
++
++// New creates the default slog-backed logx logger.
++func New(cfg Config, opts ...Option) (Logger, LevelController, error) {
++	return NewSlog(cfg, opts...)
++}
++
++// NewSlog creates a slog-backed logx logger while exposing only the logx.Logger
++// interface to business code.
++func NewSlog(cfg Config, opts ...Option) (Logger, LevelController, error) {
++	level, err := ParseLogLevel(cfg.Level)
++	if err != nil {
++		return nil, nil, err
++	}
++	levelVar := &slog.LevelVar{}
++	levelVar.Set(level.slogLevel())
++
++	builder := &handlerConfig{}
++	for _, opt := range opts {
++		if opt != nil {
++			opt(builder)
++		}
++	}
++
++	writer, closer, err := openWriter(cfg.Output, builder.writer)
++	if err != nil {
++		return nil, nil, err
++	}
++
++	redactor := NewRedactor(cfg.Redact)
++	handlerOpts := &slog.HandlerOptions{
++		Level:       levelVar,
++		AddSource:   cfg.AddSource,
++		ReplaceAttr: composeReplaceAttr(builder.replaceAttr),
++	}
++	var h slog.Handler
++	switch normalizeFormat(cfg.Format) {
++	case FormatJSON:
++		h = slog.NewJSONHandler(writer, handlerOpts)
++	default:
++		h = slog.NewTextHandler(writer, handlerOpts)
++	}
++
++	h = newRedactHandler(h, redactor)
++	if cfg.Sampling.Enabled {
++		h = newSamplingHandler(h, cfg.Sampling)
++	}
++	if len(builder.dropFilters) > 0 {
++		h = newDropFilterHandler(h, builder.dropFilters...)
++	}
++	h = newFieldContextHandler(h, append([]FieldExtractor{FieldsFromContext}, builder.fieldExtractors...)...)
++
++	base := slog.New(h).With(
++		slog.String("service", cfg.ServiceName),
++		slog.String("env", cfg.Env),
++		slog.String("version", cfg.Version),
++	)
++	if cfg.NodeID != "" {
++		base = base.With(slog.String("node_id", cfg.NodeID))
++	}
++
++	return &slogLogger{l: base, redactor: redactor, closer: closer}, slogLevelController{level: levelVar}, nil
++}
++
++func (l *slogLogger) Debug(msg string, fields ...Field) { l.log(DebugLevel, msg, fields...) }
++func (l *slogLogger) Info(msg string, fields ...Field)  { l.log(InfoLevel, msg, fields...) }
++func (l *slogLogger) Warn(msg string, fields ...Field)  { l.log(WarnLevel, msg, fields...) }
++func (l *slogLogger) Error(msg string, fields ...Field) { l.log(ErrorLevel, msg, fields...) }
++
++func (l *slogLogger) log(level LogLevel, msg string, fields ...Field) {
++	if l == nil || l.l == nil {
++		return
++	}
++	ctx := l.ctx
++	if ctx == nil {
++		ctx = context.Background()
++	}
++	slogLevel := level.slogLevel()
++	if !l.l.Enabled(ctx, slogLevel) {
++		return
++	}
++	pc := sourcePC(4)
++	record := slog.NewRecord(time.Now(), slogLevel, msg, pc)
++	record.AddAttrs(fieldsToAttrs(fields, l.redactor)...)
++	_ = l.l.Handler().Handle(ctx, record)
++}
++
++func (l *slogLogger) With(fields ...Field) Logger {
++	if l == nil || l.l == nil {
++		return Noop()
++	}
++	attrs := fieldsToAttrs(fields, l.redactor)
++	return &slogLogger{l: l.l.With(attrsToAny(attrs)...), ctx: l.ctx, redactor: l.redactor, closer: l.closer}
++}
++
++func (l *slogLogger) Named(name string) Logger {
++	if l == nil || l.l == nil || name == "" {
++		return l
++	}
++	return l.With(String("module", name))
++}
++
++func (l *slogLogger) WithContext(ctx context.Context) Logger {
++	if l == nil || l.l == nil {
++		return Noop()
++	}
++	if ctx == nil {
++		ctx = context.Background()
++	}
++	return &slogLogger{l: l.l, ctx: ctx, redactor: l.redactor, closer: l.closer}
++}
++
++func (l *slogLogger) Enabled(level LogLevel) bool {
++	if l == nil || l.l == nil {
++		return false
++	}
++	ctx := l.ctx
++	if ctx == nil {
++		ctx = context.Background()
++	}
++	return l.l.Enabled(ctx, level.slogLevel())
++}
++
++func (l *slogLogger) Sync() error {
++	if l == nil || l.closer == nil {
++		return nil
++	}
++	return l.closer.Close()
++}
++
++func Sync(logger Logger) error {
++	if logger == nil {
++		return nil
++	}
++	return logger.Sync()
++}
++
++func openWriter(output string, injected io.Writer) (io.Writer, io.Closer, error) {
++	if injected != nil {
++		return injected, nil, nil
++	}
++	switch strings.ToLower(strings.TrimSpace(output)) {
++	case "", string(OutputStdout):
++		return os.Stdout, nil, nil
++	case string(OutputStderr):
++		return os.Stderr, nil, nil
++	default:
++		if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
++			return nil, nil, err
++		}
++		f, err := os.OpenFile(output, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
++		if err != nil {
++			return nil, nil, err
++		}
++		return f, f, nil
++	}
++}
++
++func normalizeFormat(format Format) Format {
++	switch strings.ToLower(strings.TrimSpace(string(format))) {
++	case "", string(FormatJSON):
++		return FormatJSON
++	case string(FormatConsole), "text":
++		return FormatConsole
++	default:
++		return FormatJSON
++	}
++}
++
++func composeReplaceAttr(user func(groups []string, a slog.Attr) slog.Attr) func(groups []string, a slog.Attr) slog.Attr {
++	return func(groups []string, a slog.Attr) slog.Attr {
++		if a.Key == slog.TimeKey && a.Value.Kind() == slog.KindTime {
++			a.Key = "timestamp"
++		}
++		if a.Key == slog.MessageKey {
++			a.Key = "message"
++		}
++		if a.Key == slog.LevelKey {
++			a.Value = slog.StringValue(strings.ToLower(a.Value.String()))
++		}
++		if user != nil {
++			a = user(groups, a)
++		}
++		return a
++	}
++}
++
++var errUnsupportedLogger = errors.New("unsupported logger implementation")
++
++// Slog returns the underlying slog logger only for framework adapters.
++// Business packages should not call this helper.
++func Slog(logger Logger) (*slog.Logger, error) {
++	if l, ok := logger.(*slogLogger); ok && l != nil {
++		return l.l, nil
++	}
++	return nil, errUnsupportedLogger
++}
+diff --git a/logx/noop.go b/logx/noop.go
+new file mode 100644
+index 0000000..440c6b4
+--- /dev/null
++++ b/logx/noop.go
+@@ -0,0 +1,17 @@
++package logx
++
++import "context"
++
++type noopLogger struct{}
++
++func Noop() Logger { return noopLogger{} }
++
++func (noopLogger) Debug(string, ...Field)               {}
++func (noopLogger) Info(string, ...Field)                {}
++func (noopLogger) Warn(string, ...Field)                {}
++func (noopLogger) Error(string, ...Field)               {}
++func (l noopLogger) With(...Field) Logger               { return l }
++func (l noopLogger) Named(string) Logger                { return l }
++func (l noopLogger) WithContext(context.Context) Logger { return l }
++func (noopLogger) Enabled(LogLevel) bool                { return false }
++func (noopLogger) Sync() error                          { return nil }
+diff --git a/logx/otelx/README.md b/logx/otelx/README.md
+new file mode 100644
+index 0000000..dec16f9
+--- /dev/null
++++ b/logx/otelx/README.md
+@@ -0,0 +1,18 @@
++# logx/otelx
++
++`otelx` 是可选扩展，不参与默认构建。
++
++启用方式：
++
++```bash
++go get go.opentelemetry.io/otel/trace
++go test -tags otel ./...
++```
++
++接入方式：
++
++```go
++logger, levels, err := logx.New(cfg, logx.WithExtractor(otelx.TraceExtractor))
++```
++
++核心 `logx` 包保持标准库依赖，避免所有服务被强制绑定 OTel。
+diff --git a/logx/otelx/extractor_otel.go b/logx/otelx/extractor_otel.go
+new file mode 100644
+index 0000000..cc44b61
+--- /dev/null
++++ b/logx/otelx/extractor_otel.go
+@@ -0,0 +1,28 @@
++//go:build otel
++
++package otelx
++
++import (
++	"context"
++
++	"go.opentelemetry.io/otel/trace"
++
++	"github.com/aisphereio/kernel/logx"
++)
++
++// TraceExtractor injects trace_id and span_id from an OpenTelemetry context.
++// It is behind the `otel` build tag so logx core remains stdlib-only.
++func TraceExtractor(ctx context.Context) []logx.Field {
++	span := trace.SpanFromContext(ctx)
++	if span == nil {
++		return nil
++	}
++	sc := span.SpanContext()
++	if !sc.IsValid() {
++		return nil
++	}
++	return []logx.Field{
++		logx.String("trace_id", sc.TraceID().String()),
++		logx.String("span_id", sc.SpanID().String()),
++	}
++}
+diff --git a/logx/redactor.go b/logx/redactor.go
+new file mode 100644
+index 0000000..c4f5386
+--- /dev/null
++++ b/logx/redactor.go
+@@ -0,0 +1,119 @@
++package logx
++
++import (
++	"context"
++	"log/slog"
++	"reflect"
++	"strings"
++)
++
++const defaultRedactedValue = "***"
++
++type Redactor interface {
++	Redact(Field) Field
++}
++
++type keyRedactor struct {
++	enabled bool
++	keys    map[string]struct{}
++	value   string
++}
++
++func NewRedactor(cfg RedactConfig) Redactor {
++	keys := cfg.Keys
++	if len(keys) == 0 {
++		keys = DefaultRedactKeys()
++	}
++	value := cfg.Value
++	if value == "" {
++		value = defaultRedactedValue
++	}
++	m := make(map[string]struct{}, len(keys))
++	for _, key := range keys {
++		m[normalizeSensitiveKey(key)] = struct{}{}
++	}
++	return &keyRedactor{enabled: cfg.Enabled, keys: m, value: value}
++}
++
++func DefaultRedactKeys() []string {
++	return []string{
++		"password", "passwd", "pwd", "token", "access_token", "refresh_token", "id_token",
++		"secret", "client_secret", "authorization", "cookie", "set_cookie",
++		"api_key", "private_key", "ak", "sk",
++	}
++}
++
++func (r *keyRedactor) Redact(field Field) Field {
++	if r == nil || !r.enabled || field.Key == "" {
++		return field
++	}
++	if _, ok := r.keys[normalizeSensitiveKey(field.Key)]; ok {
++		return Field{Key: field.Key, Value: r.value}
++	}
++	return field
++}
++
++func normalizeSensitiveKey(key string) string {
++	key = strings.TrimSpace(strings.ToLower(key))
++	key = strings.ReplaceAll(key, "-", "_")
++	key = strings.ReplaceAll(key, ".", "_")
++	return key
++}
++
++func newRedactHandler(next slog.Handler, redactor Redactor) slog.Handler {
++	if redactor == nil {
++		return next
++	}
++	return &redactHandler{next: next, redactor: redactor}
++}
++
++type redactHandler struct {
++	next     slog.Handler
++	redactor Redactor
++}
++
++func (h *redactHandler) Enabled(ctx context.Context, level slog.Level) bool {
++	return h.next.Enabled(ctx, level)
++}
++
++func (h *redactHandler) Handle(ctx context.Context, record slog.Record) error {
++	if h.redactor == nil || record.NumAttrs() == 0 {
++		return h.next.Handle(ctx, record)
++	}
++	clone := slog.NewRecord(record.Time, record.Level, record.Message, record.PC)
++	record.Attrs(func(attr slog.Attr) bool {
++		clone.AddAttrs(redactAttr(attr, h.redactor))
++		return true
++	})
++	return h.next.Handle(ctx, clone)
++}
++
++func (h *redactHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
++	return &redactHandler{next: h.next.WithAttrs(redactAttrs(attrs, h.redactor)), redactor: h.redactor}
++}
++
++func (h *redactHandler) WithGroup(name string) slog.Handler {
++	return &redactHandler{next: h.next.WithGroup(name), redactor: h.redactor}
++}
++
++func redactAttrs(attrs []slog.Attr, redactor Redactor) []slog.Attr {
++	out := make([]slog.Attr, 0, len(attrs))
++	for _, attr := range attrs {
++		out = append(out, redactAttr(attr, redactor))
++	}
++	return out
++}
++
++func redactAttr(attr slog.Attr, redactor Redactor) slog.Attr {
++	if redactor == nil || attr.Key == "" {
++		return attr
++	}
++	if attr.Value.Kind() == slog.KindGroup {
++		return slog.Attr{Key: attr.Key, Value: slog.GroupValue(redactAttrs(attr.Value.Group(), redactor)...)}
++	}
++	field := redactor.Redact(Field{Key: attr.Key, Value: attr.Value.Any()})
++	if field.Key != attr.Key || !reflect.DeepEqual(field.Value, attr.Value.Any()) {
++		return slog.Any(field.Key, field.Value)
++	}
++	return attr
++}
+diff --git a/logx/rpc.go b/logx/rpc.go
+new file mode 100644
+index 0000000..52846c0
+--- /dev/null
++++ b/logx/rpc.go
+@@ -0,0 +1,94 @@
++package logx
++
++import (
++	"context"
++	"runtime/debug"
++	"time"
++)
++
++// Handler and Middleware mirror Kratos's middleware idea without importing
++// Kratos. Kratos/gRPC/Connect adapters can translate their own transport data
++// into this small interface.
++type RPCHandler func(context.Context, any) (any, error)
++type RPCMiddleware func(RPCHandler) RPCHandler
++
++type RPCInfo struct {
++	Side      string // server/client
++	Protocol  string // grpc/rpc/http
++	Component string
++	Operation string
++	Code      string
++	Reason    string
++	PeerAddr  string
++}
++
++type RPCInfoExtractor func(context.Context, any) RPCInfo
++
++func ServerLogging(base Logger, extract RPCInfoExtractor) RPCMiddleware {
++	return accessMiddleware(base, "server", extract)
++}
++
++func ClientLogging(base Logger, extract RPCInfoExtractor) RPCMiddleware {
++	return accessMiddleware(base, "client", extract)
++}
++
++func accessMiddleware(base Logger, side string, extract RPCInfoExtractor) RPCMiddleware {
++	if base == nil {
++		base = Noop()
++	}
++	return func(next RPCHandler) RPCHandler {
++		return func(ctx context.Context, req any) (reply any, err error) {
++			start := time.Now()
++			info := RPCInfo{Side: side, Protocol: "rpc"}
++			if extract != nil {
++				info = extract(ctx, req)
++				if info.Side == "" {
++					info.Side = side
++				}
++				if info.Protocol == "" {
++					info.Protocol = "rpc"
++				}
++			}
++			reply, err = next(ctx, req)
++			logger := FromContextOr(ctx, base)
++			LogAccess(logger, AccessEvent{
++				Side:      info.Side,
++				Protocol:  info.Protocol,
++				Component: info.Component,
++				Operation: info.Operation,
++				Code:      info.Code,
++				Reason:    info.Reason,
++				Latency:   time.Since(start),
++				Err:       err,
++				Fields:    []Field{String("peer_addr", info.PeerAddr)},
++			})
++			return reply, err
++		}
++	}
++}
++
++type RPCPanicHandler func(ctx context.Context, req any, panicValue any) error
++
++func RPCRecovery(base Logger, handler RPCPanicHandler) RPCMiddleware {
++	if base == nil {
++		base = Noop()
++	}
++	return func(next RPCHandler) RPCHandler {
++		return func(ctx context.Context, req any) (reply any, err error) {
++			defer func() {
++				if rec := recover(); rec != nil {
++					logger := FromContextOr(ctx, base)
++					logger.Error("rpc panic recovered",
++						Event("panic"),
++						Any("panic", rec),
++						String("stack", string(debug.Stack())),
++					)
++					if handler != nil {
++						err = handler(ctx, req, rec)
++					}
++				}
++			}()
++			return next(ctx, req)
++		}
++	}
++}
+diff --git a/logx/sampler.go b/logx/sampler.go
+new file mode 100644
+index 0000000..b846647
+--- /dev/null
++++ b/logx/sampler.go
+@@ -0,0 +1,74 @@
++package logx
++
++import (
++	"context"
++	"fmt"
++	"log/slog"
++	"sync"
++	"time"
++)
++
++func newSamplingHandler(next slog.Handler, cfg SamplingConfig) slog.Handler {
++	if cfg.Every <= 0 {
++		cfg.Every = 100
++	}
++	if cfg.First < 0 {
++		cfg.First = 0
++	}
++	if cfg.Window <= 0 {
++		cfg.Window = time.Second
++	}
++	minLevel, err := ParseLogLevel(cfg.MinLevel)
++	if err != nil || minLevel == "" {
++		minLevel = DebugLevel
++	}
++	return &samplingHandler{next: next, cfg: cfg, minLevel: minLevel.slogLevel(), counts: make(map[string]int)}
++}
++
++type samplingHandler struct {
++	next     slog.Handler
++	cfg      SamplingConfig
++	minLevel slog.Level
++	mu       sync.Mutex
++	windowAt time.Time
++	counts   map[string]int
++}
++
++func (h *samplingHandler) Enabled(ctx context.Context, level slog.Level) bool {
++	return h.next.Enabled(ctx, level)
++}
++
++func (h *samplingHandler) Handle(ctx context.Context, record slog.Record) error {
++	if record.Level > h.minLevel {
++		return h.next.Handle(ctx, record)
++	}
++	if !h.keep(record) {
++		return nil
++	}
++	return h.next.Handle(ctx, record)
++}
++
++func (h *samplingHandler) keep(record slog.Record) bool {
++	now := time.Now()
++	key := fmt.Sprintf("%d:%s", record.Level, record.Message)
++	h.mu.Lock()
++	defer h.mu.Unlock()
++	if h.windowAt.IsZero() || now.Sub(h.windowAt) > h.cfg.Window {
++		h.windowAt = now
++		h.counts = make(map[string]int)
++	}
++	h.counts[key]++
++	count := h.counts[key]
++	if count <= h.cfg.First {
++		return true
++	}
++	return (count-h.cfg.First)%h.cfg.Every == 0
++}
++
++func (h *samplingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
++	return &samplingHandler{next: h.next.WithAttrs(attrs), cfg: h.cfg, minLevel: h.minLevel, counts: make(map[string]int)}
++}
++
++func (h *samplingHandler) WithGroup(name string) slog.Handler {
++	return &samplingHandler{next: h.next.WithGroup(name), cfg: h.cfg, minLevel: h.minLevel, counts: make(map[string]int)}
++}
+diff --git a/logx/semantic_level.go b/logx/semantic_level.go
+new file mode 100644
+index 0000000..aac99ed
+--- /dev/null
++++ b/logx/semantic_level.go
+@@ -0,0 +1,96 @@
++package logx
++
++import (
++	"fmt"
++	"log/slog"
++	"strings"
++)
++
++// LogLevel is the Kernel business-facing log level. It intentionally stays
++// independent from slog.Level so service code can depend on logx without
++// importing the concrete slog engine.
++type LogLevel string
++
++const (
++	DebugLevel LogLevel = "debug"
++	InfoLevel  LogLevel = "info"
++	WarnLevel  LogLevel = "warn"
++	ErrorLevel LogLevel = "error"
++)
++
++func ParseLogLevel(s string) (LogLevel, error) {
++	switch strings.ToLower(strings.TrimSpace(s)) {
++	case "", "info":
++		return InfoLevel, nil
++	case "debug":
++		return DebugLevel, nil
++	case "warn", "warning":
++		return WarnLevel, nil
++	case "error":
++		return ErrorLevel, nil
++	default:
++		return "", fmt.Errorf("unsupported log level %q", s)
++	}
++}
++
++func (l LogLevel) String() string {
++	if l == "" {
++		return string(InfoLevel)
++	}
++	return string(l)
++}
++
++func (l LogLevel) slogLevel() slog.Level {
++	switch l {
++	case DebugLevel:
++		return slog.LevelDebug
++	case WarnLevel:
++		return slog.LevelWarn
++	case ErrorLevel:
++		return slog.LevelError
++	default:
++		return slog.LevelInfo
++	}
++}
++
++func logLevelFromSlog(level slog.Level) LogLevel {
++	switch {
++	case level <= slog.LevelDebug:
++		return DebugLevel
++	case level >= slog.LevelError:
++		return ErrorLevel
++	case level >= slog.LevelWarn:
++		return WarnLevel
++	default:
++		return InfoLevel
++	}
++}
++
++// LevelController controls log level at runtime. The slog implementation is
++// backed by slog.LevelVar, which is safe for concurrent use.
++type LevelController interface {
++	GetLevel() string
++	SetLevel(level string) error
++}
++
++type slogLevelController struct {
++	level *slog.LevelVar
++}
++
++func (c slogLevelController) GetLevel() string {
++	if c.level == nil {
++		return InfoLevel.String()
++	}
++	return strings.ToLower(c.level.Level().String())
++}
++
++func (c slogLevelController) SetLevel(level string) error {
++	parsed, err := ParseLogLevel(level)
++	if err != nil {
++		return err
++	}
++	if c.level != nil {
++		c.level.Set(parsed.slogLevel())
++	}
++	return nil
++}
+diff --git a/logx/testlogger.go b/logx/testlogger.go
+new file mode 100644
+index 0000000..59f9d67
+--- /dev/null
++++ b/logx/testlogger.go
+@@ -0,0 +1,103 @@
++package logx
++
++import (
++	"context"
++	"reflect"
++	"sync"
++	"testing"
++)
++
++type testLoggerCore struct {
++	mu      sync.Mutex
++	entries []Entry
++}
++
++type TestLogger struct {
++	core   *testLoggerCore
++	prefix []Field
++	name   string
++}
++
++func NewTestLogger(t testing.TB) *TestLogger {
++	if t != nil {
++		t.Helper()
++	}
++	return &TestLogger{core: &testLoggerCore{}}
++}
++
++func (l *TestLogger) ensureCore() {
++	if l.core == nil {
++		l.core = &testLoggerCore{}
++	}
++}
++
++func (l *TestLogger) Debug(msg string, fields ...Field) { l.log(DebugLevel, msg, fields...) }
++func (l *TestLogger) Info(msg string, fields ...Field)  { l.log(InfoLevel, msg, fields...) }
++func (l *TestLogger) Warn(msg string, fields ...Field)  { l.log(WarnLevel, msg, fields...) }
++func (l *TestLogger) Error(msg string, fields ...Field) { l.log(ErrorLevel, msg, fields...) }
++
++func (l *TestLogger) With(fields ...Field) Logger {
++	l.ensureCore()
++	return &TestLogger{
++		core:   l.core,
++		name:   l.name,
++		prefix: append(append([]Field(nil), l.prefix...), fields...),
++	}
++}
++
++func (l *TestLogger) Named(name string) Logger {
++	l.ensureCore()
++	return &TestLogger{
++		core:   l.core,
++		name:   name,
++		prefix: append(append([]Field(nil), l.prefix...), String("module", name)),
++	}
++}
++
++func (l *TestLogger) WithContext(context.Context) Logger { return l }
++func (l *TestLogger) Enabled(LogLevel) bool              { return true }
++func (l *TestLogger) Sync() error                        { return nil }
++
++func (l *TestLogger) Entries() []Entry {
++	l.ensureCore()
++	l.core.mu.Lock()
++	defer l.core.mu.Unlock()
++	return append([]Entry(nil), l.core.entries...)
++}
++
++func (l *TestLogger) AssertLogged(t testing.TB, msg string, fields ...Field) {
++	t.Helper()
++	for _, entry := range l.Entries() {
++		if entry.Message != msg {
++			continue
++		}
++		if fieldsContained(entry.Fields, fields) {
++			return
++		}
++	}
++	t.Fatalf("expected log %q with fields %#v, got %#v", msg, fields, l.Entries())
++}
++
++func (l *TestLogger) log(level LogLevel, msg string, fields ...Field) {
++	l.ensureCore()
++	l.core.mu.Lock()
++	defer l.core.mu.Unlock()
++	all := append(append([]Field(nil), l.prefix...), fields...)
++	l.core.entries = append(l.core.entries, Entry{Level: level, Message: msg, Fields: all})
++}
++
++func fieldsContained(got []Field, want []Field) bool {
++	for _, wf := range want {
++		found := false
++		for _, gf := range got {
++			if gf.Key == wf.Key && reflect.DeepEqual(gf.Value, wf.Value) {
++				found = true
++				break
++			}
++		}
++		if !found {
++			return false
++		}
++	}
++	return true
++}
+diff --git a/middleware/logging/logging.go b/middleware/logging/logging.go
+index 4348389..88e3fe6 100644
+--- a/middleware/logging/logging.go
++++ b/middleware/logging/logging.go
+@@ -3,90 +3,67 @@ package logging
+ import (
+ 	"context"
+ 	"fmt"
+-	"log/slog"
+ 	"time"
+ 
+ 	"github.com/aisphereio/kernel/errorx"
++	"github.com/aisphereio/kernel/logx"
+ 	"github.com/aisphereio/kernel/middleware"
+ 	"github.com/aisphereio/kernel/transport"
+ )
+ 
+-// Redacter defines how to log an object
++// Redacter defines how to log an object.
+ type Redacter interface {
+ 	Redact() string
+ }
+ 
+-// Server is an server logging middleware.
+-func Server(logger *slog.Logger) middleware.Middleware {
+-	if logger == nil {
+-		logger = slog.Default()
+-	}
+-	return func(handler middleware.Handler) middleware.Handler {
+-		return func(ctx context.Context, req any) (reply any, err error) {
+-			var (
+-				kind      string
+-				operation string
+-			)
+-			startTime := time.Now()
+-			if info, ok := transport.FromServerContext(ctx); ok {
+-				kind = info.Kind().String()
+-				operation = info.Operation()
+-			}
+-			reply, err = handler(ctx, req)
+-			level, stack := extractError(err)
+-			attrs := []slog.Attr{
+-				slog.String("kind", "server"),
+-				slog.String("component", kind),
+-				slog.String("operation", operation),
+-				slog.String("args", extractArgs(req)),
+-				slog.Float64("latency", time.Since(startTime).Seconds()),
+-			}
+-			attrs = append(attrs, errorAttrs(err)...)
+-			if err != nil && stack != "" {
+-				attrs = append(attrs, slog.String("stack", stack))
+-			}
+-			logger.LogAttrs(ctx, level, "server request", attrs...)
+-			return
+-		}
+-	}
++// Server is a server logging middleware.
++func Server(logger logx.Logger) middleware.Middleware {
++	return access(logger, "server", transport.FromServerContext)
+ }
+ 
+ // Client is a client logging middleware.
+-func Client(logger *slog.Logger) middleware.Middleware {
++func Client(logger logx.Logger) middleware.Middleware {
++	return access(logger, "client", transport.FromClientContext)
++}
++
++type transportExtractor func(context.Context) (transport.Transporter, bool)
++
++func access(logger logx.Logger, side string, extract transportExtractor) middleware.Middleware {
+ 	if logger == nil {
+-		logger = slog.Default()
++		logger = logx.Noop()
+ 	}
+ 	return func(handler middleware.Handler) middleware.Handler {
+ 		return func(ctx context.Context, req any) (reply any, err error) {
+-			var (
+-				kind      string
+-				operation string
+-			)
++			var kind, operation string
+ 			startTime := time.Now()
+-			if info, ok := transport.FromClientContext(ctx); ok {
++			if info, ok := extract(ctx); ok {
+ 				kind = info.Kind().String()
+ 				operation = info.Operation()
+ 			}
+ 			reply, err = handler(ctx, req)
+-			level, stack := extractError(err)
+-			attrs := []slog.Attr{
+-				slog.String("kind", "client"),
+-				slog.String("component", kind),
+-				slog.String("operation", operation),
+-				slog.String("args", extractArgs(req)),
+-				slog.Float64("latency", time.Since(startTime).Seconds()),
++
++			fields := []logx.Field{
++				logx.Event("rpc_access"),
++				logx.String("side", side),
++				logx.String("component", kind),
++				logx.String("operation", operation),
++				logx.String("args", extractArgs(req)),
++				logx.Duration("latency", time.Since(startTime)),
+ 			}
+-			attrs = append(attrs, errorAttrs(err)...)
+-			if err != nil && stack != "" {
+-				attrs = append(attrs, slog.String("stack", stack))
++			fields = append(fields, errorFields(err)...)
++
++			l := logx.FromContextOr(ctx, logger)
++			if err != nil {
++				l.Error(side+" request failed", fields...)
++			} else {
++				l.Info(side+" request completed", fields...)
+ 			}
+-			logger.LogAttrs(ctx, level, "client request", attrs...)
+ 			return
+ 		}
+ 	}
+ }
+ 
+-// extractArgs returns the string of the req
++// extractArgs returns the string of the req.
+ func extractArgs(req any) string {
+ 	if redacter, ok := req.(Redacter); ok {
+ 		return redacter.Redact()
+@@ -97,19 +74,13 @@ func extractArgs(req any) string {
+ 	return fmt.Sprintf("%+v", req)
+ }
+ 
+-// extractError returns the level and stack to attach for err.
+-func extractError(err error) (slog.Level, string) {
+-	if err != nil {
+-		return slog.LevelError, fmt.Sprintf("%+v", err)
++func errorFields(err error) []logx.Field {
++	if err == nil {
++		return nil
+ 	}
+-	return slog.LevelInfo, ""
+-}
+-
+-func errorAttrs(err error) []slog.Attr {
+-	fields := errorx.Fields(err)
+-	attrs := make([]slog.Attr, 0, len(fields))
+-	for k, v := range fields {
+-		attrs = append(attrs, slog.Any(k, v))
++	fields := []logx.Field{logx.Err(err)}
++	for k, v := range errorx.Fields(err) {
++		fields = append(fields, logx.Any(k, v))
+ 	}
+-	return attrs
++	return fields
+ }
+diff --git a/middleware/logging/logging_test.go b/middleware/logging/logging_test.go
+index 3c5ba3c..0f5bae1 100644
+--- a/middleware/logging/logging_test.go
++++ b/middleware/logging/logging_test.go
+@@ -3,9 +3,9 @@ package logging
+ import (
+ 	"context"
+ 	"errors"
+-	"log/slog"
+ 	"testing"
+ 
++	"github.com/aisphereio/kernel/logx"
+ 	"github.com/aisphereio/kernel/middleware"
+ 	"github.com/aisphereio/kernel/transport"
+ )
+@@ -18,69 +18,54 @@ type Transport struct {
+ 	operation string
+ }
+ 
+-func (tr *Transport) Kind() transport.Kind {
+-	return tr.kind
+-}
+-
+-func (tr *Transport) Endpoint() string {
+-	return tr.endpoint
+-}
+-
+-func (tr *Transport) Operation() string {
+-	return tr.operation
+-}
+-
+-func (tr *Transport) RequestHeader() transport.Header {
+-	return nil
+-}
+-
+-func (tr *Transport) ReplyHeader() transport.Header {
+-	return nil
+-}
++func (tr *Transport) Kind() transport.Kind            { return tr.kind }
++func (tr *Transport) Endpoint() string                { return tr.endpoint }
++func (tr *Transport) Operation() string               { return tr.operation }
++func (tr *Transport) RequestHeader() transport.Header { return nil }
++func (tr *Transport) ReplyHeader() transport.Header   { return nil }
+ 
+ func TestHTTP(t *testing.T) {
+ 	err := errors.New("reply.error")
+-	handler := &captureHandler{}
+-	logger := slog.New(handler)
++	logger := logx.NewTestLogger(t)
+ 
+ 	tests := []struct {
+ 		name string
+-		kind func(*slog.Logger) middleware.Middleware
++		kind func(logx.Logger) middleware.Middleware
+ 		err  error
+ 		ctx  context.Context
+-		want slog.Level
++		want logx.LogLevel
+ 	}{
+ 		{
+ 			name: "http-server@fail",
+ 			kind: Server,
+ 			err:  err,
+ 			ctx:  transport.NewServerContext(context.Background(), &Transport{kind: transport.KindHTTP, endpoint: "endpoint", operation: "/package.service/method"}),
+-			want: slog.LevelError,
++			want: logx.ErrorLevel,
+ 		},
+ 		{
+ 			name: "http-server@succ",
+ 			kind: Server,
+ 			ctx:  transport.NewServerContext(context.Background(), &Transport{kind: transport.KindHTTP, endpoint: "endpoint", operation: "/package.service/method"}),
+-			want: slog.LevelInfo,
++			want: logx.InfoLevel,
+ 		},
+ 		{
+ 			name: "http-client@succ",
+ 			kind: Client,
+ 			ctx:  transport.NewClientContext(context.Background(), &Transport{kind: transport.KindHTTP, endpoint: "endpoint", operation: "/package.service/method"}),
+-			want: slog.LevelInfo,
++			want: logx.InfoLevel,
+ 		},
+ 		{
+ 			name: "http-client@fail",
+ 			kind: Client,
+ 			err:  err,
+ 			ctx:  transport.NewClientContext(context.Background(), &Transport{kind: transport.KindHTTP, endpoint: "endpoint", operation: "/package.service/method"}),
+-			want: slog.LevelError,
++			want: logx.ErrorLevel,
+ 		},
+ 	}
+ 
+ 	for _, test := range tests {
+ 		t.Run(test.name, func(t *testing.T) {
+-			handler.reset()
++			logger = logx.NewTestLogger(t)
+ 			next := func(context.Context, any) (any, error) {
+ 				return "reply", test.err
+ 			}
+@@ -92,48 +77,39 @@ func TestHTTP(t *testing.T) {
+ 			if gotErr != test.err {
+ 				t.Fatalf("err = %v, want %v", gotErr, test.err)
+ 			}
+-			if len(handler.records) != 1 {
+-				t.Fatalf("records len = %d, want 1", len(handler.records))
+-			}
+-			if handler.records[0].Level != test.want {
+-				t.Fatalf("level = %v, want %v", handler.records[0].Level, test.want)
++			entries := logger.Entries()
++			if len(entries) != 1 {
++				t.Fatalf("entries len = %d, want 1", len(entries))
+ 			}
+-			if got := handler.attrs[0]["component"]; got != "http" {
+-				t.Fatalf("component = %v, want %q", got, "http")
+-			}
+-			if got := handler.attrs[0]["operation"]; got != "/package.service/method" {
+-				t.Fatalf("operation = %v, want %q", got, "/package.service/method")
+-			}
+-			if got := handler.attrs[0]["args"]; got != "req.args" {
+-				t.Fatalf("args = %v, want %q", got, "req.args")
++			if entries[0].Level != test.want {
++				t.Fatalf("level = %v, want %v", entries[0].Level, test.want)
+ 			}
++			assertField(t, entries[0].Fields, "component", "http")
++			assertField(t, entries[0].Fields, "operation", "/package.service/method")
++			assertField(t, entries[0].Fields, "args", "req.args")
+ 		})
+ 	}
+ }
+ 
+-type (
+-	dummy struct {
+-		field string
+-	}
+-	dummyStringer struct {
+-		field string
+-	}
+-	dummyStringerRedacter struct {
+-		field string
++func assertField(t *testing.T, fields []logx.Field, key string, want any) {
++	t.Helper()
++	for _, field := range fields {
++		if field.Key == key && field.Value == want {
++			return
++		}
+ 	}
+-)
+-
+-func (d *dummyStringer) String() string {
+-	return "my value"
++	t.Fatalf("missing field %s=%v in %#v", key, want, fields)
+ }
+ 
+-func (d *dummyStringerRedacter) String() string {
+-	return "my value"
+-}
++type (
++	dummy                 struct{ field string }
++	dummyStringer         struct{ field string }
++	dummyStringerRedacter struct{ field string }
++)
+ 
+-func (d *dummyStringerRedacter) Redact() string {
+-	return "my value redacted"
+-}
++func (d *dummyStringer) String() string         { return "my value" }
++func (d *dummyStringerRedacter) String() string { return "my value" }
++func (d *dummyStringerRedacter) Redact() string { return "my value redacted" }
+ 
+ func TestExtractArgs(t *testing.T) {
+ 	tests := []struct {
+@@ -148,64 +124,18 @@ func TestExtractArgs(t *testing.T) {
+ 	for _, test := range tests {
+ 		t.Run(test.name, func(t *testing.T) {
+ 			if value := extractArgs(test.req); value != test.expected {
+-				t.Errorf(`The stringified %s structure must be equal to "%s", %v given`, test.name, test.expected, value)
++				t.Errorf(`The stringified %s structure must be equal to %q, %v given`, test.name, test.expected, value)
+ 			}
+ 		})
+ 	}
+ }
+ 
+-func TestExtractError(t *testing.T) {
+-	tests := []struct {
+-		name       string
+-		err        error
+-		wantLevel  slog.Level
+-		wantErrStr string
+-	}{
+-		{name: "no error", err: nil, wantLevel: slog.LevelInfo, wantErrStr: ""},
+-		{name: "error", err: errors.New("test error"), wantLevel: slog.LevelError, wantErrStr: "test error"},
++func TestErrorFields(t *testing.T) {
++	if fields := errorFields(nil); len(fields) != 0 {
++		t.Fatalf("nil error fields = %#v, want empty", fields)
+ 	}
+-	for _, test := range tests {
+-		t.Run(test.name, func(t *testing.T) {
+-			level, errStr := extractError(test.err)
+-			if level != test.wantLevel {
+-				t.Errorf("want: %d, got: %d", test.wantLevel, level)
+-			}
+-			if errStr != test.wantErrStr {
+-				t.Errorf("want: %s, got: %s", test.wantErrStr, errStr)
+-			}
+-		})
++	fields := errorFields(errors.New("test error"))
++	if len(fields) == 0 {
++		t.Fatal("error fields should not be empty")
+ 	}
+ }
+-
+-type captureHandler struct {
+-	records []slog.Record
+-	attrs   []map[string]any
+-}
+-
+-func (h *captureHandler) reset() {
+-	h.records = nil
+-	h.attrs = nil
+-}
+-
+-func (h *captureHandler) Enabled(context.Context, slog.Level) bool {
+-	return true
+-}
+-
+-func (h *captureHandler) Handle(_ context.Context, record slog.Record) error {
+-	attrs := make(map[string]any)
+-	record.Attrs(func(attr slog.Attr) bool {
+-		attrs[attr.Key] = attr.Value.Any()
+-		return true
+-	})
+-	h.records = append(h.records, record.Clone())
+-	h.attrs = append(h.attrs, attrs)
+-	return nil
+-}
+-
+-func (h *captureHandler) WithAttrs([]slog.Attr) slog.Handler {
+-	return h
+-}
+-
+-func (h *captureHandler) WithGroup(string) slog.Handler {
+-	return h
+-}
+diff --git a/transport/grpc/resolver/discovery/resolver.go b/transport/grpc/resolver/discovery/resolver.go
+index c8faaef..3465b4d 100644
+--- a/transport/grpc/resolver/discovery/resolver.go
++++ b/transport/grpc/resolver/discovery/resolver.go
+@@ -11,7 +11,7 @@ import (
+ 
+ 	"github.com/aisphereio/kernel/internal/endpoint"
+ 	"github.com/aisphereio/kernel/internal/subset"
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ 	"github.com/aisphereio/kernel/registry"
+ )
+ 
+@@ -39,7 +39,7 @@ func (r *discoveryResolver) watch() {
+ 			if errors.Is(err, context.Canceled) {
+ 				return
+ 			}
+-			log.Error("[resolver] failed to watch discovery endpoint", "error", err)
++			logx.Error("[resolver] failed to watch discovery endpoint", "error", err)
+ 			time.Sleep(time.Second)
+ 			continue
+ 		}
+@@ -55,7 +55,7 @@ func (r *discoveryResolver) update(ins []*registry.ServiceInstance) {
+ 	for _, in := range ins {
+ 		ept, err := endpoint.ParseEndpoint(in.Endpoints, endpoint.Scheme("grpc", !r.insecure))
+ 		if err != nil {
+-			log.Error("[resolver] failed to parse discovery endpoint", "error", err)
++			logx.Error("[resolver] failed to parse discovery endpoint", "error", err)
+ 			continue
+ 		}
+ 		if ept == "" {
+@@ -83,23 +83,23 @@ func (r *discoveryResolver) update(ins []*registry.ServiceInstance) {
+ 		addrs = append(addrs, addr)
+ 	}
+ 	if len(addrs) == 0 {
+-		log.Warn("[resolver] zero endpoint found, refused to write", "instances", ins)
++		logx.Warn("[resolver] zero endpoint found, refused to write", "instances", ins)
+ 		return
+ 	}
+ 	err := r.cc.UpdateState(resolver.State{Addresses: addrs})
+ 	if err != nil {
+-		log.Error("[resolver] failed to update state", "error", err)
++		logx.Error("[resolver] failed to update state", "error", err)
+ 	}
+ 
+ 	b, _ := json.Marshal(filtered)
+-	log.Info("[resolver] update instances", "instances", string(b))
++	logx.Info("[resolver] update instances", "instances", string(b))
+ }
+ 
+ func (r *discoveryResolver) Close() {
+ 	r.cancel()
+ 	err := r.w.Stop()
+ 	if err != nil {
+-		log.Error("[resolver] failed to stop watcher", "error", err)
++		logx.Error("[resolver] failed to stop watcher", "error", err)
+ 	}
+ }
+ 
+diff --git a/transport/grpc/server.go b/transport/grpc/server.go
+index 2df7760..9d58650 100644
+--- a/transport/grpc/server.go
++++ b/transport/grpc/server.go
+@@ -17,7 +17,7 @@ import (
+ 	"github.com/aisphereio/kernel/internal/endpoint"
+ 	"github.com/aisphereio/kernel/internal/host"
+ 	"github.com/aisphereio/kernel/internal/matcher"
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ 	"github.com/aisphereio/kernel/middleware"
+ 	"github.com/aisphereio/kernel/transport"
+ )
+@@ -218,7 +218,7 @@ func (s *Server) Start(ctx context.Context) error {
+ 		return s.err
+ 	}
+ 	s.baseCtx = ctx
+-	log.Info("[gRPC] server listening", "addr", s.lis.Addr().String())
++	logx.Info("[gRPC] server listening", "addr", s.lis.Addr().String())
+ 	s.health.Resume()
+ 	return s.Serve(s.lis)
+ }
+@@ -233,14 +233,14 @@ func (s *Server) Stop(ctx context.Context) error {
+ 	done := make(chan struct{})
+ 	go func() {
+ 		defer close(done)
+-		log.Info("[gRPC] server stopping")
++		logx.Info("[gRPC] server stopping")
+ 		s.GracefulStop()
+ 	}()
+ 
+ 	select {
+ 	case <-done:
+ 	case <-ctx.Done():
+-		log.Warn("[gRPC] server couldn't stop gracefully in time, doing force stop")
++		logx.Warn("[gRPC] server couldn't stop gracefully in time, doing force stop")
+ 		s.Server.Stop()
+ 	}
+ 	return nil
+diff --git a/transport/grpc/server_test.go b/transport/grpc/server_test.go
+index 5e2d335..515f28f 100644
+--- a/transport/grpc/server_test.go
++++ b/transport/grpc/server_test.go
+@@ -20,7 +20,7 @@ import (
+ 	"github.com/aisphereio/kernel/errorx"
+ 	"github.com/aisphereio/kernel/internal/matcher"
+ 	pb "github.com/aisphereio/kernel/internal/testdata/helloworld"
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ 	"github.com/aisphereio/kernel/middleware"
+ 	"github.com/aisphereio/kernel/transport"
+ )
+@@ -407,12 +407,12 @@ func TestStop(t *testing.T) {
+ 			}
+ 			defer l.Close()
+ 
+-			old := log.Default()
+-			defer log.SetDefault(old)
++			old := logx.Default()
++			defer logx.SetDefault(old)
+ 
+ 			// Create a logger to capture logs
+ 			var logs safeBytesBuffer
+-			log.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
++			logx.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+ 
+ 			s := NewServer(Listener(l))
+ 			pb.RegisterGreeterServer(s, &server{})
+@@ -454,7 +454,7 @@ func TestStop(t *testing.T) {
+ 				} else {
+ 					_, err := client.SayHello(context.Background(), &pb.HelloRequest{Name: "test"}) //nolint
+ 					if err != nil {
+-						log.Error("client error", "error", err)
++						logx.Error("client error", "error", err)
+ 					}
+ 				}
+ 			}()
+diff --git a/transport/http/resolver.go b/transport/http/resolver.go
+index f1622f2..72b0380 100644
+--- a/transport/http/resolver.go
++++ b/transport/http/resolver.go
+@@ -11,7 +11,7 @@ import (
+ 
+ 	"github.com/aisphereio/kernel/internal/endpoint"
+ 	"github.com/aisphereio/kernel/internal/subset"
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ 	"github.com/aisphereio/kernel/registry"
+ 	"github.com/aisphereio/kernel/selector"
+ )
+@@ -89,15 +89,15 @@ func newResolver(ctx context.Context, discovery registry.Discovery, target *Targ
+ 			if err != nil {
+ 				stopErr := watcher.Stop()
+ 				if stopErr != nil {
+-					log.Error("failed to stop http client watcher", "target", target, "error", stopErr)
++					logx.Error("failed to stop http client watcher", "target", target, "error", stopErr)
+ 				}
+ 				return nil, err
+ 			}
+ 		case <-ctx.Done():
+-			log.Error("http client watch service reached context deadline", "target", target)
++			logx.Error("http client watch service reached context deadline", "target", target)
+ 			stopErr := watcher.Stop()
+ 			if stopErr != nil {
+-				log.Error("failed to stop http client watcher", "target", target, "error", stopErr)
++				logx.Error("failed to stop http client watcher", "target", target, "error", stopErr)
+ 			}
+ 			return nil, ctx.Err()
+ 		}
+@@ -109,7 +109,7 @@ func newResolver(ctx context.Context, discovery registry.Discovery, target *Targ
+ 				if errors.Is(err, context.Canceled) {
+ 					return
+ 				}
+-				log.Error("http client watch service got unexpected error", "target", target, "error", err)
++				logx.Error("http client watch service got unexpected error", "target", target, "error", err)
+ 				time.Sleep(time.Second)
+ 				continue
+ 			}
+@@ -124,7 +124,7 @@ func (r *resolver) update(services []*registry.ServiceInstance) bool {
+ 	for _, ins := range services {
+ 		ept, err := endpoint.ParseEndpoint(ins.Endpoints, endpoint.Scheme(schemeHTTP, !r.insecure))
+ 		if err != nil {
+-			log.Error("failed to parse discovery endpoint", "target", r.target, "endpoints", ins.Endpoints, "error", err)
++			logx.Error("failed to parse discovery endpoint", "target", r.target, "endpoints", ins.Endpoints, "error", err)
+ 			continue
+ 		}
+ 		if ept == "" {
+@@ -142,7 +142,7 @@ func (r *resolver) update(services []*registry.ServiceInstance) bool {
+ 	}
+ 
+ 	if len(nodes) == 0 {
+-		log.Warn("[http resolver] zero endpoint found, refused to write", "endpoint", r.target.Endpoint, "nodes", nodes)
++		logx.Warn("[http resolver] zero endpoint found, refused to write", "endpoint", r.target.Endpoint, "nodes", nodes)
+ 		return false
+ 	}
+ 	r.rebalancer.Apply(nodes)
+diff --git a/transport/http/server.go b/transport/http/server.go
+index 6955f5d..d604d44 100644
+--- a/transport/http/server.go
++++ b/transport/http/server.go
+@@ -14,7 +14,7 @@ import (
+ 	"github.com/aisphereio/kernel/internal/endpoint"
+ 	"github.com/aisphereio/kernel/internal/host"
+ 	"github.com/aisphereio/kernel/internal/matcher"
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ 	"github.com/aisphereio/kernel/middleware"
+ 	"github.com/aisphereio/kernel/transport"
+ )
+@@ -321,7 +321,7 @@ func (s *Server) Start(ctx context.Context) error {
+ 	s.BaseContext = func(net.Listener) context.Context {
+ 		return ctx
+ 	}
+-	log.Info("[HTTP] server listening", "addr", s.lis.Addr().String())
++	logx.Info("[HTTP] server listening", "addr", s.lis.Addr().String())
+ 	var err error
+ 	if s.tlsConf != nil {
+ 		err = s.ServeTLS(s.lis, "", "")
+@@ -336,11 +336,11 @@ func (s *Server) Start(ctx context.Context) error {
+ 
+ // Stop stop the HTTP server.
+ func (s *Server) Stop(ctx context.Context) error {
+-	log.Info("[HTTP] server stopping")
++	logx.Info("[HTTP] server stopping")
+ 	err := s.Shutdown(ctx)
+ 	if err != nil {
+ 		if ctx.Err() != nil {
+-			log.Warn("[HTTP] server couldn't stop gracefully in time, doing force stop")
++			logx.Warn("[HTTP] server couldn't stop gracefully in time, doing force stop")
+ 			err = s.Close()
+ 		}
+ 	}
+diff --git a/transport/http/server_test.go b/transport/http/server_test.go
+index 1f5e354..237014b 100644
+--- a/transport/http/server_test.go
++++ b/transport/http/server_test.go
+@@ -20,7 +20,7 @@ import (
+ 
+ 	"github.com/aisphereio/kernel/errorx"
+ 	"github.com/aisphereio/kernel/internal/host"
+-	"github.com/aisphereio/kernel/log"
++	"github.com/aisphereio/kernel/logx"
+ )
+ 
+ var h = func(w http.ResponseWriter, r *http.Request) {
+@@ -417,12 +417,12 @@ func TestStop(t *testing.T) {
+ 
+ 	for _, tt := range tests {
+ 		t.Run(tt.name, func(t *testing.T) {
+-			old := log.Default()
+-			defer log.SetDefault(old)
++			old := logx.Default()
++			defer logx.SetDefault(old)
+ 
+ 			// Create a logger to capture logs
+ 			var logs safeBytesBuffer
+-			log.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
++			logx.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+ 
+ 			testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+ 				t := time.NewTimer(tt.sleep)

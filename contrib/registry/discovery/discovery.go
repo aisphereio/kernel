@@ -13,7 +13,7 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/pkg/errors"
 
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 )
 
 type Discovery struct {
@@ -162,7 +162,7 @@ func (d *Discovery) resolveBuild(appID string) *Resolve {
 		}
 	}
 
-	log.Debug("Discovery: AddWatch already watched", "appid", appID, "already_watch", ok)
+	logx.Debug("Discovery: AddWatch already watched", "appid", appID, "already_watch", ok)
 	d.once.Do(func() {
 		go d.serverProc()
 	})
@@ -170,7 +170,7 @@ func (d *Discovery) resolveBuild(appID string) *Resolve {
 }
 
 func (d *Discovery) serverProc() {
-	defer log.Debug("Discovery serverProc quit")
+	defer logx.Debug("Discovery serverProc quit")
 
 	var (
 		ctx    context.Context
@@ -241,7 +241,7 @@ func (d *Discovery) renew(ctx context.Context, ins *discoveryInstance) (err erro
 		SetResult(&res).
 		Post(uri); err != nil {
 		d.switchNode()
-		log.Error("Discovery: renew client.Get failed", "uri", uri, "env", c.Env, "appid", ins.AppID, "hostname", c.Host, "error", err)
+		logx.Error("Discovery: renew client.Get failed", "uri", uri, "env", c.Env, "appid", ins.AppID, "hostname", c.Host, "error", err)
 		return
 	}
 
@@ -254,7 +254,7 @@ func (d *Discovery) renew(ctx context.Context, ins *discoveryInstance) (err erro
 			return
 		}
 
-		log.Error("Discovery: renew client.Get returned code", "uri", uri, "env", c.Env, "appid", ins.AppID, "hostname", c.Host, "code", res.Code)
+		logx.Error("Discovery: renew client.Get returned code", "uri", uri, "env", c.Env, "appid", ins.AppID, "hostname", c.Host, "code", res.Code)
 	}
 
 	return
@@ -279,7 +279,7 @@ func (d *Discovery) cancel(ins *discoveryInstance) (err error) {
 		SetResult(&res).
 		Post(uri); err != nil {
 		d.switchNode()
-		log.Error("Discovery: cancel client.Get failed", "uri", uri, "env", config.Env, "appid", ins.AppID, "hostname", config.Host, "error", err)
+		logx.Error("Discovery: cancel client.Get failed", "uri", uri, "env", config.Env, "appid", ins.AppID, "hostname", config.Host, "error", err)
 		return
 	}
 
@@ -289,7 +289,7 @@ func (d *Discovery) cancel(ins *discoveryInstance) (err error) {
 			return nil
 		}
 
-		log.Warn("Discovery: cancel client.Get returned code", "uri", uri, "env", config.Env, "appid", ins.AppID, "hostname", config.Host, "code", res.Code)
+		logx.Warn("Discovery: cancel client.Get returned code", "uri", uri, "env", config.Env, "appid", ins.AppID, "hostname", config.Host, "code", res.Code)
 		err = fmt.Errorf("ErrorCode: %d", res.Code)
 		return
 	}
@@ -380,13 +380,13 @@ func (d *Discovery) polls(ctx context.Context) (apps map[string]*disInstancesInf
 		SetQueryParamsFromValues(p).
 		SetResult(res).Get(uri); err != nil {
 		d.switchNode()
-		log.Error("Discovery: client.Get failed", "uri", reqURI, "error", err)
+		logx.Error("Discovery: client.Get failed", "uri", reqURI, "error", err)
 		return nil, err
 	}
 
 	if res.Code != _codeOK {
 		if res.Code != _codeNotModified {
-			log.Error("Discovery: client.Get returned code", "uri", reqURI, "code", res.Code)
+			logx.Error("Discovery: client.Get returned code", "uri", reqURI, "code", res.Code)
 		}
 		err = fmt.Errorf("discovery.polls failed ErrCode: %d", res.Code)
 		return
@@ -395,12 +395,12 @@ func (d *Discovery) polls(ctx context.Context) (apps map[string]*disInstancesInf
 	for _, app := range res.Data {
 		if app.LastTs == 0 {
 			err = ErrServerError
-			log.Error("Discovery: client.Get latest_timestamp is 0", "uri", reqURI, "instances", res.Data)
+			logx.Error("Discovery: client.Get latest_timestamp is 0", "uri", reqURI, "instances", res.Data)
 			return
 		}
 	}
 
-	log.Debug("Discovery: successfully polls", "uri", reqURI, "instances", res.Data)
+	logx.Debug("Discovery: successfully polls", "uri", reqURI, "instances", res.Data)
 	apps = res.Data
 	return
 }

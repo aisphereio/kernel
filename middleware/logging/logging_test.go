@@ -3,9 +3,9 @@ package logging
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"testing"
 
+	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/middleware"
 	"github.com/aisphereio/kernel/transport"
 )
@@ -18,69 +18,54 @@ type Transport struct {
 	operation string
 }
 
-func (tr *Transport) Kind() transport.Kind {
-	return tr.kind
-}
-
-func (tr *Transport) Endpoint() string {
-	return tr.endpoint
-}
-
-func (tr *Transport) Operation() string {
-	return tr.operation
-}
-
-func (tr *Transport) RequestHeader() transport.Header {
-	return nil
-}
-
-func (tr *Transport) ReplyHeader() transport.Header {
-	return nil
-}
+func (tr *Transport) Kind() transport.Kind            { return tr.kind }
+func (tr *Transport) Endpoint() string                { return tr.endpoint }
+func (tr *Transport) Operation() string               { return tr.operation }
+func (tr *Transport) RequestHeader() transport.Header { return nil }
+func (tr *Transport) ReplyHeader() transport.Header   { return nil }
 
 func TestHTTP(t *testing.T) {
 	err := errors.New("reply.error")
-	handler := &captureHandler{}
-	logger := slog.New(handler)
+	logger := logx.NewTestLogger(t)
 
 	tests := []struct {
 		name string
-		kind func(*slog.Logger) middleware.Middleware
+		kind func(logx.Logger) middleware.Middleware
 		err  error
 		ctx  context.Context
-		want slog.Level
+		want logx.LogLevel
 	}{
 		{
 			name: "http-server@fail",
 			kind: Server,
 			err:  err,
 			ctx:  transport.NewServerContext(context.Background(), &Transport{kind: transport.KindHTTP, endpoint: "endpoint", operation: "/package.service/method"}),
-			want: slog.LevelError,
+			want: logx.ErrorLevel,
 		},
 		{
 			name: "http-server@succ",
 			kind: Server,
 			ctx:  transport.NewServerContext(context.Background(), &Transport{kind: transport.KindHTTP, endpoint: "endpoint", operation: "/package.service/method"}),
-			want: slog.LevelInfo,
+			want: logx.InfoLevel,
 		},
 		{
 			name: "http-client@succ",
 			kind: Client,
 			ctx:  transport.NewClientContext(context.Background(), &Transport{kind: transport.KindHTTP, endpoint: "endpoint", operation: "/package.service/method"}),
-			want: slog.LevelInfo,
+			want: logx.InfoLevel,
 		},
 		{
 			name: "http-client@fail",
 			kind: Client,
 			err:  err,
 			ctx:  transport.NewClientContext(context.Background(), &Transport{kind: transport.KindHTTP, endpoint: "endpoint", operation: "/package.service/method"}),
-			want: slog.LevelError,
+			want: logx.ErrorLevel,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			handler.reset()
+			logger = logx.NewTestLogger(t)
 			next := func(context.Context, any) (any, error) {
 				return "reply", test.err
 			}
@@ -92,48 +77,39 @@ func TestHTTP(t *testing.T) {
 			if gotErr != test.err {
 				t.Fatalf("err = %v, want %v", gotErr, test.err)
 			}
-			if len(handler.records) != 1 {
-				t.Fatalf("records len = %d, want 1", len(handler.records))
+			entries := logger.Entries()
+			if len(entries) != 1 {
+				t.Fatalf("entries len = %d, want 1", len(entries))
 			}
-			if handler.records[0].Level != test.want {
-				t.Fatalf("level = %v, want %v", handler.records[0].Level, test.want)
+			if entries[0].Level != test.want {
+				t.Fatalf("level = %v, want %v", entries[0].Level, test.want)
 			}
-			if got := handler.attrs[0]["component"]; got != "http" {
-				t.Fatalf("component = %v, want %q", got, "http")
-			}
-			if got := handler.attrs[0]["operation"]; got != "/package.service/method" {
-				t.Fatalf("operation = %v, want %q", got, "/package.service/method")
-			}
-			if got := handler.attrs[0]["args"]; got != "req.args" {
-				t.Fatalf("args = %v, want %q", got, "req.args")
-			}
+			assertField(t, entries[0].Fields, "component", "http")
+			assertField(t, entries[0].Fields, "operation", "/package.service/method")
+			assertField(t, entries[0].Fields, "args", "req.args")
 		})
 	}
 }
 
+func assertField(t *testing.T, fields []logx.Field, key string, want any) {
+	t.Helper()
+	for _, field := range fields {
+		if field.Key == key && field.Value == want {
+			return
+		}
+	}
+	t.Fatalf("missing field %s=%v in %#v", key, want, fields)
+}
+
 type (
-	dummy struct {
-		field string
-	}
-	dummyStringer struct {
-		field string
-	}
-	dummyStringerRedacter struct {
-		field string
-	}
+	dummy                 struct{ field string }
+	dummyStringer         struct{ field string }
+	dummyStringerRedacter struct{ field string }
 )
 
-func (d *dummyStringer) String() string {
-	return "my value"
-}
-
-func (d *dummyStringerRedacter) String() string {
-	return "my value"
-}
-
-func (d *dummyStringerRedacter) Redact() string {
-	return "my value redacted"
-}
+func (d *dummyStringer) String() string         { return "my value" }
+func (d *dummyStringerRedacter) String() string { return "my value" }
+func (d *dummyStringerRedacter) Redact() string { return "my value redacted" }
 
 func TestExtractArgs(t *testing.T) {
 	tests := []struct {
@@ -148,64 +124,18 @@ func TestExtractArgs(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			if value := extractArgs(test.req); value != test.expected {
-				t.Errorf(`The stringified %s structure must be equal to "%s", %v given`, test.name, test.expected, value)
+				t.Errorf(`The stringified %s structure must be equal to %q, %v given`, test.name, test.expected, value)
 			}
 		})
 	}
 }
 
-func TestExtractError(t *testing.T) {
-	tests := []struct {
-		name       string
-		err        error
-		wantLevel  slog.Level
-		wantErrStr string
-	}{
-		{name: "no error", err: nil, wantLevel: slog.LevelInfo, wantErrStr: ""},
-		{name: "error", err: errors.New("test error"), wantLevel: slog.LevelError, wantErrStr: "test error"},
+func TestErrorFields(t *testing.T) {
+	if fields := errorFields(nil); len(fields) != 0 {
+		t.Fatalf("nil error fields = %#v, want empty", fields)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			level, errStr := extractError(test.err)
-			if level != test.wantLevel {
-				t.Errorf("want: %d, got: %d", test.wantLevel, level)
-			}
-			if errStr != test.wantErrStr {
-				t.Errorf("want: %s, got: %s", test.wantErrStr, errStr)
-			}
-		})
+	fields := errorFields(errors.New("test error"))
+	if len(fields) == 0 {
+		t.Fatal("error fields should not be empty")
 	}
-}
-
-type captureHandler struct {
-	records []slog.Record
-	attrs   []map[string]any
-}
-
-func (h *captureHandler) reset() {
-	h.records = nil
-	h.attrs = nil
-}
-
-func (h *captureHandler) Enabled(context.Context, slog.Level) bool {
-	return true
-}
-
-func (h *captureHandler) Handle(_ context.Context, record slog.Record) error {
-	attrs := make(map[string]any)
-	record.Attrs(func(attr slog.Attr) bool {
-		attrs[attr.Key] = attr.Value.Any()
-		return true
-	})
-	h.records = append(h.records, record.Clone())
-	h.attrs = append(h.attrs, attrs)
-	return nil
-}
-
-func (h *captureHandler) WithAttrs([]slog.Attr) slog.Handler {
-	return h
-}
-
-func (h *captureHandler) WithGroup(string) slog.Handler {
-	return h
 }

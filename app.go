@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/registry"
 	"github.com/aisphereio/kernel/transport"
 )
@@ -49,7 +49,7 @@ func New(opts ...Option) *App {
 		opt(&o)
 	}
 	if o.logger != nil {
-		log.SetDefault(o.logger)
+		logx.SetDefault(o.logger)
 	}
 	ctx, cancel := context.WithCancel(o.ctx)
 	return &App{

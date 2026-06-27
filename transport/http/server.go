@@ -14,7 +14,7 @@ import (
 	"github.com/aisphereio/kernel/internal/endpoint"
 	"github.com/aisphereio/kernel/internal/host"
 	"github.com/aisphereio/kernel/internal/matcher"
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/middleware"
 	"github.com/aisphereio/kernel/transport"
 )
@@ -321,7 +321,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.BaseContext = func(net.Listener) context.Context {
 		return ctx
 	}
-	log.Info("[HTTP] server listening", "addr", s.lis.Addr().String())
+	logx.Info("[HTTP] server listening", "addr", s.lis.Addr().String())
 	var err error
 	if s.tlsConf != nil {
 		err = s.ServeTLS(s.lis, "", "")
@@ -336,11 +336,11 @@ func (s *Server) Start(ctx context.Context) error {
 
 // Stop stop the HTTP server.
 func (s *Server) Stop(ctx context.Context) error {
-	log.Info("[HTTP] server stopping")
+	logx.Info("[HTTP] server stopping")
 	err := s.Shutdown(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
-			log.Warn("[HTTP] server couldn't stop gracefully in time, doing force stop")
+			logx.Warn("[HTTP] server couldn't stop gracefully in time, doing force stop")
 			err = s.Close()
 		}
 	}

@@ -1,24 +1,24 @@
-# errorx Contract
+# errorx 契约
 
-This contract is mandatory for Kernel and business modules.
+本契约对 Kernel 及业务模块是强制性要求。
 
-## Package rule
+## 包使用规则
 
-`github.com/aisphereio/kernel/errorx` is the only Kernel error package.
+`github.com/aisphereio/kernel/errorx` 是唯一的 Kernel 错误包。
 
-The following imports are forbidden in Kernel/business API error paths:
+在 Kernel/业务 API 错误路径中禁止以下导入：
 
 ```go
 import "github.com/aisphereio/kernel/errors"
 ```
 
-The package no longer exists and must not be recreated.
+该包已不再存在，且不得重新创建。
 
-## Code rule
+## 错误码规则
 
-Error codes are stable, upper-snake-case strings.
+错误码是稳定的、大写蛇形（upper-snake-case）字符串。
 
-Valid:
+合法：
 
 ```text
 AIHUB_SKILL_NOT_FOUND
@@ -26,7 +26,7 @@ REQUEST_VALIDATE_FAILED
 MODEL_UPSTREAM_TIMEOUT
 ```
 
-Invalid:
+不合法：
 
 ```text
 skill-not-found
@@ -34,40 +34,40 @@ aihub.skill.not_found
 notFound
 ```
 
-Use:
+使用：
 
 ```go
 errorx.IsValidCode(code)
 errorx.MustValidCodes(code1, code2)
 ```
 
-## Response rule
+## 响应规则
 
-HTTP error response body:
+HTTP 错误响应体：
 
 ```json
 {
   "code": "AIHUB_SKILL_NOT_FOUND",
-  "message": "skill not found",
-  "request_id": "optional",
-  "trace_id": "optional",
+  "message": "技能未找到",
+  "request_id": "可选",
+  "trace_id": "可选",
   "metadata": {}
 }
 ```
 
-HTTP status is not duplicated as the error identity.
+HTTP 状态码不会作为错误标识重复出现。
 
-## Metadata rule
+## Metadata 规则
 
-- `Metadata`: internal, logged through `SafeMetadataOf` / `Fields`
-- `PublicMetadata`: transport-safe, may appear in API responses
-- sensitive public metadata is redacted
+- `Metadata`：内部使用，通过 `SafeMetadataOf` / `Fields` 写入日志
+- `PublicMetadata`：传输安全，可能出现在 API 响应中
+- 敏感的 public metadata 会被自动脱敏
 
-Sensitive keys include password, token, secret, authorization, cookie, credential, private key and API key variants.
+敏感键包括 password、token、secret、authorization、cookie、credential、private key 和 API key 等变体。
 
-## Interop rule
+## 互操作规则
 
-The following must work:
+以下操作必须正常工作：
 
 ```go
 errors.Is(wrapped, cause)
@@ -75,6 +75,6 @@ errors.As(err, &target)
 errors.Is(errorx.NotFound("X", "x"), errorx.NotFound("X", "other"))
 ```
 
-## Transport rule
+## 传输规则
 
-HTTP and gRPC transports must not depend on the removed legacy `errors` package. They must convert via `errorx.From`, `errorx.HTTPStatusOf`, `errorx.GRPCCodeOf` and `errorx.CodeOf`.
+HTTP 和 gRPC 传输层不得依赖已移除的旧 `errors` 包。它们必须通过 `errorx.From`、`errorx.HTTPStatusOf`、`errorx.GRPCCodeOf` 和 `errorx.CodeOf` 进行转换。

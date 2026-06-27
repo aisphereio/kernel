@@ -391,7 +391,7 @@ ctx.Log().Warn("authz denied",
 
 ```go
 ctx.Log().Error("create skill failed",
-	logx.Error(err),
+	logx.Err(err),
 	logx.String("project_id", req.ProjectID),
 )
 ```
@@ -428,7 +428,7 @@ func Error(err error) Field
 错误字段统一使用：
 
 ```go
-logx.Error(err)
+logx.Err(err)
 ```
 
 输出字段建议包含：
@@ -811,7 +811,7 @@ func AccessLogMiddleware(logger logx.Logger) Middleware {
 			}
 
 			if err != nil {
-				fields = append(fields, logx.Error(err))
+				fields = append(fields, logx.Err(err))
 				ctx.Log().Warn("http request completed with error", fields...)
 			} else {
 				ctx.Log().Info("http request completed", fields...)
@@ -930,7 +930,7 @@ type Sampler interface {
 
 # 14. 与 errorx 集成
 
-`logx.Error(err)` 必须识别 `errorx.Error`。
+`logx.Err(err)` 必须识别 `errorx.Error`。
 
 如果 err 是 Kernel 标准错误，应提取：
 
@@ -948,7 +948,7 @@ retryable
 err := errorx.Forbidden("AIHUB_SKILL_DELETE_DENIED", "no permission")
 
 ctx.Log().Warn("delete skill denied",
-	logx.Error(err),
+	logx.Err(err),
 	logx.String("skill_id", skillID),
 )
 ```
@@ -1039,7 +1039,7 @@ AI 写业务代码时：
 5. 不允许打印 token / secret / password
 6. 不允许拼接字符串作为主要日志内容
 7. 必须使用结构化字段
-8. 错误日志必须包含 logx.Error(err)
+8. 错误日志必须包含 logx.Err(err)
 9. 权限拒绝建议用 Warn
 10. 系统失败使用 Error
 ```
@@ -1275,7 +1275,7 @@ func (l noopLogger) Named(string) Logger {
 6. 日志支持 With 和 Named
 7. 日志自动携带 service / env / version
 8. HTTP 请求日志自动携带 request_id / trace_id
-9. 错误日志可以使用 logx.Error(err)
+9. 错误日志可以使用 logx.Err(err)
 10. token / password / secret 等字段会被脱敏
 11. kernel-lint 能禁止业务直接使用 log/slog/zap
 12. examples/hello-module 使用 logx，而不是标准库 log

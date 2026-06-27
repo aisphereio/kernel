@@ -1,23 +1,23 @@
-# errorx User Guide
+# errorx 用户指南
 
-## 1. What to return
+## 1. 返回什么
 
-Return `errorx` for every API/business failure.
+对每个 API/业务失败返回 `errorx`。
 
 ```go
-return nil, errorx.NotFound("AIHUB_SKILL_NOT_FOUND", "skill not found")
+return nil, errorx.NotFound("AIHUB_SKILL_NOT_FOUND", "技能未找到")
 ```
 
-Do not return raw `errors.New` or `fmt.Errorf` from handler/service/repository code when the error can cross a module or API boundary.
+在 handler/service/repository 代码中，当错误可能跨越模块或 API 边界时，不要返回裸的 `errors.New` 或 `fmt.Errorf`。
 
-## 2. Wrapping a lower-level cause
+## 2. 包装底层错误
 
 ```go
 skill, err := repo.Find(ctx, id)
 if errors.Is(err, sql.ErrNoRows) {
     return nil, errorx.NotFound(
         "AIHUB_SKILL_NOT_FOUND",
-        "skill not found",
+        "技能未找到",
         errorx.WithCause(err),
         errorx.WithMetadata("skill_id", id),
         errorx.WithPublicMetadata("resource", "skill"),
@@ -26,24 +26,24 @@ if errors.Is(err, sql.ErrNoRows) {
 if err != nil {
     return nil, errorx.Internal(
         "AIHUB_SKILL_QUERY_FAILED",
-        "failed to query skill",
+        "查询技能失败",
         errorx.WithCause(err),
         errorx.WithMetadata("skill_id", id),
     )
 }
 ```
 
-The public message is stable and safe. The original cause is preserved for `errors.Is` / `errors.As` and logs.
+公开消息是稳定且安全的。原始底层错误被保留，可通过 `errors.Is` / `errors.As` 和日志访问。
 
-## 3. HTTP adapter behavior
+## 3. HTTP 适配器行为
 
-A handler returning:
+handler 返回：
 
 ```go
-return errorx.Forbidden("IAM_PERMISSION_DENIED", "permission denied")
+return errorx.Forbidden("IAM_PERMISSION_DENIED", "权限被拒绝")
 ```
 
-becomes:
+变为：
 
 ```http
 HTTP/1.1 403 Forbidden
@@ -53,32 +53,32 @@ Content-Type: application/json
 ```json
 {
   "code": "IAM_PERMISSION_DENIED",
-  "message": "permission denied"
+  "message": "权限被拒绝"
 }
 ```
 
-## 4. gRPC adapter behavior
+## 4. gRPC 适配器行为
 
-The gRPC transport converts `errorx` into `status.Status` and writes `errdetails.ErrorInfo`:
+gRPC 传输层将 `errorx` 转换为 `status.Status` 并写入 `errdetails.ErrorInfo`：
 
-- gRPC code: derived from `errorx.GRPCCode()`
-- ErrorInfo reason: `errorx.Code()`
-- ErrorInfo metadata: request id, trace id and public metadata
+- gRPC code：由 `errorx.GRPCCode()` 推导
+- ErrorInfo reason：`errorx.Code()`
+- ErrorInfo metadata：request id、trace id 及 public metadata
 
-The gRPC client adapter converts remote `status.Status` back into `errorx` when possible.
+gRPC 客户端适配器将远程的 `status.Status` 尽可能转回 `errorx`。
 
-## 5. Logging and metrics
+## 5. 日志和指标
 
-Use logger-neutral fields:
+使用与日志器无关的字段：
 
 ```go
 fields := errorx.Fields(err)
 labels := errorx.MetricsLabels(err)
 ```
 
-`MetricsLabels` is intentionally low-cardinality. It does not include message, request id, trace id, object ids or raw metadata.
+`MetricsLabels` 刻意保持低基数。它不包含 message、request id、trace id、对象 ID 或原始 metadata。
 
-## 6. Retry decisions
+## 6. 重试决策
 
 ```go
 if errorx.RetryableOf(err) {
@@ -86,57 +86,57 @@ if errorx.RetryableOf(err) {
 }
 ```
 
-Default retryable errors:
+默认可重试的错误：
 
 - `TOO_MANY_REQUESTS`
 - `SERVICE_UNAVAILABLE`
 - `TIMEOUT`
 
-You may override with `errorx.WithRetryable(true)`.
+你可以用 `errorx.WithRetryable(true)` 覆盖默认行为。
 
-## 7. Validation scenario
+## 7. 参数校验场景
 
 ```go
 return nil, errorx.BadRequest(
     "REQUEST_VALIDATE_FAILED",
-    "request validation failed",
+    "请求参数校验失败",
     errorx.WithCause(err),
     errorx.WithMetadata("validation_error", err.Error()),
     errorx.WithPublicMetadata("field", "name"),
 )
 ```
 
-## 8. Upstream model call scenario
+## 8. 模型上游调用场景
 
 ```go
 return nil, errorx.Timeout(
     "MODEL_UPSTREAM_TIMEOUT",
-    "model upstream timeout",
+    "模型上游超时",
     errorx.WithCause(err),
     errorx.WithRetryable(true),
     errorx.WithMetadata("model", "qwen3-asr"),
 )
 ```
 
-## 9. Repository not-found scenario
+## 9. 仓库层未找到场景
 
 ```go
 if errors.Is(err, sql.ErrNoRows) {
     return nil, errorx.NotFound(
         "AIHUB_RESOURCE_NOT_FOUND",
-        "resource not found",
+        "资源未找到",
         errorx.WithCause(err),
         errorx.WithPublicMetadata("resource", "skill"),
     )
 }
 ```
 
-## 10. Forbidden scenario
+## 10. 无权限场景
 
 ```go
 return nil, errorx.Forbidden(
     "IAM_PERMISSION_DENIED",
-    "permission denied",
+    "权限被拒绝",
     errorx.WithMetadata("subject_id", subjectID),
     errorx.WithMetadata("resource", resource),
     errorx.WithPublicMetadata("resource", "skill"),

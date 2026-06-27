@@ -11,7 +11,7 @@ import (
 
 	"github.com/aisphereio/kernel/internal/endpoint"
 	"github.com/aisphereio/kernel/internal/subset"
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/registry"
 )
 
@@ -39,7 +39,7 @@ func (r *discoveryResolver) watch() {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
-			log.Error("[resolver] failed to watch discovery endpoint", "error", err)
+			logx.Error("[resolver] failed to watch discovery endpoint", "error", err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -55,7 +55,7 @@ func (r *discoveryResolver) update(ins []*registry.ServiceInstance) {
 	for _, in := range ins {
 		ept, err := endpoint.ParseEndpoint(in.Endpoints, endpoint.Scheme("grpc", !r.insecure))
 		if err != nil {
-			log.Error("[resolver] failed to parse discovery endpoint", "error", err)
+			logx.Error("[resolver] failed to parse discovery endpoint", "error", err)
 			continue
 		}
 		if ept == "" {
@@ -83,23 +83,23 @@ func (r *discoveryResolver) update(ins []*registry.ServiceInstance) {
 		addrs = append(addrs, addr)
 	}
 	if len(addrs) == 0 {
-		log.Warn("[resolver] zero endpoint found, refused to write", "instances", ins)
+		logx.Warn("[resolver] zero endpoint found, refused to write", "instances", ins)
 		return
 	}
 	err := r.cc.UpdateState(resolver.State{Addresses: addrs})
 	if err != nil {
-		log.Error("[resolver] failed to update state", "error", err)
+		logx.Error("[resolver] failed to update state", "error", err)
 	}
 
 	b, _ := json.Marshal(filtered)
-	log.Info("[resolver] update instances", "instances", string(b))
+	logx.Info("[resolver] update instances", "instances", string(b))
 }
 
 func (r *discoveryResolver) Close() {
 	r.cancel()
 	err := r.w.Stop()
 	if err != nil {
-		log.Error("[resolver] failed to stop watcher", "error", err)
+		logx.Error("[resolver] failed to stop watcher", "error", err)
 	}
 }
 

@@ -11,6 +11,28 @@ Current direction:
 - Business code must not return raw `errors.New` or `fmt.Errorf` as API/business errors.
 - Transport layers expose stable `error_code` values instead of Kratos-style `code + reason` status objects.
 
+
+## Logging model
+
+Use `github.com/aisphereio/kernel/logx` for logging. The old root `log/` package
+has been renamed to `logx/` and extended with the slog-based Kernel logging
+contract. Framework internals can still use slog-compatible helpers such as
+`logx.Info`, `logx.NewHandler`, and `logx.NewLogger`; business code should prefer
+`logx.Logger` plus typed `logx.Field` values.
+
+```go
+cfg := logx.DefaultConfig("dev")
+cfg.ServiceName = "aihub"
+logger, _, err := logx.New(cfg)
+if err != nil {
+    panic(err)
+}
+
+logger.Info("service started", logx.String("addr", ":8000"))
+```
+
+See `logx/README.md` and `docs/design/logx.md`.
+
 ## Error model
 
 Use `github.com/aisphereio/kernel/errorx` everywhere in handler, service, repository, worker and adapter code.
@@ -115,6 +137,8 @@ scripts\verify-errorx.cmd
 Start with:
 
 - `errorx/README.md`
+- `logx/README.md`
+- `docs/design/logx.md`
 - `docs/guides/errorx-user-guide.md`
 - `docs/contracts/errorx.md`
 - `docs/process/errorx-acceptance-checklist.md`

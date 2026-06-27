@@ -98,8 +98,15 @@ func TestDefaultRequestDecoderProtoJSONRejectsScalarField(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected scalar protojson body to fail")
 	}
-	if !strings.Contains(err.Error(), "want proto.Message") {
-		t.Errorf("expected proto message type error, got %v", err)
+	if !errorx.IsCode(err, "REQUEST_BODY_DECODE_FAILED") {
+		t.Errorf("expected REQUEST_BODY_DECODE_FAILED, got %v", err)
+	}
+	if errorx.MessageOf(err) != "request body decode failed" {
+		t.Errorf("expected stable transport error message, got %q", errorx.MessageOf(err))
+	}
+	cause := errorx.CauseOf(err)
+	if cause == nil || !strings.Contains(cause.Error(), "want proto.Message") {
+		t.Errorf("expected proto message type cause, got %v", cause)
 	}
 }
 

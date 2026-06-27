@@ -1,42 +1,42 @@
-# Forbidden Patterns
+# 禁止模式
 
-## Removed package
+## 已移除的包
 
 ```go
 import "github.com/aisphereio/kernel/errors"
 ```
 
-Forbidden. Use:
+禁止使用。请改用：
 
 ```go
 import "github.com/aisphereio/kernel/errorx"
 ```
 
-## Raw business errors
+## 裸业务错误
 
-Forbidden for API/business boundaries:
+在 API/业务边界禁止使用：
 
 ```go
-return errors.New("skill not found")
-return fmt.Errorf("skill %s not found", id)
+return errors.New("技能未找到")
+return fmt.Errorf("技能 %s 未找到", id)
 ```
 
-Use:
+请改用：
 
 ```go
 return errorx.NotFound(
     "AIHUB_SKILL_NOT_FOUND",
-    "skill not found",
+    "技能未找到",
     errorx.WithMetadata("skill_id", id),
 )
 ```
 
-## Dynamic error codes
+## 动态错误码
 
-Forbidden:
+禁止使用：
 
 ```go
-return errorx.NotFound(errorx.Code("SKILL_"+id+"_NOT_FOUND"), "skill not found")
+return errorx.NotFound(errorx.Code("SKILL_"+id+"_NOT_FOUND"), "技能未找到")
 ```
 
-Codes must be stable and low-cardinality.
+错误码必须是稳定且低基数（low-cardinality）的字符串常量。

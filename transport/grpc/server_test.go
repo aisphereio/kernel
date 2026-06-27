@@ -20,7 +20,7 @@ import (
 	"github.com/aisphereio/kernel/errorx"
 	"github.com/aisphereio/kernel/internal/matcher"
 	pb "github.com/aisphereio/kernel/internal/testdata/helloworld"
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/middleware"
 	"github.com/aisphereio/kernel/transport"
 )
@@ -407,12 +407,12 @@ func TestStop(t *testing.T) {
 			}
 			defer l.Close()
 
-			old := log.Default()
-			defer log.SetDefault(old)
+			old := logx.Default()
+			defer logx.SetDefault(old)
 
 			// Create a logger to capture logs
 			var logs safeBytesBuffer
-			log.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+			logx.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 
 			s := NewServer(Listener(l))
 			pb.RegisterGreeterServer(s, &server{})
@@ -454,7 +454,7 @@ func TestStop(t *testing.T) {
 				} else {
 					_, err := client.SayHello(context.Background(), &pb.HelloRequest{Name: "test"}) //nolint
 					if err != nil {
-						log.Error("client error", "error", err)
+						logx.Error("client error", "error", err)
 					}
 				}
 			}()

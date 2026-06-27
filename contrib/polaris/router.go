@@ -17,7 +17,7 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/aisphereio/kernel"
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/selector"
 	"github.com/aisphereio/kernel/transport"
 	"github.com/aisphereio/kernel/transport/http"
@@ -90,7 +90,7 @@ func (p *Polaris) NodeFilter(opts ...RouterOption) selector.NodeFilter {
 
 		instances, err := p.processRouters(sourceService, buildPolarisInstance(p.namespace, nodes))
 		if err != nil {
-			log.Error("polaris process routers failed", "error", err)
+			logx.Error("polaris process routers failed", "error", err)
 			return nodes
 		}
 
@@ -223,12 +223,12 @@ func buildPolarisInstance(namespace string, nodes []selector.Node) *pb.ServiceIn
 	for _, node := range nodes {
 		host, port, err := net.SplitHostPort(node.Address())
 		if err != nil {
-			log.Error("split host port failed", "error", err)
+			logx.Error("split host port failed", "error", err)
 			return nil
 		}
 		portUint64, err := strconv.ParseUint(port, 10, 32)
 		if err != nil {
-			log.Error("parse port failed", "error", err)
+			logx.Error("parse port failed", "error", err)
 			return nil
 		}
 		ins = append(ins, &v1.Instance{

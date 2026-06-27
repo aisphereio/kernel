@@ -2,7 +2,7 @@
 
 ## 30 秒介绍
 
-`errorx` 是 Aisphere Kernel 的统一错误语义包。它要求业务错误必须有稳定 `error_code`，并同时携带 `message`、`http_status`、`grpc_code`、`retryable`、`metadata`、`request_id`、`trace_id` 等信息。这样 HTTP 响应、gRPC 响应、日志、审计、指标、Worker 重试都可以从同一个错误对象中提取语义，不再各写各的错误处理逻辑。
+`errorx` 是 Aisphere Kernel 的统一错误语义包。它要求业务错误必须有稳定的 `error_code`，并同时携带 `message`、`http_status`、`grpc_code`、`retryable`、`metadata`、`request_id`、`trace_id` 等信息。这样 HTTP 响应、gRPC 响应、日志、审计、指标、Worker 重试都可以从同一个错误对象中提取语义，不再各写各的错误处理逻辑。
 
 ## 适合放到 README 的介绍
 

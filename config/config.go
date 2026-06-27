@@ -12,7 +12,7 @@ import (
 	_ "github.com/aisphereio/kernel/encoding/proto"
 	_ "github.com/aisphereio/kernel/encoding/xml"
 	_ "github.com/aisphereio/kernel/encoding/yaml"
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 )
 
 var _ Config = (*config)(nil)
@@ -60,19 +60,19 @@ func (c *config) watch(w Watcher) {
 		kvs, err := w.Next()
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				log.Info("watcher's ctx cancel", "error", err)
+				logx.Info("watcher's ctx cancel", "error", err)
 				return
 			}
 			time.Sleep(time.Second)
-			log.Error("failed to watch next config", "error", err)
+			logx.Error("failed to watch next config", "error", err)
 			continue
 		}
 		if err := c.reader.Merge(kvs...); err != nil {
-			log.Error("failed to merge next config", "error", err)
+			logx.Error("failed to merge next config", "error", err)
 			continue
 		}
 		if err := c.reader.Resolve(); err != nil {
-			log.Error("failed to resolve next config", "error", err)
+			logx.Error("failed to resolve next config", "error", err)
 			continue
 		}
 		c.cached.Range(func(key, value any) bool {
@@ -96,22 +96,22 @@ func (c *config) Load() error {
 			return err
 		}
 		for _, v := range kvs {
-			log.Debug("config loaded", "key", v.Key, "format", v.Format)
+			logx.Debug("config loaded", "key", v.Key, "format", v.Format)
 		}
 		if err = c.reader.Merge(kvs...); err != nil {
-			log.Error("failed to merge config source", "error", err)
+			logx.Error("failed to merge config source", "error", err)
 			return err
 		}
 		w, err := src.Watch()
 		if err != nil {
-			log.Error("failed to watch config source", "error", err)
+			logx.Error("failed to watch config source", "error", err)
 			return err
 		}
 		c.watchers = append(c.watchers, w)
 		go c.watch(w)
 	}
 	if err := c.reader.Resolve(); err != nil {
-		log.Error("failed to resolve config source", "error", err)
+		logx.Error("failed to resolve config source", "error", err)
 		return err
 	}
 	return nil

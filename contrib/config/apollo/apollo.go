@@ -10,7 +10,7 @@ import (
 
 	"github.com/aisphereio/kernel/config"
 	"github.com/aisphereio/kernel/encoding"
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 )
 
 type apollo struct {
@@ -151,7 +151,7 @@ func (e *apollo) load() []*config.KeyValue {
 		if !e.opt.originConfig {
 			kv, err := e.getConfig(ns)
 			if err != nil {
-				log.Error("apollo get config failed", "error", err)
+				logx.Error("apollo get config failed", "error", err)
 				continue
 			}
 			kvs = append(kvs, kv)
@@ -161,7 +161,7 @@ func (e *apollo) load() []*config.KeyValue {
 			(format(ns) == yaml || format(ns) == yml || format(ns) == json) {
 			kv, err := e.getOriginConfig(ns)
 			if err != nil {
-				log.Error("apollo get config failed", "error", err)
+				logx.Error("apollo get config failed", "error", err)
 				continue
 			}
 			kvs = append(kvs, kv)
@@ -169,7 +169,7 @@ func (e *apollo) load() []*config.KeyValue {
 		}
 		kv, err := e.getConfig(ns)
 		if err != nil {
-			log.Error("apollo get config failed", "error", err)
+			logx.Error("apollo get config failed", "error", err)
 			continue
 		}
 		kvs = append(kvs, kv)
@@ -249,7 +249,7 @@ func resolve(key string, value any, target map[string]any) {
 		// current exists, then check existing value type, if it's not map
 		// that means duplicate keys, and at least one is not map instance.
 		if cursor, ok = v.(map[string]any); !ok {
-			log.Warn("duplicate key", "key", strings.Join(keys[:i+1], "."))
+			logx.Warn("duplicate key", "key", strings.Join(keys[:i+1], "."))
 			break
 		}
 	}

@@ -17,7 +17,7 @@ import (
 	"github.com/aisphereio/kernel/internal/endpoint"
 	"github.com/aisphereio/kernel/internal/host"
 	"github.com/aisphereio/kernel/internal/matcher"
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/middleware"
 	"github.com/aisphereio/kernel/transport"
 )
@@ -218,7 +218,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return s.err
 	}
 	s.baseCtx = ctx
-	log.Info("[gRPC] server listening", "addr", s.lis.Addr().String())
+	logx.Info("[gRPC] server listening", "addr", s.lis.Addr().String())
 	s.health.Resume()
 	return s.Serve(s.lis)
 }
@@ -233,14 +233,14 @@ func (s *Server) Stop(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		log.Info("[gRPC] server stopping")
+		logx.Info("[gRPC] server stopping")
 		s.GracefulStop()
 	}()
 
 	select {
 	case <-done:
 	case <-ctx.Done():
-		log.Warn("[gRPC] server couldn't stop gracefully in time, doing force stop")
+		logx.Warn("[gRPC] server couldn't stop gracefully in time, doing force stop")
 		s.Server.Stop()
 	}
 	return nil

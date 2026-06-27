@@ -9,7 +9,7 @@ import (
 	"github.com/polarismesh/polaris-go/pkg/model"
 
 	"github.com/aisphereio/kernel/config"
-	"github.com/aisphereio/kernel/log"
+	"github.com/aisphereio/kernel/logx"
 )
 
 // ConfigOption is polaris config option.
@@ -77,7 +77,7 @@ func receive(event chan model.ConfigFileChangeEvent) func(m model.ConfigFileChan
 	return func(m model.ConfigFileChangeEvent) {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Error("panic recovered", "err", err)
+				logx.Error("panic recovered", "err", err)
 			}
 		}()
 		event <- m
