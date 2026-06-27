@@ -1,0 +1,206 @@
+---
+description: Aisphere Kernel logx enforcement — ensures AI uses logx instead of raw log.Printf / fmt.Println / slog / zap in business code
+globs:
+  - "**/*.go"
+alwaysApply: true
+---
+
+# logx enforcement
+
+You are working inside **Aisphere Kernel**. Business code MUST use `github.com/aisphereio/kernel/logx` for all logging. logx applies to **every** Go file (logging is everywhere), unlike errorx which only applies to handler/service/repository/worker layers.
+
+## Forbidden patterns (will fail CI)
+
+In ALL Go files EXCEPT `*_test.go`, `logx/`, `examples/`, `cmd/`, `internal/`, `contrib/`:
+
+```go
+// ❌ FORBIDDEN — use logx instead
+log.Printf("...")
+log.Println("...")
+fmt.Println("...")
+fmt.Printf("...")
+slog.Info("...")
+slog.Default().Info("...")
+slog.Debug(...)
+slog.Warn(...)
+slog.Error(...)
+zap.L().Info("...")
+zap.S().Info("...")
+logrus.Info("...")
+
+// ❌ FORBIDDEN — leaks credentials (logx redaction only works on logx fields)
+logger.Info("login",
+    logx.String("password", userPassword),
+    logx.String("token", accessToken),
+)
+```
+
+## Required patterns
+
+```go
+// ✅ Request-scoped logging (most common)
+logx.FromContext(ctx).Info("skill created",
+    logx.String("skill_id", id),
+    logx.String("operation", "aihub.skill.create"),
+)
+
+// ✅ Service startup
+logger, levelCtl, err := logx.New(cfg)
+defer logger.Sync()
+logger.Info("service started", logx.String("addr", ":8000"))
+
+// ✅ Error log (auto-extracts errorx fields via duck typing, no cycle)
+logger.Error("create failed",
+    logx.String("operation", "aihub.skill.create"),
+    logx.Err(err),
+)
+
+// ✅ Inject request-scoped fields at handler boundary
+ctx = logx.Inject(ctx, logger,
+    logx.String("request_id", reqID),
+    logx.String("trace_id", traceID),
+    logx.String("subject_id", userID),
+)
+// All downstream logx.FromContext(ctx) calls auto-include these fields.
+```
+
+## API cheatsheet
+
+### Bootstrap
+
+| Function | Use for |
+|---|---|
+| `logx.New(cfg)` | Bootstrap logger (returns Logger + LevelController) |
+| `logx.DefaultConfig(env)` | Sane defaults for dev/staging/prod |
+| `logx.Noop()` | Discard all logs (tests, disabled features) |
+| `logx.FromContext(ctx)` | Request-scoped logger (Noop if none) |
+| `logx.Inject(ctx, logger, fields...)` | Attach logger + fields to ctx |
+| `logx.Sync(logger)` | Flush buffers before exit |
+
+### Logger methods
+
+```go
+logger.Debug(msg, fields...)
+logger.Info(msg, fields...)
+logger.Warn(msg, fields...)
+logger.Error(msg, fields...)
+logger.With(fields...) Logger        // persistent fields
+logger.Named(name) Logger            // module tag
+logger.WithContext(ctx) Logger
+logger.Enabled(level) bool
+logger.Sync() error
+```
+
+### Field constructors
+
+```go
+logx.String(k, v)        logx.Int(k, v)        logx.Int64(k, v)
+logx.Uint64(k, v)        logx.Bool(k, v)       logx.Float64(k, v)
+logx.Duration(k, v)      logx.Time(k, v)       logx.Any(k, v)
+logx.Event(name)         logx.Err(err)         logx.Group(k, fields...)
+```
+
+`logx.Err(err)` auto-extracts error_code / http_status / retryable / grpc_code from any error implementing those methods (works with errorx without importing it — no cycle).
+
+### Pre-built log helpers
+
+| Function | Use for |
+|---|---|
+| `logx.LogAccess(logger, AccessEvent{...})` | HTTP access log |
+| `logx.LogExternalCall(logger, ExternalCall{...})` | Upstream API call log |
+| `logx.LogError(logger, msg, ErrorLog{...})` | Standardized error log |
+| `logx.LogAuditHint(logger, AuditHint{...})` | Audit breadcrumb |
+
+### HTTP / RPC middleware
+
+```go
+logx.HTTPAccessLog(logger, cfg)         → http middleware
+logx.Recovery(logger, opts...)          → http panic recovery middleware
+logx.ServerLogging(logger, extract)     → RPC server logging
+logx.ClientLogging(logger, extract)     → RPC client logging
+logx.RPCRecovery(logger, handler)       → RPC panic recovery
+logx.LevelHTTPHandler(controller)       → runtime level control HTTP endpoint
+```
+
+## Redaction (auto)
+
+logx automatically redacts these field keys:
+
+```text
+password / passwd / pwd / token / access_token / refresh_token / id_token
+secret / client_secret / authorization / cookie / set_cookie
+api_key / private_key / ak / sk
+```
+
+Customize via `Config.Redact`. **Never log credentials directly** — redaction is a safety net, not a license to log secrets.
+
+## Sampling (high-QPS logs)
+
+```go
+cfg.Sampling = logx.SamplingConfig{
+    Enabled:  true,
+    Every:    100,
+    First:    10,
+    Window:   time.Second,
+    MinLevel: logx.DebugLevel.String(),  // only sample debug/info; warn+ always kept
+}
+```
+
+**Warn and error are NEVER sampled.**
+
+## 📚 Examples — find by scenario BEFORE writing code
+
+### Quick lookup: "I want to..."
+
+| Your scenario | Example function | File |
+|---|---|---|
+| Request-scoped log | `ExampleFromContext`, `ExampleInject` | `logx/example_test.go` |
+| Service startup | `ExampleNew` | `logx/example_test.go` |
+| Discard logs | `ExampleNoop` | `logx/example_test.go` |
+| Error log | `ExampleErr`, `ExampleLogError` | `logx/example_test.go` |
+| HTTP access log | `ExampleLogAccess`, `ExampleHTTPAccessLog` | `logx/example_test.go` |
+| Upstream call log | `ExampleLogExternalCall` | `logx/example_test.go` |
+| Audit hint | `ExampleLogAuditHint` | `logx/example_test.go` |
+| Test logger | `ExampleNewTestLogger` | `logx/example_test.go` |
+| Level control | `ExampleLevelController` | `logx/example_test.go` |
+| Persistent fields | `ExampleLogger_With`, `ExampleLogger_Named` | `logx/example_test.go` |
+| Filter / drop | `ExampleFilterKey`, `ExampleDropEvents` | `logx/example_test.go` |
+| Build handler | `ExampleNewHandler`, `ExampleWithFormat` | `logx/example_test.go` |
+| nil-safe FromContext | `ExampleFromContext_nil` | `logx/example_test.go` |
+
+### Business scenario examples (in `logx/example_business_test.go`)
+
+| Scenario | Example | Layer |
+|---|---|---|
+| Repository query log | `ExampleBusiness_repositoryLog` | repository |
+| Service operation log | `ExampleBusiness_serviceLog` | service |
+| Upstream call log | `ExampleBusiness_upstreamCall` | service |
+| Worker log with redaction | `ExampleBusiness_workerLog` | worker |
+| HTTP access log | `ExampleBusiness_httpAccess` | handler |
+| Error log with errorx | `ExampleBusiness_errorLog` | service |
+| Audit hint | `ExampleBusiness_auditHint` | service |
+| Test logger assertion | `ExampleBusiness_testLogger` | test |
+| Request-scoped fields | `ExampleBusiness_requestScoped` | handler |
+| Sampling noisy logs | `ExampleBusiness_sampling` | cross-layer |
+
+### Runnable examples
+
+```bash
+go run ./examples/logx-basic      # minimal: New + Info + Sync
+go run ./examples/logx-http       # HTTP server with access log + recovery
+```
+
+## Reading order before writing code
+
+1. **Look up Example** in the tables above (or `go doc logx.Xxx`)
+2. `logx/README.md` — single entry guide
+3. `docs/ai/logx.md` — 10 scenarios + complete handler example
+4. `logx/example_business_test.go` — copy entire business scenario
+
+## Pre-commit checks
+
+```bash
+./scripts/check-logx-usage.sh     # grep for forbidden patterns (when configured)
+golangci-lint run                 # depguard enforces import rules
+go test ./...                     # includes all Example tests
+```
