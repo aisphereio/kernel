@@ -37,6 +37,17 @@ type QueryFilter struct {
 
 func Noop() Recorder { return noopRecorder{} }
 
+// NoopStore returns a Store implementation that drops all audit records and
+// always returns an empty query result. Use it when callers require the full
+// Store surface but audit persistence is intentionally disabled.
+func NoopStore() Store { return noopStore{} }
+
 type noopRecorder struct{}
 
 func (noopRecorder) Record(context.Context, Record) error { return nil }
+
+type noopStore struct{}
+
+func (noopStore) Record(context.Context, Record) error { return nil }
+
+func (noopStore) Query(context.Context, QueryFilter) ([]Record, error) { return nil, nil }

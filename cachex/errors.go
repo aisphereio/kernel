@@ -22,4 +22,11 @@ var (
 
 	// ErrNilValue is returned when attempting to cache a nil value via GetOrSet.
 	ErrNilValue = errors.New("cachex: value function returned nil")
+
+	// ErrLockNotAcquired is returned by Lock when another holder owns the lock.
+	ErrLockNotAcquired = errors.New("cachex: lock not acquired")
+
+	// ErrLockNotHeld is returned by Unlock when the key is missing or the token
+	// does not match the current lock owner.
+	ErrLockNotHeld = errors.New("cachex: lock not held")
 )

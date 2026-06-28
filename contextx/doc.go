@@ -13,8 +13,9 @@
 // span management (use contrib/otel/tracing). It only carries values through
 // context.Context.
 //
-// contextx depends only on the Go standard library + logx (for the Logger
-// type alias). It does NOT import errorx, otel, or any transport package.
+// contextx depends only on small Kernel foundation packages: authn for the
+// canonical Principal model and logx for the Logger type alias. It does NOT
+// import errorx, otel, or any transport package.
 //
 // # 30-second quickstart
 //

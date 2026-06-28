@@ -131,6 +131,17 @@ type Cache interface {
 	// Returns true if the key was set (i.e., acquired).
 	SetIfNotExist(ctx context.Context, key string, value any, ttl time.Duration) (bool, error)
 
+	// --- Distributed locks ---
+
+	// Lock attempts to acquire a distributed lock for key and returns an opaque
+	// ownership token. Call Unlock with the same token to release the lock.
+	// Returns ErrLockNotAcquired when another holder owns the lock.
+	Lock(ctx context.Context, key string, ttl time.Duration) (token string, err error)
+
+	// Unlock releases a lock only when token matches the current owner.
+	// Returns ErrLockNotHeld when the lock is missing or owned by another token.
+	Unlock(ctx context.Context, key, token string) error
+
 	// --- Atomic counter ---
 
 	// Incr atomically increments key by 1. Creates the key with value 1 if

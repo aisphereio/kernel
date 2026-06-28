@@ -9,6 +9,7 @@ import (
 )
 
 var _ authn.LoginService = (*Client)(nil)
+var _ authn.LogoutService = (*Client)(nil)
 
 // BuildLoginURL returns a Casdoor hosted login URL through Kernel's provider-
 // neutral LoginService contract. Callers should not import or call the Casdoor
@@ -34,6 +35,44 @@ func (c *Client) BuildLoginURL(ctx context.Context, req authn.LoginURLRequest) (
 		Provider:    ProviderName,
 		OrgID:       orgID,
 		AppID:       appID,
+	}, nil
+}
+
+// BuildLogoutURL returns a Casdoor hosted logout URL through Kernel's provider-
+// neutral LogoutService contract. Callers should not hand-build provider URLs.
+func (c *Client) BuildLogoutURL(ctx context.Context, req authn.LogoutURLRequest) (authn.LogoutURL, error) {
+	_ = ctx
+	endpoint := strings.TrimRight(strings.TrimSpace(c.cfg.Endpoint), "/")
+	if endpoint == "" {
+		return authn.LogoutURL{}, errInvalidConfig("casdoor endpoint is required")
+	}
+	orgID := firstNonEmpty(req.OrgID, c.cfg.OrganizationName)
+	appID := firstNonEmpty(req.AppID, c.cfg.ApplicationName)
+	q := url.Values{}
+	q.Set("client_id", c.cfg.ClientID)
+	q.Set("logout_uri", c.cfg.Endpoint)
+	if strings.TrimSpace(req.PostLogoutRedirectURI) != "" {
+		q.Set("post_logout_redirect_uri", strings.TrimSpace(req.PostLogoutRedirectURI))
+	}
+	if strings.TrimSpace(req.IDTokenHint) != "" {
+		q.Set("id_token_hint", strings.TrimSpace(req.IDTokenHint))
+	}
+	if strings.TrimSpace(req.State) != "" {
+		q.Set("state", strings.TrimSpace(req.State))
+	}
+	if orgID != "" {
+		q.Set("organization", orgID)
+	}
+	if appID != "" {
+		q.Set("application", appID)
+	}
+	return authn.LogoutURL{
+		URL:                   endpoint + "/login/oauth/logout?" + q.Encode(),
+		PostLogoutRedirectURI: strings.TrimSpace(req.PostLogoutRedirectURI),
+		State:                 strings.TrimSpace(req.State),
+		Provider:              ProviderName,
+		OrgID:                 orgID,
+		AppID:                 appID,
 	}, nil
 }
 

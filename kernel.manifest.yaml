@@ -4,7 +4,7 @@ purpose: AI-native application kernel for Go services
 
 packages:
   core:
-    import: github.com/aisphereio/kernel/core
+    import: github.com/aisphereio/kernel
     purpose: app lifecycle, module registration, dependency access
 
   errorx:
@@ -75,7 +75,7 @@ packages:
       - audit hook (BeforeCreate / AfterUpdate / BeforeDelete, opt-in)
       - global QueryTimeout
       - slow query log (via GORM callbacks)
-      - metrics (placeholder, opt-in)
+      - metrics (public dbx operation wrapper, opt-in)
     forbidden:
       - database/sql in business code
       - gorm.io/gorm direct import in business code (use dbx.DB interface)

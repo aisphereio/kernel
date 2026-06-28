@@ -3,6 +3,7 @@ package contextx
 import (
 	"context"
 
+	"github.com/aisphereio/kernel/authn"
 	"github.com/aisphereio/kernel/logx"
 )
 
@@ -67,54 +68,11 @@ func TraceIDFromContext(ctx context.Context) string {
 // Principal
 // ============================================================================
 
-// Principal carries the authenticated identity for the current request.
-// It is intentionally a struct (not interface) for stable field access.
-// Transport middleware (httpx / grpcx) populates this from authn results.
-type Principal struct {
-	// SubjectID is the authenticated user/service ID (e.g. "u_123", "svc:agentkit").
-	SubjectID string
-	// TenantID is the multi-tenant tenant ID (e.g. "t_acme"). Empty for single-tenant.
-	TenantID string
-	// Roles are the roles assigned to the subject (e.g. ["admin", "viewer"]).
-	Roles []string
-	// Scopes are OAuth scopes if applicable (e.g. ["skill:read", "skill:write"]).
-	Scopes []string
-	// AuthMethod is how the subject authenticated: "oauth", "apikey", "mtls", "dev_token".
-	AuthMethod string
-}
-
-// IsAuthenticated reports whether SubjectID is non-empty.
-func (p *Principal) IsAuthenticated() bool {
-	return p != nil && p.SubjectID != ""
-}
-
-// HasRole reports whether the principal has the given role.
-// Returns false if p is nil.
-func (p *Principal) HasRole(role string) bool {
-	if p == nil {
-		return false
-	}
-	for _, r := range p.Roles {
-		if r == role {
-			return true
-		}
-	}
-	return false
-}
-
-// HasScope reports whether the principal has the given scope.
-// Returns false if p is nil.
-func (p *Principal) HasScope(scope string) bool {
-	if p == nil {
-		return false
-	}
-	for _, s := range p.Scopes {
-		if s == scope {
-			return true
-		}
-	}
-	return false
-}
+// Principal is an alias to authn.Principal. contextx keeps these helpers for
+// generic request-context plumbing, but authn owns the canonical identity
+// model so transport middleware, accessx and business code all see the same
+// fields and methods.
+type Principal = authn.Principal
 
 // WithPrincipal attaches a Principal to ctx. Pass nil to clear.
 func WithPrincipal(ctx context.Context, p *Principal) context.Context {
