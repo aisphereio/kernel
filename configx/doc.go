@@ -1,12 +1,22 @@
 // Package configx provides the unified configuration API for Aisphere Kernel.
 //
-// The package loads configuration from one or more Source implementations,
-// merges them into a single tree, resolves placeholders, and exposes typed
-// reads through Value and Scan. Business code should depend on Config or a
-// module-specific struct produced by Config.Scan; it should not call os.Getenv
-// or parse YAML/JSON directly.
+// configx is the ONLY runtime configuration reader in Kernel. It replaces the
+// old Kratos-derived config package and ad-hoc os.Getenv / yaml.Unmarshal
+// patterns. Business code should depend on Config or a module-specific struct
+// produced by Config.Scan; it should not call os.Getenv or parse YAML/JSON
+// directly.
 //
-// # Quickstart
+// # Design principle
+//
+// configx only LOADS, MERGES, and RESOLVES configuration. It does NOT validate
+// business fields, start services, record audit, or bind to a specific config
+// center SDK. Other Kernel modules (logx, dbx, httpx, grpcx, authx) consume
+// configx through the stable Config / Value / Scan APIs.
+//
+// configx depends only on the Go standard library plus the encodingx and logx
+// packages; it does not import third-party config libraries.
+//
+// # 30-second quickstart
 //
 // The common startup flow is:
 //
@@ -60,6 +70,9 @@
 //	contrib/config/kubernetes
 //	contrib/config/polaris
 //
+// Each contrib source returns configx.Source so it can be dropped into
+// WithSource without adapting business code.
+//
 // # Merge order
 //
 // Sources are loaded in the order passed to WithSource. Later sources override
@@ -85,26 +98,37 @@
 // int64, or float64 when possible. Mixed strings remain strings:
 //
 //	"${PORT}"          -> 8080
-//	"http://:${PORT}" -> "http://:8080"
+//	"http://:${PORT}"  -> "http://:8080"
+//
+// Placeholders are resolved after merge, so a placeholder in source A can
+// reference a value defined in source B.
 //
 // # Value API
 //
-// Value provides typed conversions:
+// Value provides typed conversions. Each method returns (T, error); none
+// panic on type mismatch:
 //
-//	Bool()      bool-like values
-//	Int()       integer-like values
-//	Float()     floating-point values
-//	String()    string representation
+//	Bool()      bool-like values (bool / "true" / "false" / numbers)
+//	Int()       integer-like values (int / uint / float / numeric string)
+//	Float()     floating-point values (int / uint / float / numeric string)
+//	String()    string representation (any convertible type)
 //	Duration()  time.Duration from integer nanoseconds
-//	Slice()     []Value
-//	Map()       map[string]Value
+//	Slice()     []Value from []any
+//	Map()       map[string]Value from map[string]any
 //	Scan(any)   JSON/proto-compatible struct scan
 //
-// Helper API
+// Value is backed by an atomic store, so a cached Value reference will
+// reflect updates after Watch or Load without needing to re-call
+// Config.Value.
+//
+// # Helper API
 //
 //	Get[T](cfg, key)              returns a typed value and an error
 //	MustGet[T](cfg, key)          panics on error; use only at startup
 //	GetOrDefault[T](cfg, key, v)  returns fallback on missing/invalid values
+//
+// Get supports bool / int / int64 / float64 / string natively. Other types
+// fall through to Value.Scan.
 //
 // # Watch
 //
@@ -113,12 +137,23 @@
 // short and non-blocking; use them to update local atomic settings or send a
 // lightweight signal, not to perform network calls.
 //
-// Errors
+//	cfg.Watch("log.level", func(_ string, v Value) {
+//	    level, _ := v.String()
+//	    logLevel.Store(level)
+//	})
+//
+// Watch requires the key to exist at registration time; this fails fast on
+// startup misconfiguration rather than silently never firing.
+//
+// # Errors
 //
 //	ErrNotFound         key is absent
 //	ErrClosed           Config was closed
 //	ErrInvalidObserver  Watch was called with nil observer
 //	ErrNilConfig        helper received a nil Config
+//
+// These errors are not business errors. Do not wrap them in errorx; surface
+// them at startup as fail-fast failures.
 //
 // # Forbidden patterns
 //
@@ -126,10 +161,26 @@
 // module. Do not hide config errors by silently using zero values for required
 // fields. Do not do expensive work in Watch callbacks.
 //
+// Test code is exempt: it may use os.Setenv to construct env source fixtures.
+//
+// # Migration from old config package
+//
+// Replace:
+//
+//	import "github.com/aisphereio/kernel/config"
+//	cfg := config.New(config.WithSource(file.NewSource("app.yaml")))
+//
+// with:
+//
+//	import "github.com/aisphereio/kernel/configx"
+//	cfg := configx.New(configx.WithSource(file.NewSource("app.yaml")))
+//
+// The old config/ package has been removed; new code must use configx/ and
+// its subpackages configx/file and configx/env.
+//
 // # Documentation
 //
-// See configx/README.md for the single-entry guide, docs/ai/configx.md for AI
-// usage rules, docs/design/configx.md for design details, and
-// docs/contracts/configx.md for behavior that cannot change without a major
-// version bump.
+// See configx/README.md for the single-source-of-truth user guide, and
+// docs/ai/configx.md for the AI coding recipe. docs/contracts/configx.md
+// lists behaviors that cannot change without a major version bump.
 package configx

@@ -44,13 +44,15 @@ func copyFile(src, dst string, replaces []string) error {
 	if err != nil {
 		return err
 	}
-	var old string
-	for i, next := range replaces {
-		if i%2 == 0 {
-			old = next
-			continue
+	if !strings.HasSuffix(filepath.Base(src), ".pb.go") {
+		var old string
+		for i, next := range replaces {
+			if i%2 == 0 {
+				old = next
+				continue
+			}
+			buf = bytes.ReplaceAll(buf, []byte(old), []byte(next))
 		}
-		buf = bytes.ReplaceAll(buf, []byte(old), []byte(next))
 	}
 	return os.WriteFile(dst, buf, srcinfo.Mode())
 }

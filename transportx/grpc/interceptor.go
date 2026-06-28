@@ -7,7 +7,7 @@ import (
 	"google.golang.org/grpc"
 	grpcmd "google.golang.org/grpc/metadata"
 
-	ic "github.com/aisphereio/kernel/internal/context"
+	"github.com/aisphereio/kernel/contextx"
 	"github.com/aisphereio/kernel/internal/matcher"
 	"github.com/aisphereio/kernel/middleware"
 	transport "github.com/aisphereio/kernel/transportx"
@@ -16,7 +16,7 @@ import (
 // unaryServerInterceptor is a gRPC unary server interceptor
 func (s *Server) unaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		ctx, cancel := ic.Merge(ctx, s.baseCtx)
+		ctx, cancel := contextx.Merge(ctx, s.baseCtx)
 		defer cancel()
 		md, _ := grpcmd.FromIncomingContext(ctx)
 		replyHeader := grpcmd.MD{}
@@ -69,7 +69,7 @@ func (w *wrappedStream) Context() context.Context {
 // streamServerInterceptor is a gRPC stream server interceptor
 func (s *Server) streamServerInterceptor() grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		ctx, cancel := ic.Merge(ss.Context(), s.baseCtx)
+		ctx, cancel := contextx.Merge(ss.Context(), s.baseCtx)
 		defer cancel()
 		md, _ := grpcmd.FromIncomingContext(ctx)
 		replyHeader := grpcmd.MD{}

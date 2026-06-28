@@ -22,7 +22,7 @@ var repoAddIgnores = []string{
 	".git", ".github", "api", readmeFileName, "LICENSE", goModFileName, goSumFileName, "third_party", "openapi.yaml", ".gitignore",
 }
 
-func (p *Project) Add(ctx context.Context, dir string, layout string, branch string, mod string, pkgPath string) error {
+func (p *Project) Add(ctx context.Context, dir string, layout string, branch string, mod string, pkgPath string, opts ScaffoldOptions) error {
 	to := filepath.Join(dir, p.Name)
 
 	if _, err := os.Stat(to); !os.IsNotExist(err) {
@@ -42,7 +42,7 @@ func (p *Project) Add(ctx context.Context, dir string, layout string, branch str
 		os.RemoveAll(to)
 	}
 
-	fmt.Printf("🚀 Add service %s, layout repo is %s, please wait a moment.\n\n", p.Name, layout)
+	fmt.Printf("🚀 Add service %s, layout is %s, please wait a moment.\n\n", p.Name, layout)
 
 	pkgPath = fmt.Sprintf("%s/%s", mod, pkgPath)
 	repo := base.NewRepo(layout, branch)
@@ -59,6 +59,9 @@ func (p *Project) Add(ctx context.Context, dir string, layout string, branch str
 		if !os.IsNotExist(e) {
 			return e
 		}
+	}
+	if err := applyScaffoldOptions(to, opts); err != nil {
+		return err
 	}
 
 	base.Tree(to, dir)

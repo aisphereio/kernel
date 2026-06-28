@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -30,17 +31,30 @@ var CmdNew = &cobra.Command{
 }
 
 var (
-	nomod   bool
-	repo    string
-	branch  string
-	timeout = "60s"
+	nomod             bool
+	repo              string
+	branch            string
+	timeout           = "60s"
+	features          string
+	dbDriver          string
+	cacheDriver       string
+	objectStoreDriver string
+	authnProvider     string
+	authzProvider     string
 )
 
 func init() {
-	CmdNew.Flags().StringVarP(&repo, "repo", "r", repo, "custom repo url")
+	defaults := defaultScaffoldOptions()
+	CmdNew.Flags().StringVarP(&repo, "repo", "r", repo, "custom repo url or local layout path")
 	CmdNew.Flags().StringVarP(&branch, "branch", "b", branch, "repo branch")
 	CmdNew.Flags().StringVarP(&timeout, "timeout", "t", timeout, "time out")
 	CmdNew.Flags().BoolVarP(&nomod, "nomod", "", nomod, "retain go mod")
+	CmdNew.Flags().StringVar(&features, "features", strings.Join(defaults.Features, ","), "enabled scaffold features")
+	CmdNew.Flags().StringVar(&dbDriver, "db-driver", defaults.DBDriver, "default dbx driver")
+	CmdNew.Flags().StringVar(&cacheDriver, "cache-driver", defaults.CacheDriver, "default cachex driver")
+	CmdNew.Flags().StringVar(&objectStoreDriver, "objectstore-driver", defaults.ObjectStoreDriver, "default objectstorex driver")
+	CmdNew.Flags().StringVar(&authnProvider, "authn-provider", defaults.AuthnProvider, "default authn provider")
+	CmdNew.Flags().StringVar(&authzProvider, "authz-provider", defaults.AuthzProvider, "default authz provider")
 }
 
 func run(_ *cobra.Command, args []string) {
@@ -70,19 +84,15 @@ func run(_ *cobra.Command, args []string) {
 	projectName, workingDir := processProjectParams(name, wd)
 	p := &Project{Name: projectName}
 	done := make(chan error, 1)
-	var repoURL string
-	if repo != "" {
-		repoURL = repo
-	} else {
-		repoURL, err = selectRepo()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "\033[31mERROR: failed to select repo(%s)\033[m\n", err.Error())
-			return
-		}
+	repoURL, err := resolveLayout(repo, wd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\033[31mERROR: failed to resolve layout(%s)\033[m\n", err.Error())
+		return
 	}
+	opts := scaffoldOptionsFromFlags()
 	go func() {
 		if !nomod {
-			done <- p.New(ctx, workingDir, repoURL, branch)
+			done <- p.New(ctx, workingDir, repoURL, branch, opts)
 			return
 		}
 		projectRoot := getgomodProjectRoot(workingDir)
@@ -105,7 +115,7 @@ func run(_ *cobra.Command, args []string) {
 		}
 		// Get the relative path for adding a project based on Go modules
 		p.Path = filepath.Join(strings.TrimPrefix(workingDir, projectRoot+"/"), p.Name)
-		done <- p.Add(ctx, workingDir, repoURL, branch, mod, packagePath)
+		done <- p.Add(ctx, workingDir, repoURL, branch, mod, packagePath, opts)
 	}()
 	select {
 	case <-ctx.Done():
@@ -118,6 +128,112 @@ func run(_ *cobra.Command, args []string) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "\033[31mERROR: Failed to create project(%s)\033[m\n", err.Error())
 		}
+	}
+}
+
+type ScaffoldOptions struct {
+	Features          []string
+	DBDriver          string
+	CacheDriver       string
+	ObjectStoreDriver string
+	AuthnProvider     string
+	AuthzProvider     string
+}
+
+func defaultScaffoldOptions() ScaffoldOptions {
+	return ScaffoldOptions{
+		Features:          []string{"dbx", "cachex", "objectstorex", "authn", "authz", "auditx", "metricsx", "logx", "configx"},
+		DBDriver:          "postgres",
+		CacheDriver:       "redis",
+		ObjectStoreDriver: "minio",
+		AuthnProvider:     "casdoor",
+		AuthzProvider:     "spicedb",
+	}
+}
+
+func scaffoldOptionsFromFlags() ScaffoldOptions {
+	return ScaffoldOptions{
+		Features:          splitCSV(features),
+		DBDriver:          strings.TrimSpace(dbDriver),
+		CacheDriver:       strings.TrimSpace(cacheDriver),
+		ObjectStoreDriver: strings.TrimSpace(objectStoreDriver),
+		AuthnProvider:     strings.TrimSpace(authnProvider),
+		AuthzProvider:     strings.TrimSpace(authzProvider),
+	}
+}
+
+func (o ScaffoldOptions) HasFeature(feature string) bool {
+	for _, got := range o.Features {
+		if strings.EqualFold(got, feature) {
+			return true
+		}
+	}
+	return false
+}
+
+func splitCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key := strings.ToLower(part)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, part)
+	}
+	return out
+}
+
+func resolveLayout(repo string, wd string) (string, error) {
+	if strings.TrimSpace(repo) != "" {
+		return strings.TrimSpace(repo), nil
+	}
+	if env := strings.TrimSpace(os.Getenv("KERNEL_LAYOUT")); env != "" {
+		return env, nil
+	}
+	for _, start := range layoutSearchRoots(wd) {
+		if layout, ok := findLocalLayout(start); ok {
+			return layout, nil
+		}
+	}
+	return "", fmt.Errorf("local layout not found; pass --repo or set KERNEL_LAYOUT")
+}
+
+func layoutSearchRoots(wd string) []string {
+	roots := []string{wd}
+	if _, file, _, ok := runtime.Caller(0); ok {
+		roots = append(roots, filepath.Dir(file))
+	}
+	if exe, err := os.Executable(); err == nil {
+		roots = append(roots, filepath.Dir(exe))
+	}
+	return roots
+}
+
+func findLocalLayout(start string) (string, bool) {
+	if start == "" {
+		return "", false
+	}
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return "", false
+	}
+	for {
+		candidate := filepath.Join(dir, "layout")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
 	}
 }
 

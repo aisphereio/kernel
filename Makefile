@@ -1,4 +1,29 @@
-.PHONY: check check-errorx golangci-lint-install pre-commit-install pre-commit-run help deps tools test test-root test-errorx test-logx test-cmd test-race cover cover-html vet vuln lint contract verify verify-errorx bench-errorx fuzz-errorx clean proto generate
+.PHONY: check check-errorx golangci-lint-install pre-commit-install pre-commit-run help deps tools api wire build run test test-integration verify-full test-root test-errorx test-logx test-cmd test-race cover cover-html vet vuln lint contract verify verify-errorx bench-errorx fuzz-errorx clean proto generate
+
+help:
+	@echo "Aisphere Kernel targets:"
+	@echo "  make tools         build local tools into .bin"
+	@echo "  make deps          download root module dependencies"
+	@echo "  make test          run root module tests"
+	@echo "  make test-cmd      run command submodule tests"
+	@echo "  make test-errorx   run errorx tests"
+	@echo "  make test-logx     run logx tests"
+	@echo "  make test-race     run root tests with race detector"
+	@echo "  make cover         generate coverage profile and summary"
+	@echo "  make vet           run go vet on root module"
+	@echo "  make vuln          run govulncheck when installed"
+	@echo "  make lint          run kernel-lint when installed/built"
+	@echo "  make verify        run local verification gate"
+	@echo "  make verify-errorx run errorx acceptance checks"
+	@echo "  make proto         run buf generate using local .bin"
+	@echo "  make clean         remove generated local artifacts"
+	@echo "  make api           alias of proto, generate api code"
+	@echo "  make wire          generate wire dependency injection code when wire.go exists"
+	@echo "  make build         build kernel local tools"
+	@echo "  make run           run kernel cli help"
+	@echo "  make tidy          run go mod tidy"
+	@echo "  make test-integration  run Docker/Testcontainers integration tests"
+	@echo "  make verify-full       run verify plus integration tests"
 
 # ---- One-command check: errorx usage + lint + vet + test ----
 check: check-errorx vet test
@@ -62,23 +87,6 @@ else
 export PATH := $(LOCAL_BIN):$(PATH)
 endif
 
-help:
-	@echo "Aisphere Kernel targets:"
-	@echo "  make tools         build local tools into .bin"
-	@echo "  make deps          download root module dependencies"
-	@echo "  make test          run root module tests"
-	@echo "  make test-cmd      run command submodule tests"
-	@echo "  make test-errorx   run errorx tests"
-	@echo "  make test-logx     run logx tests"
-	@echo "  make test-race     run root tests with race detector"
-	@echo "  make cover         generate coverage profile and summary"
-	@echo "  make vet           run go vet on root module"
-	@echo "  make vuln          run govulncheck when installed"
-	@echo "  make lint          run kernel-lint when installed/built"
-	@echo "  make verify        run local verification gate"
-	@echo "  make verify-errorx run errorx acceptance checks"
-	@echo "  make proto         run buf generate using local .bin"
-	@echo "  make clean         remove generated local artifacts"
 
 deps:
 	$(GO) mod download
@@ -100,6 +108,8 @@ endif
 generate: tools
 	$(GO) generate ./...
 
+api: proto
+
 proto: tools
 ifeq ($(OS),Windows_NT)
 	@if exist .bin\buf.exe (.bin\buf.exe generate) else (buf generate)
@@ -117,6 +127,8 @@ test-errorx:
 
 test-logx:
 	$(GO) test ./logx -v
+
+
 
 test-cmd:
 ifeq ($(OS),Windows_NT)
@@ -146,12 +158,22 @@ else
 	@if [ -f '$(COVERPROFILE)' ]; then $(GO) tool cover -func=$(COVERPROFILE); else echo 'No coverage profile produced'; fi
 endif
 
+verify-full: verify test-integration
+
 cover-html: cover
 ifeq ($(OS),Windows_NT)
 	@powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path '$(COVERPROFILE)') { & '$(GO)' tool cover -html='$(COVERPROFILE)' -o coverage.html; exit $$LASTEXITCODE } else { Write-Host 'No coverage profile produced' }"
 else
 	@if [ -f '$(COVERPROFILE)' ]; then $(GO) tool cover -html=$(COVERPROFILE) -o coverage.html; else echo 'No coverage profile produced'; fi
 endif
+
+test-integration:
+ifeq ($(OS),Windows_NT)
+	@powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$$env:KERNEL_INTEGRATION='1'; & '$(GO)' test -tags=integration ./cachex ./dbx -v; exit $$LASTEXITCODE"
+else
+	KERNEL_INTEGRATION=1 $(GO) test -tags=integration ./cachex ./dbx -v
+endif
+
 
 vet:
 	$(GO) vet ./...
@@ -179,7 +201,7 @@ else
 	@if command -v kernel-contract-check >/dev/null 2>&1; then kernel-contract-check ./...; else echo 'kernel-contract-check not found; skipping until tools/kernel-contract-check is implemented'; fi
 endif
 
-verify: test test-cmd test-race vet cover vuln lint contract
+verify: api wire test test-cmd test-race vet cover vuln lint contract
 
 verify-errorx:
 ifeq ($(OS),Windows_NT)
@@ -203,3 +225,35 @@ else
 	rm -rf $(LOCAL_BIN)
 	rm -f $(COVERPROFILE) coverage.html
 endif
+
+wire:
+ifeq ($(OS),Windows_NT)
+	@powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$$done = $$false; if (Test-Path 'cmd/kernel/wire.go') { Push-Location 'cmd/kernel'; & '$(GO)' run github.com/google/wire/cmd/wire@v0.7.0 .; $$code = $$LASTEXITCODE; Pop-Location; if ($$code -ne 0) { exit $$code }; $$done = $$true }; if (Test-Path 'internal/app/wire.go') { & '$(GO)' run github.com/google/wire/cmd/wire@v0.7.0 ./internal/app; if ($$LASTEXITCODE -ne 0) { exit $$LASTEXITCODE }; $$done = $$true }; if (-not $$done) { Write-Host 'no wire.go found; skipping wire' }"
+else
+	@if [ -f cmd/kernel/wire.go ]; then \
+		cd cmd/kernel && $(GO) run github.com/google/wire/cmd/wire@v0.7.0 .; \
+	elif [ -f internal/app/wire.go ]; then \
+		$(GO) run github.com/google/wire/cmd/wire@v0.7.0 ./internal/app; \
+	else \
+		echo 'no wire.go found; skipping wire'; \
+	fi
+endif
+
+run:
+ifeq ($(OS),Windows_NT)
+	@if exist .bin\kernel.exe (.bin\kernel.exe --help) else (cd cmd\kernel && $(GO) run . --help)
+else
+	@if [ -x "$(LOCAL_BIN)/kernel" ]; then \
+		"$(LOCAL_BIN)/kernel" --help; \
+	elif [ -d cmd/kernel ]; then \
+		cd cmd/kernel && $(GO) run . --help; \
+	else \
+		echo 'cmd/kernel not found'; \
+	fi
+endif
+
+tidy:
+	$(GO) mod tidy
+
+build: tools
+	@echo "kernel tools built into $(LOCAL_BIN)"	

@@ -2,6 +2,7 @@ package base
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -14,11 +15,10 @@ func TestModuleVersion(t *testing.T) {
 }
 
 func TestModulePath(t *testing.T) {
-	if err := os.Mkdir("/tmp/test_mod", os.ModePerm); err != nil {
-		t.Fatal(err)
-	}
+	dir := t.TempDir()
+	modFile := filepath.Join(dir, "go.mod")
 
-	f, err := os.Create("/tmp/test_mod/go.mod")
+	f, err := os.Create(modFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,13 +31,15 @@ go 1.21`
 		t.Fatal(err)
 	}
 
-	p, err := ModulePath("/tmp/test_mod/go.mod")
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := ModulePath(modFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if p != "github.com/aisphereio/kernel" {
 		t.Fatalf("want: %s, got: %s", "github.com/aisphereio/kernel", p)
 	}
-
-	t.Cleanup(func() { os.RemoveAll("/tmp/test_mod") })
 }

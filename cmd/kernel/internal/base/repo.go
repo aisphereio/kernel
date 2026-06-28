@@ -49,6 +49,9 @@ func NewRepo(url string, branch string) *Repo {
 
 // Path returns the repository cache path.
 func (r *Repo) Path() string {
+	if local, ok := r.localPath(); ok {
+		return local
+	}
 	start := strings.LastIndex(r.url, "/")
 	end := strings.LastIndex(r.url, ".git")
 	if end == -1 {
@@ -61,6 +64,32 @@ func (r *Repo) Path() string {
 		branch = "@" + r.branch
 	}
 	return path.Join(r.home, r.url[start+1:end]+branch)
+}
+
+func (r *Repo) localPath() (string, bool) {
+	raw := strings.TrimSpace(os.ExpandEnv(r.url))
+	if raw == "" {
+		return "", false
+	}
+	if strings.HasPrefix(raw, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", false
+		}
+		raw = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(raw, "~"), string(os.PathSeparator)))
+	}
+	if !filepath.IsAbs(raw) {
+		abs, err := filepath.Abs(raw)
+		if err != nil {
+			return "", false
+		}
+		raw = abs
+	}
+	info, err := os.Stat(raw)
+	if err != nil || !info.IsDir() {
+		return "", false
+	}
+	return raw, true
 }
 
 // Pull fetch the repository from remote url.
@@ -83,6 +112,9 @@ func (r *Repo) Pull(ctx context.Context) error {
 
 // Clone clones the repository to cache path.
 func (r *Repo) Clone(ctx context.Context) error {
+	if _, ok := r.localPath(); ok {
+		return nil
+	}
 	if _, err := os.Stat(r.Path()); !os.IsNotExist(err) {
 		return r.Pull(ctx)
 	}
@@ -105,11 +137,12 @@ func (r *Repo) CopyTo(ctx context.Context, to string, modPath string, ignores []
 	if err := r.Clone(ctx); err != nil {
 		return err
 	}
-	mod, err := ModulePath(filepath.Join(r.Path(), "go.mod"))
+	src := r.Path()
+	mod, err := ModulePath(filepath.Join(src, "go.mod"))
 	if err != nil {
 		return err
 	}
-	return copyDir(r.Path(), to, []string{mod, modPath}, ignores)
+	return copyDir(src, to, []string{mod, modPath}, ignores)
 }
 
 // CopyToV2 copies the repository to project path
@@ -117,10 +150,11 @@ func (r *Repo) CopyToV2(ctx context.Context, to string, modPath string, ignores,
 	if err := r.Clone(ctx); err != nil {
 		return err
 	}
-	mod, err := ModulePath(filepath.Join(r.Path(), "go.mod"))
+	src := r.Path()
+	mod, err := ModulePath(filepath.Join(src, "go.mod"))
 	if err != nil {
 		return err
 	}
 	replaces = append([]string{mod, modPath}, replaces...)
-	return copyDir(r.Path(), to, replaces, ignores)
+	return copyDir(src, to, replaces, ignores)
 }

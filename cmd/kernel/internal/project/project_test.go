@@ -27,7 +27,20 @@ func TestCmdNew(t *testing.T) {
 		goModFileName,
 		goSumFileName,
 		readmeFileName,
+		"Makefile",
+		"buf.yaml",
+		"buf.gen.yaml",
+		"api/todo/v1/todo.proto",
+		"api/todo/v1/todo.pb.go",
+		"api/todo/v1/todo_http.pb.go",
+		"api/todo/v1/todo_grpc.pb.go",
 		"cmd/helloworld/main.go",
+		"internal/server/http.go",
+		"internal/server/grpc.go",
+		"internal/server/server.go",
+		"internal/service/todo.go",
+		"internal/biz/todo.go",
+		"internal/data/todo.go",
 	} {
 		if _, err := os.Stat(filepath.Join(cwd, projectName, file)); err != nil {
 			t.Errorf("expected file %s to exist", file)

@@ -18,8 +18,8 @@ type Project struct {
 	Path string
 }
 
-// New new a project from remote repo.
-func (p *Project) New(ctx context.Context, dir string, layout string, branch string) error {
+// New creates a project from a local layout or remote repo.
+func (p *Project) New(ctx context.Context, dir string, layout string, branch string, opts ScaffoldOptions) error {
 	to := filepath.Join(dir, p.Name)
 	if _, err := os.Stat(to); !os.IsNotExist(err) {
 		fmt.Printf("🚫 %s already exists\n", p.Name)
@@ -37,7 +37,7 @@ func (p *Project) New(ctx context.Context, dir string, layout string, branch str
 		}
 		os.RemoveAll(to)
 	}
-	fmt.Printf("🚀 Creating service %s, layout repo is %s, please wait a moment.\n\n", p.Name, layout)
+	fmt.Printf("🚀 Creating service %s, layout is %s, please wait a moment.\n\n", p.Name, layout)
 	repo := base.NewRepo(layout, branch)
 	if err := repo.CopyTo(ctx, to, p.Name, []string{".git", ".github"}); err != nil {
 		return err
@@ -50,6 +50,9 @@ func (p *Project) New(ctx context.Context, dir string, layout string, branch str
 		if !os.IsNotExist(e) {
 			return e
 		}
+	}
+	if err := applyScaffoldOptions(to, opts); err != nil {
+		return err
 	}
 	base.Tree(to, dir)
 

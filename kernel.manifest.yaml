@@ -36,6 +36,56 @@ packages:
       - direct zap.New
       - direct slog.New
 
+  configx:
+    import: github.com/aisphereio/kernel/configx
+    purpose: unified runtime configuration (file/env/remote sources)
+    contract: docs/contracts/configx.md
+    guide: docs/ai/configx.md
+    examples:
+      - examples/configx-basic
+      - examples/configx-env
+      - examples/configx-watch
+    must_use_for:
+      - reading configuration values
+      - layered file + env overrides
+      - hot-reload via Watch
+    forbidden:
+      - os.Getenv in business code
+      - yaml.Unmarshal / json.Unmarshal in business code
+      - github.com/spf13/viper
+
+  dbx:
+    import: github.com/aisphereio/kernel/dbx
+    purpose: batteries-included database access on top of GORM (postgres + mysql)
+    guide: docs/ai/dbx.md
+    examples:
+      - examples/dbx-basic
+    must_use_for:
+      - SQL queries (FindOne / FindMany / Create / Save / Update / Delete)
+      - transactions (InTx)
+      - safe upsert (SafeUpsert with whitelist)
+      - atomic counters (Increment)
+      - pagination (Paginate)
+      - struct scanning (GORM tags)
+    pre_actions:
+      - error normalization (gorm.ErrRecordNotFound / pgconn 23505 / mysql 1062 → dbx sentinels)
+      - soft delete safety (WithUnscoped opt-in)
+      - OnConflict whitelist (owner_id / created_at / deleted_at protected)
+      - context propagation (InjectDB / InjectTx / DB.GORM(ctx))
+      - audit hook (BeforeCreate / AfterUpdate / BeforeDelete, opt-in)
+      - global QueryTimeout
+      - slow query log (via GORM callbacks)
+      - metrics (placeholder, opt-in)
+    forbidden:
+      - database/sql in business code
+      - gorm.io/gorm direct import in business code (use dbx.DB interface)
+      - gorm.io/driver/postgres in business code (use dbx/postgres)
+      - gorm.io/driver/mysql in business code (use dbx/mysql)
+      - github.com/jmoiron/sqlx
+      - github.com/jackc/pgx (use dbx/postgres)
+      - github.com/lib/pq (use dbx/postgres)
+      - github.com/go-sql-driver/mysql (use dbx/mysql)
+
   authz:
     import: github.com/aisphereio/kernel/authz
     purpose: permission checks
@@ -50,6 +100,34 @@ packages:
   auditx:
     import: github.com/aisphereio/kernel/auditx
     purpose: audit recording for sensitive operations
+
+  cachex:
+    import: github.com/aisphereio/kernel/cachex
+    purpose: unified cache (Redis single-node/cluster/sentinel)
+    guide: cachex/README.md
+    examples:
+      - examples/cachex-basic
+    must_use_for:
+      - cache get/set
+      - distributed locks
+      - rate limiting counters
+      - pub/sub messaging
+    forbidden:
+      - github.com/redis/go-redis/v9 in business code
+      - encoding/json for cache serialization (cachex handles it)
+
+  objectstorex:
+    import: github.com/aisphereio/kernel/objectstorex
+    purpose: unified object storage (Minio/S3-compatible)
+    guide: objectstorex/README.md
+    examples:
+      - examples/objectstorex-basic
+    must_use_for:
+      - file upload/download
+      - presign URLs for browser direct upload
+      - object listing and cleanup
+    forbidden:
+      - github.com/minio/minio-go/v7 in business code
 
 standard_layers:
   - handler
