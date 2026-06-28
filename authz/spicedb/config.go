@@ -47,7 +47,7 @@ definition service {}
 
 definition platform {
   relation super_admin: user | service
-  permission admin: user | service = super_admin
+  permission admin = super_admin
 }
 
 definition organization {
@@ -56,8 +56,8 @@ definition organization {
   relation admin: user | service | group#member
   relation member: user | service | group#member
 
-  permission manage: user | service = owner + admin + platform->admin
-  permission read: user | service = owner + admin + member + platform->admin
+  permission manage = owner + admin + platform->admin
+  permission read = owner + admin + member + platform->admin
 }
 
 definition group {
@@ -65,7 +65,7 @@ definition group {
   relation parent: group
   relation member: user | service | group#member
 
-  permission read: user | service = member + parent->read + org->read
+  permission read = member + parent->read + org->read
 }
 
 definition application {
@@ -74,8 +74,8 @@ definition application {
   relation admin: user | service | group#member
   relation member: user | service | group#member
 
-  permission manage: user | service = owner + admin + org->manage
-  permission read: user | service = owner + admin + member + org->read
+  permission manage = owner + admin + org->manage
+  permission read = owner + admin + member + org->read
 }
 
 definition project {
@@ -84,9 +84,9 @@ definition project {
   relation editor: user | service | group#member
   relation viewer: user | service | group#member
 
-  permission read: user | service = viewer + editor + owner + org->read
-  permission edit: user | service = editor + owner + org->manage
-  permission delete: user | service = owner + org->manage
+  permission read = viewer + editor + owner + org->read
+  permission edit = editor + owner + org->manage
+  permission delete = owner + org->manage
 }
 
 definition resource {
@@ -95,7 +95,7 @@ definition resource {
   relation editor: user | service | group#member
   relation viewer: user | service | group#member
 
-  permission read: user | service = viewer + editor + owner + project->read
-  permission edit: user | service = editor + owner + project->edit
-  permission delete: user | service = owner + project->delete
+  permission read = viewer + editor + owner + project->read
+  permission edit = editor + owner + project->edit
+  permission delete = owner + project->delete
 }`

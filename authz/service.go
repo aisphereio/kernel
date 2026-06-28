@@ -44,9 +44,11 @@ type SchemaManager interface {
 // need only Authorizer; admin/provisioning paths need relationship/schema APIs.
 type Service interface {
 	Authorizer
+	BatchAuthorizer
 	ResourceLookup
 	SubjectLookup
-	RelationshipWriter
+	RelationshipStore
+	SchemaManager
 }
 
 // RelationshipProjector converts domain events from Kernel IAM/Hub/etc. into

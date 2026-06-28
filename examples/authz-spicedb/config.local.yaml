@@ -1,0 +1,29 @@
+log:
+  service_name: authz-spicedb-example
+  env: dev
+  version: dev
+  level: info
+  format: console
+  add_source: true
+
+spicedb:
+  endpoint: "localhost:50051"
+  token: "devsecret"
+  insecure: true
+  timeout: "10s"
+  fully_consistent: true
+
+authz_example:
+  install_schema: true
+  cleanup_first: true
+  cleanup_after: false
+
+  subject_type: user
+  subject_id: "d03b68bc-e865-4d7d-9543-29819533965d"
+  negative_subject_id: "not-a-member"
+
+  org_id: "aisphere"
+  group_id: "aisphere-dev"
+  application_id: "aisphere"
+  project_id: "demo-project"
+  resource_id: "agent-demo"

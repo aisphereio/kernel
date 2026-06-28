@@ -163,7 +163,7 @@ func (c *Client) LookupResources(ctx context.Context, req authz.LookupResourcesR
 		Consistency:        consistencyToProto(req.Consistency, c.cfg.FullyConsistent),
 		Context:            attrsToStruct(mergeAttrs(req.SubjectAttrs, req.EnvironmentAttrs)),
 		OptionalLimit:      uint32FromInt(req.Limit),
-		OptionalCursor:     req.Cursor,
+		OptionalCursor:     cursorToProto(req.Cursor),
 	})
 	if err != nil {
 		return authz.LookupResourcesResult{}, authz.ErrBackendFailed("spicedb lookup resources failed", err)
@@ -178,7 +178,7 @@ func (c *Client) LookupResources(ctx context.Context, req authz.LookupResourcesR
 			return authz.LookupResourcesResult{}, authz.ErrBackendFailed("spicedb lookup resources stream failed", err)
 		}
 		result.Resources = append(result.Resources, authz.ObjectRef{Type: req.ResourceType, ID: item.GetResourceObjectId()})
-		result.NextCursor = item.GetAfterResultCursor()
+		result.NextCursor = cursorFromProto(item.GetAfterResultCursor())
 		if item.GetLookedUpAt() != nil {
 			result.ConsistencyToken = item.GetLookedUpAt().GetToken()
 		}
@@ -193,13 +193,13 @@ func (c *Client) LookupSubjects(ctx context.Context, req authz.LookupSubjectsReq
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
 	stream, err := c.client.LookupSubjects(ctx, &v1.LookupSubjectsRequest{
-		Resource:          objectToProto(req.Resource),
-		Permission:        req.Permission,
-		SubjectObjectType: req.SubjectType,
-		Consistency:       consistencyToProto(req.Consistency, c.cfg.FullyConsistent),
-		Context:           attrsToStruct(mergeAttrs(req.ResourceAttrs, req.EnvironmentAttrs)),
-		OptionalLimit:     uint32FromInt(req.Limit),
-		OptionalCursor:    req.Cursor,
+		Resource:              objectToProto(req.Resource),
+		Permission:            req.Permission,
+		SubjectObjectType:     req.SubjectType,
+		Consistency:           consistencyToProto(req.Consistency, c.cfg.FullyConsistent),
+		Context:               attrsToStruct(mergeAttrs(req.ResourceAttrs, req.EnvironmentAttrs)),
+		OptionalConcreteLimit: uint32FromInt(req.Limit),
+		OptionalCursor:        cursorToProto(req.Cursor),
 	})
 	if err != nil {
 		return authz.LookupSubjectsResult{}, authz.ErrBackendFailed("spicedb lookup subjects failed", err)
@@ -215,9 +215,9 @@ func (c *Client) LookupSubjects(ctx context.Context, req authz.LookupSubjectsReq
 		}
 		subject := item.GetSubject()
 		if subject != nil {
-			result.Subjects = append(result.Subjects, subjectFromProto(subject))
+			result.Subjects = append(result.Subjects, resolvedSubjectFromProto(req.SubjectType, subject))
 		}
-		result.NextCursor = item.GetAfterResultCursor()
+		result.NextCursor = cursorFromProto(item.GetAfterResultCursor())
 		if item.GetLookedUpAt() != nil {
 			result.ConsistencyToken = item.GetLookedUpAt().GetToken()
 		}

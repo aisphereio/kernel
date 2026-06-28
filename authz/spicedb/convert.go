@@ -64,7 +64,7 @@ func relationshipToProto(rel authz.Relationship) *v1.Relationship {
 		out.OptionalCaveat = &v1.ContextualizedCaveat{CaveatName: rel.CaveatName, Context: attrsToStruct(rel.CaveatContext)}
 	}
 	if !rel.ExpiresAt.IsZero() {
-		out.OptionalExpiration = timestamppb.New(rel.ExpiresAt)
+		out.OptionalExpiresAt = timestamppb.New(rel.ExpiresAt)
 	}
 	return out
 }
@@ -78,10 +78,17 @@ func relationshipFromProto(rel *v1.Relationship) authz.Relationship {
 		out.CaveatName = rel.GetOptionalCaveat().GetCaveatName()
 		out.CaveatContext = structToAttrs(rel.GetOptionalCaveat().GetContext())
 	}
-	if rel.GetOptionalExpiration() != nil {
-		out.ExpiresAt = rel.GetOptionalExpiration().AsTime()
+	if rel.GetOptionalExpiresAt() != nil {
+		out.ExpiresAt = rel.GetOptionalExpiresAt().AsTime()
 	}
 	return out
+}
+
+func resolvedSubjectFromProto(subjectType string, subject *v1.ResolvedSubject) authz.SubjectRef {
+	if subject == nil {
+		return authz.SubjectRef{}
+	}
+	return authz.SubjectRef{Type: subjectType, ID: subject.GetSubjectObjectId()}
 }
 
 func filterToProto(filter authz.RelationshipFilter) *v1.RelationshipFilter {
@@ -160,6 +167,20 @@ func tokenFromZed(token *v1.ZedToken) string {
 		return ""
 	}
 	return token.GetToken()
+}
+
+func cursorToProto(cursor string) *v1.Cursor {
+	if strings.TrimSpace(cursor) == "" {
+		return nil
+	}
+	return &v1.Cursor{Token: cursor}
+}
+
+func cursorFromProto(cursor *v1.Cursor) string {
+	if cursor == nil {
+		return ""
+	}
+	return cursor.GetToken()
 }
 
 func uint32FromInt(v int) uint32 {
