@@ -1,9 +1,10 @@
 module github.com/aisphereio/kernel/cmd/kernel
 
-go 1.25.0
+go 1.25.8
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
+	github.com/aisphereio/kernel v0.0.3
 	github.com/charmbracelet/huh v1.0.0
 	github.com/emicklei/proto v1.14.3
 	github.com/fatih/color v1.19.0
@@ -47,9 +48,8 @@ require (
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/exp v0.0.0-20260508232706-74f9aab9d74a // indirect
-	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 )
