@@ -26,11 +26,11 @@ func newFakeStore() *fakeStore {
 	}
 }
 
-func (f *fakeStore) Bucket() string                                         { return f.bucket }
-func (f *fakeStore) BucketExists(context.Context) (bool, error)             { return true, nil }
-func (f *fakeStore) EnsureBucket(context.Context) error                     { return nil }
-func (f *fakeStore) DriverName() string                                     { return "fake" }
-func (f *fakeStore) Close() error                                           { return nil }
+func (f *fakeStore) Bucket() string                             { return f.bucket }
+func (f *fakeStore) BucketExists(context.Context) (bool, error) { return true, nil }
+func (f *fakeStore) EnsureBucket(context.Context) error         { return nil }
+func (f *fakeStore) DriverName() string                         { return "fake" }
+func (f *fakeStore) Close() error                               { return nil }
 
 func (f *fakeStore) PutObject(_ context.Context, key string, body objectstorex.ReadSeeker, size int64, opts objectstorex.PutOptions) (objectstorex.ObjectInfo, error) {
 	data, err := io.ReadAll(body)
@@ -39,11 +39,11 @@ func (f *fakeStore) PutObject(_ context.Context, key string, body objectstorex.R
 	}
 	f.objects[key] = data
 	info := objectstorex.ObjectInfo{
-		Bucket:      f.bucket,
-		Key:         key,
-		Size:        int64(len(data)),
-		ContentType: opts.ContentType,
-		Metadata:    opts.Metadata,
+		Bucket:       f.bucket,
+		Key:          key,
+		Size:         int64(len(data)),
+		ContentType:  opts.ContentType,
+		Metadata:     opts.Metadata,
 		LastModified: time.Now(),
 	}
 	f.meta[key] = info

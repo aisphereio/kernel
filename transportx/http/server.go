@@ -15,6 +15,7 @@ import (
 	"github.com/aisphereio/kernel/internal/host"
 	"github.com/aisphereio/kernel/internal/matcher"
 	"github.com/aisphereio/kernel/logx"
+	"github.com/aisphereio/kernel/metricsx"
 	"github.com/aisphereio/kernel/middleware"
 	transport "github.com/aisphereio/kernel/transportx"
 )
@@ -105,6 +106,34 @@ func ErrorEncoder(en EncodeErrorFunc) ServerOption {
 	}
 }
 
+// Logger sets the logx logger used by built-in HTTP access/error logs.
+func Logger(logger logx.Logger) ServerOption {
+	return func(o *Server) {
+		if logger != nil {
+			o.logger = logger
+		}
+	}
+}
+
+// AccessLog configures the built-in HTTP access log middleware.
+// Pass logx.AccessLogConfig{Enabled:false} to disable it explicitly.
+func AccessLog(cfg logx.AccessLogConfig) ServerOption {
+	return func(o *Server) {
+		o.accessLog = cfg
+	}
+}
+
+// Metrics enables built-in low-cardinality HTTP server metrics.
+func Metrics(m metricsx.Manager) ServerOption {
+	return func(o *Server) {
+		if m == nil {
+			m = metricsx.Noop()
+		}
+		o.metrics = m
+		o.metricsEnabled = true
+	}
+}
+
 // TLSConfig with TLS config.
 func TLSConfig(c *tls.Config) ServerOption {
 	return func(o *Server) {
@@ -150,22 +179,26 @@ func MethodNotAllowedHandler(handler http.Handler) ServerOption {
 // Server is an HTTP server wrapper.
 type Server struct {
 	*http.Server
-	lis         net.Listener
-	tlsConf     *tls.Config
-	endpoint    *url.URL
-	err         error
-	network     string
-	address     string
-	timeout     time.Duration
-	filters     []FilterFunc
-	middleware  matcher.Matcher
-	decVars     DecodeRequestFunc
-	decQuery    DecodeRequestFunc
-	decBody     DecodeRequestFunc
-	enc         EncodeResponseFunc
-	ene         EncodeErrorFunc
-	strictSlash bool
-	router      *mux.Router
+	lis            net.Listener
+	tlsConf        *tls.Config
+	endpoint       *url.URL
+	err            error
+	network        string
+	address        string
+	timeout        time.Duration
+	filters        []FilterFunc
+	middleware     matcher.Matcher
+	decVars        DecodeRequestFunc
+	decQuery       DecodeRequestFunc
+	decBody        DecodeRequestFunc
+	enc            EncodeResponseFunc
+	ene            EncodeErrorFunc
+	strictSlash    bool
+	router         *mux.Router
+	logger         logx.Logger
+	accessLog      logx.AccessLogConfig
+	metrics        metricsx.Manager
+	metricsEnabled bool
 }
 
 // NewServer creates an HTTP server by options.
@@ -182,6 +215,9 @@ func NewServer(opts ...ServerOption) *Server {
 		ene:         DefaultErrorEncoder,
 		strictSlash: true,
 		router:      mux.NewRouter(),
+		logger:      logx.DefaultLogger().Named("http"),
+		accessLog:   logx.DefaultConfig("").AccessLog,
+		metrics:     metricsx.Noop(),
 	}
 	srv.router.NotFoundHandler = http.DefaultServeMux
 	srv.router.MethodNotAllowedHandler = http.DefaultServeMux
@@ -190,6 +226,13 @@ func NewServer(opts ...ServerOption) *Server {
 	}
 	srv.router.StrictSlash(srv.strictSlash)
 	srv.router.Use(srv.filter())
+	if srv.metricsEnabled {
+		srv.registerMetrics()
+		srv.router.Use(srv.metricsMiddleware())
+	}
+	if srv.accessLog.Enabled {
+		srv.router.Use(logx.HTTPAccessLog(srv.logger, srv.accessLog, logx.WithRouteResolver(routePattern)))
+	}
 	srv.Server = &http.Server{
 		Handler:   FilterChain(srv.filters...)(srv.router),
 		TLSConfig: srv.tlsConf,
@@ -282,6 +325,9 @@ func (s *Server) filter() mux.MiddlewareFunc {
 			if route := mux.CurrentRoute(req); route != nil {
 				// /path/123 -> /path/{id}
 				pathTemplate, _ = route.GetPathTemplate()
+			}
+			if s.accessLog.RouteHeader != "" && pathTemplate != "" {
+				req.Header.Set(s.accessLog.RouteHeader, pathTemplate)
 			}
 
 			tr := &Transport{

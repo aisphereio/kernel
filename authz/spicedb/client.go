@@ -5,8 +5,11 @@ import (
 	"crypto/tls"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/aisphereio/kernel/authz"
+	"github.com/aisphereio/kernel/logx"
+	"github.com/aisphereio/kernel/metricsx"
 	v1 "github.com/authzed/authzed-go/proto/authzed/api/v1"
 	authzed "github.com/authzed/authzed-go/v1"
 	"google.golang.org/grpc"
@@ -20,14 +23,22 @@ var _ authz.SchemaManager = (*Client)(nil)
 
 // Client adapts AuthZed's official authzed-go gRPC SDK to Kernel authz.
 type Client struct {
-	cfg    Config
-	client *authzed.Client
+	cfg     Config
+	client  *authzed.Client
+	logger  logx.Logger
+	metrics metricsx.Manager
 }
 
 func New(cfg Config, opts ...grpc.DialOption) (*Client, error) {
 	cfg = cfg.Normalized()
+	logger := spiceDBLogger(cfg)
+	registerSpiceDBMetrics(cfg)
+	started := time.Now()
+	logger.Info("authz spicedb opening", logx.String("endpoint", cfg.Endpoint), logx.Bool("insecure", cfg.Insecure), logx.Bool("metrics_enabled", cfg.MetricsEnabled))
 	if strings.TrimSpace(cfg.Endpoint) == "" {
-		return nil, authz.ErrInvalidRequest("spicedb endpoint is required")
+		out := authz.ErrInvalidRequest("spicedb endpoint is required")
+		logger.Error("authz spicedb config invalid", logx.Duration("elapsed", time.Since(started)), logx.Err(out))
+		return nil, out
 	}
 
 	dialOpts := make([]grpc.DialOption, 0, 4+len(opts))
@@ -39,13 +50,17 @@ func New(cfg Config, opts ...grpc.DialOption) (*Client, error) {
 	if cfg.Token != "" {
 		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(bearerToken{token: cfg.Token, insecure: cfg.Insecure}))
 	}
+	dialOpts = append(dialOpts, observabilityDialOptions(cfg, logger)...)
 	dialOpts = append(dialOpts, opts...)
 
 	client, err := authzed.NewClient(cfg.Endpoint, dialOpts...)
 	if err != nil {
-		return nil, authz.ErrBackendFailed("connect spicedb failed", err)
+		out := authz.ErrBackendFailed("connect spicedb failed", err)
+		logger.Error("authz spicedb open failed", logx.Duration("elapsed", time.Since(started)), logx.Err(out))
+		return nil, out
 	}
-	return &Client{cfg: cfg, client: client}, nil
+	logger.Info("authz spicedb opened", logx.Duration("elapsed", time.Since(started)))
+	return &Client{cfg: cfg, client: client, logger: logger, metrics: cfg.Metrics}, nil
 }
 
 func (c *Client) Close() error {

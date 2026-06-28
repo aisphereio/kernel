@@ -25,6 +25,19 @@ type Logger interface {
 	Sync() error
 }
 
+// FromSlog adapts an existing slog logger to the business-facing logx.Logger
+// interface. It is useful for Kernel adapters that need logx semantics while
+// still honoring slog.Default or an application-provided slog logger.
+func FromSlog(logger *slog.Logger) Logger {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &slogLogger{l: logger, ctx: context.Background()}
+}
+
+// DefaultLogger returns slog.Default adapted as a logx.Logger.
+func DefaultLogger() Logger { return FromSlog(slog.Default()) }
+
 type slogLogger struct {
 	l        *slog.Logger
 	ctx      context.Context

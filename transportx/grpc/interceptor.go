@@ -19,6 +19,7 @@ func (s *Server) unaryServerInterceptor() grpc.UnaryServerInterceptor {
 		ctx, cancel := contextx.Merge(ctx, s.baseCtx)
 		defer cancel()
 		md, _ := grpcmd.FromIncomingContext(ctx)
+		ctx = s.injectLogContext(ctx, md)
 		replyHeader := grpcmd.MD{}
 		tr := &Transport{
 			operation:   info.FullMethod,
@@ -39,7 +40,9 @@ func (s *Server) unaryServerInterceptor() grpc.UnaryServerInterceptor {
 		if next := s.middleware.Match(tr.Operation()); len(next) > 0 {
 			h = middleware.Chain(next...)(h)
 		}
+		start := s.beforeRPC(ctx, tr.Operation())
 		reply, err := h(ctx, req)
+		s.afterRPC(ctx, tr.Operation(), false, start, err)
 		if len(replyHeader) > 0 {
 			_ = grpc.SetHeader(ctx, replyHeader)
 		}
@@ -72,6 +75,7 @@ func (s *Server) streamServerInterceptor() grpc.StreamServerInterceptor {
 		ctx, cancel := contextx.Merge(ss.Context(), s.baseCtx)
 		defer cancel()
 		md, _ := grpcmd.FromIncomingContext(ctx)
+		ctx = s.injectLogContext(ctx, md)
 		replyHeader := grpcmd.MD{}
 		ctx = transport.NewServerContext(ctx, &Transport{
 			endpoint:    s.endpoint.String(),
@@ -94,7 +98,9 @@ func (s *Server) streamServerInterceptor() grpc.StreamServerInterceptor {
 		}, ss)
 		ws := NewWrappedStream(ctx, ss, s.streamMiddleware)
 
+		start := s.beforeRPC(ctx, info.FullMethod)
 		err := handler(srv, ws)
+		s.afterRPC(ctx, info.FullMethod, true, start, err)
 		if len(replyHeader) > 0 {
 			_ = grpc.SetHeader(ctx, replyHeader)
 		}

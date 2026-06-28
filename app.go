@@ -48,8 +48,9 @@ func New(opts ...Option) *App {
 	for _, opt := range opts {
 		opt(&o)
 	}
-	if o.logger != nil {
-		logx.SetDefault(o.logger)
+	logger := configureDefaultLogger(&o)
+	if o.logxLogger == nil {
+		o.logxLogger = logger
 	}
 	ctx, cancel := context.WithCancel(o.ctx)
 	return &App{
@@ -81,23 +82,27 @@ func (a *App) Endpoint() []string {
 
 // Run executes all OnStart hooks registered with the application's Lifecycle.
 func (a *App) Run() error {
+	logger := a.logger()
+	logger.Info("kernel app starting", logx.Int("server_count", len(a.opts.servers)))
 	instance, err := a.buildInstance()
 	if err != nil {
+		logger.Error("kernel app build instance failed", logx.Err(err))
 		return err
 	}
 	a.mu.Lock()
 	a.instance = instance
 	a.mu.Unlock()
-	sctx := NewContext(a.ctx, a)
+	sctx := injectAppLogger(NewContext(a.ctx, a), logger)
 	eg, ctx := errgroup.WithContext(sctx)
 	wg := sync.WaitGroup{}
 
 	for _, fn := range a.opts.beforeStart {
 		if err = fn(sctx); err != nil {
+			logger.Error("kernel before-start hook failed", logx.Err(err))
 			return err
 		}
 	}
-	octx := NewContext(a.opts.ctx, a)
+	octx := injectAppLogger(NewContext(a.opts.ctx, a), logger)
 	for _, srv := range a.opts.servers {
 		server := srv
 		eg.Go(func() error {
@@ -108,12 +113,21 @@ func (a *App) Run() error {
 				stopCtx, cancel = context.WithTimeout(stopCtx, a.opts.stopTimeout)
 				defer cancel()
 			}
-			return server.Stop(stopCtx)
+			if err := server.Stop(stopCtx); err != nil {
+				logger.Error("kernel server stop failed", logx.Err(err))
+				return err
+			}
+			logger.Info("kernel server stopped")
+			return nil
 		})
 		wg.Add(1)
 		eg.Go(func() error {
 			wg.Done() // here is to ensure server start has begun running before register, so defer is not needed
-			return server.Start(octx)
+			if err := server.Start(octx); err != nil {
+				logger.Error("kernel server start failed", logx.Err(err))
+				return err
+			}
+			return nil
 		})
 	}
 	wg.Wait()
@@ -121,14 +135,18 @@ func (a *App) Run() error {
 		rctx, rcancel := context.WithTimeout(ctx, a.opts.registrarTimeout)
 		defer rcancel()
 		if err = a.opts.registrar.Register(rctx, instance); err != nil {
+			logger.Error("kernel service registration failed", logx.Err(err))
 			return err
 		}
+		logger.Info("kernel service registered", logx.Any("endpoints", instance.Endpoints))
 	}
 	for _, fn := range a.opts.afterStart {
 		if err = fn(sctx); err != nil {
+			logger.Error("kernel after-start hook failed", logx.Err(err))
 			return err
 		}
 	}
+	logger.Info("kernel app started", logx.Any("endpoints", instance.Endpoints))
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, a.opts.sigs...)
@@ -141,31 +159,43 @@ func (a *App) Run() error {
 		}
 	})
 	if err = eg.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+		logger.Error("kernel app stopped with error", logx.Err(err))
 		return err
 	}
 	err = nil
 	for _, fn := range a.opts.afterStop {
 		err = fn(sctx)
+		if err != nil {
+			logger.Error("kernel after-stop hook failed", logx.Err(err))
+		}
 	}
+	logger.Info("kernel app stopped")
 	return err
 }
 
 // Stop gracefully stops the application.
 func (a *App) Stop() (err error) {
-	sctx := NewContext(a.ctx, a)
+	logger := a.logger()
+	logger.Info("kernel app stopping")
+	sctx := injectAppLogger(NewContext(a.ctx, a), logger)
 	for _, fn := range a.opts.beforeStop {
 		err = fn(sctx)
+		if err != nil {
+			logger.Error("kernel before-stop hook failed", logx.Err(err))
+		}
 	}
 
 	a.mu.Lock()
 	instance := a.instance
 	a.mu.Unlock()
 	if a.opts.registrar != nil && instance != nil {
-		ctx, cancel := context.WithTimeout(NewContext(a.ctx, a), a.opts.registrarTimeout)
+		ctx, cancel := context.WithTimeout(injectAppLogger(NewContext(a.ctx, a), logger), a.opts.registrarTimeout)
 		defer cancel()
 		if err = a.opts.registrar.Deregister(ctx, instance); err != nil {
+			logger.Error("kernel service deregistration failed", logx.Err(err))
 			return err
 		}
+		logger.Info("kernel service deregistered", logx.Any("endpoints", instance.Endpoints))
 	}
 	if a.cancel != nil {
 		a.cancel()

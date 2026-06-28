@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -315,6 +316,9 @@ func (client *Client) do(req *http.Request) (*http.Response, error) {
 		req.Host = node.Address()
 	}
 	resp, err := client.cc.Do(req)
+	if err != nil {
+		err = normalizeClientTransportError(req, err)
+	}
 	if err == nil {
 		t, ok := transport.FromClientContext(req.Context())
 		if ok {
@@ -332,6 +336,24 @@ func (client *Client) do(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	return resp, nil
+}
+
+func normalizeClientTransportError(req *http.Request, err error) error {
+	if err == nil {
+		return nil
+	}
+	if req != nil && req.Context() != nil {
+		switch {
+		case errors.Is(req.Context().Err(), context.DeadlineExceeded):
+			return errorx.Timeout("HTTP_CLIENT_TIMEOUT", "http client timeout", errorx.WithCause(err))
+		case errors.Is(req.Context().Err(), context.Canceled):
+			return errorx.ClientClosed("HTTP_CLIENT_CANCELED", "http client canceled", errorx.WithCause(err))
+		}
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return errorx.Timeout("HTTP_CLIENT_TIMEOUT", "http client timeout", errorx.WithCause(err))
+	}
+	return errorx.Unavailable("HTTP_CLIENT_REQUEST_FAILED", "http client request failed", errorx.WithCause(err))
 }
 
 // Close tears down the Transport and all underlying connections.
@@ -395,7 +417,7 @@ func DefaultErrorDecoder(_ context.Context, res *http.Response) error {
 		}
 	}
 	return errorx.New(
-		errorx.CodeInternal,
+		codeFromHTTPStatus(res.StatusCode),
 		errorx.WithHTTPStatus(res.StatusCode),
 		errorx.WithMessage(http.StatusText(res.StatusCode)),
 		errorx.WithCause(err),

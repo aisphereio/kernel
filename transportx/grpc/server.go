@@ -18,6 +18,7 @@ import (
 	"github.com/aisphereio/kernel/internal/host"
 	"github.com/aisphereio/kernel/internal/matcher"
 	"github.com/aisphereio/kernel/logx"
+	"github.com/aisphereio/kernel/metricsx"
 	"github.com/aisphereio/kernel/middleware"
 	transport "github.com/aisphereio/kernel/transportx"
 )
@@ -68,6 +69,34 @@ func Middleware(m ...middleware.Middleware) ServerOption {
 func StreamMiddleware(m ...middleware.Middleware) ServerOption {
 	return func(s *Server) {
 		s.streamMiddleware.Use(m...)
+	}
+}
+
+// Logger sets the logx logger used by built-in gRPC access/error logs.
+func Logger(logger logx.Logger) ServerOption {
+	return func(s *Server) {
+		if logger != nil {
+			s.logger = logger
+		}
+	}
+}
+
+// AccessLog configures the built-in gRPC access log.
+// Only Enabled and SlowThreshold are used for gRPC.
+func AccessLog(cfg logx.AccessLogConfig) ServerOption {
+	return func(s *Server) {
+		s.accessLog = cfg
+	}
+}
+
+// Metrics enables built-in low-cardinality gRPC server metrics.
+func Metrics(m metricsx.Manager) ServerOption {
+	return func(s *Server) {
+		if m == nil {
+			m = metricsx.Noop()
+		}
+		s.metrics = m
+		s.metricsEnabled = true
 	}
 }
 
@@ -140,6 +169,10 @@ type Server struct {
 	customHealth      bool
 	adminClean        func()
 	disableReflection bool
+	logger            logx.Logger
+	accessLog         logx.AccessLogConfig
+	metrics           metricsx.Manager
+	metricsEnabled    bool
 }
 
 // NewServer creates a gRPC server by options.
@@ -152,9 +185,15 @@ func NewServer(opts ...ServerOption) *Server {
 		health:           health.NewServer(),
 		middleware:       matcher.New(),
 		streamMiddleware: matcher.New(),
+		logger:           logx.DefaultLogger().Named("grpc"),
+		accessLog:        logx.DefaultConfig("").AccessLog,
+		metrics:          metricsx.Noop(),
 	}
 	for _, o := range opts {
 		o(srv)
+	}
+	if srv.metricsEnabled {
+		srv.registerMetrics()
 	}
 	unaryInts := []grpc.UnaryServerInterceptor{
 		srv.unaryServerInterceptor(),

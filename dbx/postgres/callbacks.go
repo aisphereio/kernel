@@ -21,12 +21,8 @@ func registerCallbacks(gormDB *gorm.DB, cfg dbx.Config) {
 		registerQueryLogger(gormDB, cfg)
 	}
 
-	// Metrics: placeholder. When metricsx is ready, this is where we'd
-	// register a callback that records db_query_duration{driver, op, status}.
-	// For now, this is a no-op.
-	if cfg.MetricsEnabled {
-		// TODO: registerMetricsCallback(gormDB, cfg)
-	}
+	// Metrics are recorded by dbx's public operation wrapper. Direct GORM escape-hatch
+	// queries still get slow/debug logs through these callbacks.
 
 	// Audit: registered in audit.go via init() if Config.AuditEnabled.
 }
@@ -77,23 +73,29 @@ func registerQueryLogger(gormDB *gorm.DB, cfg dbx.Config) {
 		elapsed := time.Since(start)
 
 		// Slow query.
+		logger := cfg.Logger
+		if logger == nil {
+			logger = logx.DefaultLogger()
+		}
+		logger = logger.Named("dbx.postgres")
+
 		if cfg.SlowQueryThreshold > 0 && elapsed > cfg.SlowQueryThreshold {
-			logx.Warn("slow db query",
-				"driver", "postgres",
-				"elapsed_ms", elapsed.Milliseconds(),
-				"sql", summarizeSQL(tx.Statement.SQL.String()),
-				"rows_affected", tx.Statement.RowsAffected,
-				"error", tx.Error,
+			logger.Warn("slow db query",
+				logx.String("driver", "postgres"),
+				logx.Duration("elapsed", elapsed),
+				logx.String("sql", summarizeSQL(tx.Statement.SQL.String())),
+				logx.Int64("rows_affected", tx.Statement.RowsAffected),
+				logx.Err(tx.Error),
 			)
 		}
 
 		// Debug logging (every query).
 		if cfg.Debug {
-			logx.Debug("db query",
-				"driver", "postgres",
-				"elapsed_ms", elapsed.Milliseconds(),
-				"sql", summarizeSQL(tx.Statement.SQL.String()),
-				"rows_affected", tx.Statement.RowsAffected,
+			logger.Debug("db query",
+				logx.String("driver", "postgres"),
+				logx.Duration("elapsed", elapsed),
+				logx.String("sql", summarizeSQL(tx.Statement.SQL.String())),
+				logx.Int64("rows_affected", tx.Statement.RowsAffected),
 			)
 		}
 	}

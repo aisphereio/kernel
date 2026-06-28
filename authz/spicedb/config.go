@@ -8,7 +8,12 @@
 //   - authz.SchemaManager via ReadSchema/WriteSchema
 package spicedb
 
-import "time"
+import (
+	"time"
+
+	"github.com/aisphereio/kernel/logx"
+	"github.com/aisphereio/kernel/metricsx"
+)
 
 type Transport string
 
@@ -28,6 +33,15 @@ type Config struct {
 	// FullyConsistent is useful during early development. Production hot paths
 	// should prefer at-least-as-fresh with a stored consistency token when needed.
 	FullyConsistent bool `json:"fully_consistent" yaml:"fully_consistent"`
+
+	// Logger is the component logger. If nil, spicedb uses logx.DefaultLogger().
+	Logger logx.Logger `json:"-" yaml:"-"`
+
+	// Metrics is the optional metrics manager for SpiceDB backend calls.
+	Metrics metricsx.Manager `json:"-" yaml:"-"`
+
+	// MetricsEnabled controls whether SpiceDB backend calls record metrics.
+	MetricsEnabled bool `json:"metrics_enabled" yaml:"metrics_enabled"`
 }
 
 func (c Config) Normalized() Config {

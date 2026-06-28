@@ -43,18 +43,20 @@ func (r *Router) Group(prefix string, filters ...FilterFunc) *Router {
 
 // Handle registers a new route with a matcher for the URL path and method.
 func (r *Router) Handle(method, relativePath string, h HandlerFunc, filters ...FilterFunc) {
+	route := path.Join(r.prefix, relativePath)
 	next := http.Handler(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		ctx := &wrapper{router: r}
 		ctx.Reset(res, req)
 		if err := h(ctx); err != nil {
+			r.srv.observeHandlerError(req.Context(), req, route, err)
 			r.srv.ene(res, req, err)
 		}
 	}))
 	next = FilterChain(filters...)(next)
 	next = FilterChain(r.filters...)(next)
-	route := r.srv.router.Handle(path.Join(r.prefix, relativePath), next)
+	muxRoute := r.srv.router.Handle(route, next)
 	if method != "*" {
-		route.Methods(method)
+		muxRoute.Methods(method)
 	}
 }
 

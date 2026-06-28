@@ -2,11 +2,13 @@ package http
 
 import (
 	"bytes"
+	"context"
 	stderrors "errors"
 	"io"
 	"net/http"
 	"net/url"
 	"reflect"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"google.golang.org/genproto/googleapis/api/httpbody"
@@ -137,7 +139,7 @@ func DefaultErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
 		http.Redirect(w, r, url, code)
 		return
 	}
-	ke := errorx.From(err)
+	ke := errorx.From(normalizeServerError(r, err), requestErrorOptions(r)...)
 	resp := ErrorResponseFromError(ke)
 	codec, _ := CodecForRequest(r, "Accept")
 	if codec.Name() == "proto" || codec.Name() == "protojson" {
@@ -243,4 +245,78 @@ func BodyContentType(v any) string {
 		return body.GetContentType()
 	}
 	return defaultHTTPBodyContentType
+}
+
+func normalizeServerError(r *http.Request, err error) error {
+	if err == nil {
+		return nil
+	}
+	if stderrors.Is(err, context.Canceled) {
+		return errorx.ClientClosed("HTTP_CLIENT_CLOSED", "client closed request", errorx.WithCause(err))
+	}
+	if stderrors.Is(err, context.DeadlineExceeded) {
+		return errorx.Timeout("HTTP_REQUEST_TIMEOUT", "request timeout", errorx.WithCause(err))
+	}
+	if r != nil && r.Context() != nil {
+		if stderrors.Is(r.Context().Err(), context.Canceled) {
+			return errorx.ClientClosed("HTTP_CLIENT_CLOSED", "client closed request", errorx.WithCause(err))
+		}
+		if stderrors.Is(r.Context().Err(), context.DeadlineExceeded) {
+			return errorx.Timeout("HTTP_REQUEST_TIMEOUT", "request timeout", errorx.WithCause(err))
+		}
+	}
+	return err
+}
+
+func requestErrorOptions(r *http.Request) []errorx.Option {
+	if r == nil {
+		return nil
+	}
+	var opts []errorx.Option
+	if requestID := r.Header.Get("X-Request-ID"); requestID != "" {
+		opts = append(opts, errorx.WithRequestID(requestID))
+	}
+	if traceID := traceIDFromRequest(r); traceID != "" {
+		opts = append(opts, errorx.WithTraceID(traceID))
+	}
+	return opts
+}
+
+func traceIDFromRequest(r *http.Request) string {
+	traceparent := r.Header.Get("traceparent")
+	if traceparent == "" {
+		return ""
+	}
+	parts := strings.Split(traceparent, "-")
+	if len(parts) < 4 || len(parts[1]) != 32 {
+		return ""
+	}
+	return parts[1]
+}
+
+func codeFromHTTPStatus(status int) errorx.Code {
+	switch status {
+	case http.StatusBadRequest:
+		return errorx.CodeBadRequest
+	case http.StatusUnauthorized:
+		return errorx.CodeUnauthorized
+	case http.StatusForbidden:
+		return errorx.CodeForbidden
+	case http.StatusNotFound:
+		return errorx.CodeNotFound
+	case http.StatusConflict:
+		return errorx.CodeConflict
+	case http.StatusRequestTimeout:
+		return errorx.CodeRequestTimeout
+	case http.StatusTooManyRequests:
+		return errorx.CodeTooManyRequests
+	case errorx.HTTPStatusClientClosedRequest:
+		return errorx.CodeClientClosedRequest
+	case http.StatusServiceUnavailable:
+		return errorx.CodeUnavailable
+	case http.StatusGatewayTimeout:
+		return errorx.CodeTimeout
+	default:
+		return errorx.CodeInternal
+	}
 }

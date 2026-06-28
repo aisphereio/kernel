@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aisphereio/kernel/logx"
+	"github.com/aisphereio/kernel/metricsx"
 	casdoorsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
@@ -39,6 +41,15 @@ type Config struct {
 
 	HTTPClient *http.Client  `json:"-" yaml:"-"`
 	Timeout    time.Duration `json:"timeout" yaml:"timeout"`
+
+	// Logger is the component logger. If nil, casdoor uses logx.DefaultLogger().
+	Logger logx.Logger `json:"-" yaml:"-"`
+
+	// Metrics is the optional metrics manager for Casdoor backend HTTP calls.
+	Metrics metricsx.Manager `json:"-" yaml:"-"`
+
+	// MetricsEnabled controls whether Casdoor backend calls record metrics.
+	MetricsEnabled bool `json:"metrics_enabled" yaml:"metrics_enabled"`
 }
 
 // AdminConfig is the Casdoor credential set for management APIs. In production
@@ -73,11 +84,17 @@ func (c Config) Normalized() Config {
 // Client implements authn.Authenticator, authn.TokenService and
 // authn.IdentityAdmin using Casdoor's official Go SDK.
 type Client struct {
-	cfg Config
+	cfg     Config
+	logger  logx.Logger
+	metrics metricsx.Manager
 }
 
 func New(cfg Config) (*Client, error) {
 	cfg = cfg.Normalized()
+	logger := casdoorLogger(cfg)
+	registerCasdoorMetrics(cfg)
+	started := time.Now()
+	logger.Info("authn casdoor opening", logx.String("endpoint", cfg.Endpoint), logx.Bool("metrics_enabled", cfg.MetricsEnabled))
 	var err error
 	cfg.JWTCertificate, err = loadCertificate(cfg.JWTCertificate, cfg.JWTCertificateFile)
 	if err != nil {
@@ -91,15 +108,17 @@ func New(cfg Config) (*Client, error) {
 		}
 		cfg.Admin.Certificate = cfg.Admin.JWTCertificate
 	}
-	if cfg.HTTPClient != nil {
-		// Casdoor SDK currently exposes SetHttpClient as package-global state.
-		// Keep this adapter thin and document the side effect at construction.
-		casdoorsdk.SetHttpClient(cfg.HTTPClient)
-	}
+	// Casdoor SDK currently exposes SetHttpClient as package-global state.
+	// Install an instrumented HTTP client before validation-dependent SDK calls so
+	// all later SDK traffic shares Kernel logx/errorx/metrics behavior.
+	cfg.HTTPClient = instrumentHTTPClient(cfg.HTTPClient, cfg.Timeout, logger, cfg.Metrics, cfg.MetricsEnabled)
+	casdoorsdk.SetHttpClient(cfg.HTTPClient)
 	if err := validateConfig(cfg); err != nil {
+		logger.Error("authn casdoor config invalid", logx.Duration("elapsed", time.Since(started)), logx.Err(err))
 		return nil, err
 	}
-	return &Client{cfg: cfg}, nil
+	logger.Info("authn casdoor opened", logx.Duration("elapsed", time.Since(started)))
+	return &Client{cfg: cfg, logger: logger, metrics: cfg.Metrics}, nil
 }
 
 func validateConfig(cfg Config) error {

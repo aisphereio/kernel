@@ -12,25 +12,25 @@
 // "pre-actions" built in so business code does not have to repeat the same
 // boilerplate in every repository method:
 //
-//   1. Error normalization — gorm.ErrRecordNotFound, pgconn.PgError 23505,
-//      mysql 1062 are automatically wrapped into dbx.ErrNoRows /
-//      dbx.ErrDuplicateKey so business code can use errors.Is without
-//      importing driver packages.
-//   2. Soft-delete safety — Unscoped queries require an explicit
-//      WithUnscoped(ctx) opt-in; accidental "select deleted rows" is blocked.
-//   3. OnConflict whitelist — SafeUpsert(model, row, allowedColumns) refuses
-//      to overwrite sensitive columns (owner_id / visibility / status / ...).
-//   4. Context propagation — DBFromContext(ctx) returns the request-scoped
-//      *gorm.DB (with tx / trace / request_id); InjectDB injects it.
-//      Repository methods stop repeating the same db(ctx) helper.
-//   5. Audit hook — BeforeCreate / AfterUpdate / BeforeDelete callbacks
-//      automatically record audit events via auditx; no per-method plumbing.
-//   6. Global QueryTimeout — Config.QueryTimeout applies to every query
-//      whose context lacks a deadline; no per-query WithTimeout boilerplate.
-//   7. Slow-query log — queries exceeding SlowQueryThreshold (default 200ms)
-//      are logged via logx with SQL text, duration, and caller.
-//   8. Metrics — every query is recorded as a Prometheus histogram with
-//      labels driver / operation / status; no manual instrumentation.
+//  1. Error normalization — gorm.ErrRecordNotFound, pgconn.PgError 23505,
+//     mysql 1062 are automatically wrapped into dbx.ErrNoRows /
+//     dbx.ErrDuplicateKey so business code can use errors.Is without
+//     importing driver packages.
+//  2. Soft-delete safety — Unscoped queries require an explicit
+//     WithUnscoped(ctx) opt-in; accidental "select deleted rows" is blocked.
+//  3. OnConflict whitelist — SafeUpsert(model, row, allowedColumns) refuses
+//     to overwrite sensitive columns (owner_id / visibility / status / ...).
+//  4. Context propagation — DBFromContext(ctx) returns the request-scoped
+//     *gorm.DB (with tx / trace / request_id); InjectDB injects it.
+//     Repository methods stop repeating the same db(ctx) helper.
+//  5. Audit hook — BeforeCreate / AfterUpdate / BeforeDelete callbacks
+//     automatically record audit events via auditx; no per-method plumbing.
+//  6. Global QueryTimeout — Config.QueryTimeout applies to every query
+//     whose context lacks a deadline; no per-query WithTimeout boilerplate.
+//  7. Slow-query log — queries exceeding SlowQueryThreshold (default 200ms)
+//     are logged via logx with SQL text, duration, and caller.
+//  8. Metrics — every query is recorded as a Prometheus histogram with
+//     labels driver / operation / status; no manual instrumentation.
 //
 // dbx does NOT depend on errorx (avoids cyclic dependency); business code
 // converts dbx errors to errorx at the repository layer boundary.

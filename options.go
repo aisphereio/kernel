@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/registry"
 	transport "github.com/aisphereio/kernel/transportx"
 )
@@ -26,6 +27,7 @@ type options struct {
 	sigs []os.Signal
 
 	logger           *slog.Logger
+	logxLogger       logx.Logger
 	registrar        registry.Registrar
 	registrarTimeout time.Duration
 	stopTimeout      time.Duration
@@ -68,9 +70,19 @@ func Context(ctx context.Context) Option {
 	return func(o *options) { o.ctx = ctx }
 }
 
-// Logger with service logger.
+// Logger installs the application's slog logger before any lifecycle hooks or
+// transport servers start. It also becomes logx's package default so lower-level
+// components initialized by hooks can write to the same sink.
 func Logger(logger *slog.Logger) Option {
 	return func(o *options) { o.logger = logger }
+}
+
+// LogxLogger installs the application's logx logger before any lifecycle hooks
+// or transport servers start. Prefer this option for new Kernel applications so
+// dbx/cachex/authn/authz/objectstorex can share the same logger without
+// depending on slog directly.
+func LogxLogger(logger logx.Logger) Option {
+	return func(o *options) { o.logxLogger = logger }
 }
 
 // Server with transport servers.
