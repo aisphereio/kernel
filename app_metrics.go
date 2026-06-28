@@ -3,6 +3,7 @@ package kernel
 import (
 	"context"
 
+	"github.com/aisphereio/kernel/dtmx"
 	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/metricsx"
 )
@@ -44,7 +45,8 @@ func MetricsFromContext(ctx context.Context) metricsx.Manager {
 	return metricsx.FromContext(ctx)
 }
 
-func injectAppObservability(ctx context.Context, logger logx.Logger, manager metricsx.Manager, fields ...logx.Field) context.Context {
+func injectAppObservability(ctx context.Context, logger logx.Logger, manager metricsx.Manager, dtm dtmx.Manager, fields ...logx.Field) context.Context {
 	ctx = injectAppLogger(ctx, logger, fields...)
-	return metricsx.Inject(ctx, manager)
+	ctx = metricsx.Inject(ctx, manager)
+	return dtmx.Inject(ctx, dtm)
 }

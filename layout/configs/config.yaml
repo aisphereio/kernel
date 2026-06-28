@@ -7,6 +7,29 @@ server:
   http:
     addr: 0.0.0.0:8000
     timeout_ns: 1000000000
+    cors:
+      enabled: true
+      allowed_origins:
+        - http://localhost:3000
+        - http://127.0.0.1:3000
+      allowed_methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      allowed_headers:
+        - Authorization
+        - Content-Type
+        - X-Request-ID
+        - X-Trace-ID
+        - Traceparent
+        - Tracestate
+      exposed_headers:
+        - X-Request-ID
+      allow_credentials: true
+      max_age_ns: 3600000000000
   grpc:
     addr: 0.0.0.0:9000
     timeout_ns: 1000000000
@@ -64,6 +87,7 @@ data:
       dial_timeout_ns: 5000000000
       read_timeout_ns: 3000000000
       write_timeout_ns: 3000000000
+      metrics_enabled: true
   object_store:
     enabled: false
     config:
@@ -75,6 +99,7 @@ data:
       bucket: app
       ensure_bucket: true
       presign_expiry_ns: 900000000000
+      metrics_enabled: true
 
 security:
   authn:
@@ -88,6 +113,7 @@ security:
       client_secret: change-me
       jwt_certificate_file: configs/casdoor.pub
       timeout: 10000000000
+      metrics_enabled: true
       admin:
         enabled: false
   authz:
@@ -101,6 +127,7 @@ security:
       insecure: true
       timeout: 5000000000
       fully_consistent: true
+      metrics_enabled: true
 
 audit:
   enabled: true
@@ -108,3 +135,19 @@ audit:
 
 metrics:
   enabled: true
+  addr: 127.0.0.1:9090
+  path: /metrics
+  pprof: false
+  runtime: true
+
+dtm:
+  enabled: false
+  driver: dtm
+  protocol: http
+  server: http://127.0.0.1:36789/api/dtmsvr
+  service_base_url: http://127.0.0.1:8000
+  branch_prefix: /internal/dtm
+  branch_secret: change-me-only-for-local-dev
+  wait_result: true
+  timeout_ns: 10000000000
+  metrics_enabled: true

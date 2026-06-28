@@ -75,7 +75,7 @@ packages:
       - audit hook (BeforeCreate / AfterUpdate / BeforeDelete, opt-in)
       - global QueryTimeout
       - slow query log (via GORM callbacks)
-      - metrics (public dbx operation wrapper, opt-in)
+      - metrics (placeholder, opt-in)
     forbidden:
       - database/sql in business code
       - gorm.io/gorm direct import in business code (use dbx.DB interface)
@@ -118,14 +118,15 @@ packages:
 
   dtmx:
     import: github.com/aisphereio/kernel/dtmx
-    purpose: DTM HTTP Saga orchestration wrapper with logx/errorx/metricsx integration
+    purpose: provider-neutral distributed transaction abstraction; DTM Saga implementation is registered by dtmx/dtm
     guide: docs/ai/dtmx.md
     must_use_for:
-      - cross-resource eventual consistency with DTM
-      - saga orchestration across DB/object storage/service boundaries
+      - multi-resource consistency flows such as object storage + database metadata
+      - Saga transaction modelling
+      - DTM branch callback authentication helpers
     forbidden:
-      - direct dtm-labs SDK usage in business code
-      - large binary payloads in DTM branch payloads
+      - direct github.com/dtm-labs/client imports in business code
+      - putting large object bytes inside DTM branch payloads
 
   objectstorex:
     import: github.com/aisphereio/kernel/objectstorex

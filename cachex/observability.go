@@ -18,8 +18,6 @@ const (
 	CodeNilValue        = errorx.Code("CACHEX_NIL_VALUE")
 	CodeOperationFailed = errorx.Code("CACHEX_OPERATION_FAILED")
 	CodeTimeout         = errorx.Code("CACHEX_TIMEOUT")
-	CodeLockNotAcquired = errorx.Code("CACHEX_LOCK_NOT_ACQUIRED")
-	CodeLockNotHeld     = errorx.Code("CACHEX_LOCK_NOT_HELD")
 )
 
 const (
@@ -73,10 +71,6 @@ func classifyCacheError(err error) (errorx.Code, int, string, bool) {
 		return CodeTypeMismatch, errorx.HTTPStatusBadRequest, "cache value type mismatch", false
 	case errors.Is(err, ErrNilValue):
 		return CodeNilValue, errorx.HTTPStatusBadRequest, "cache value is nil", false
-	case errors.Is(err, ErrLockNotAcquired):
-		return CodeLockNotAcquired, errorx.HTTPStatusConflict, "cache lock not acquired", false
-	case errors.Is(err, ErrLockNotHeld):
-		return CodeLockNotHeld, errorx.HTTPStatusConflict, "cache lock not held", false
 	case errors.Is(err, context.Canceled):
 		return CodeTimeout, errorx.HTTPStatusClientClosedRequest, "cache operation canceled", false
 	case errors.Is(err, context.DeadlineExceeded):
@@ -198,16 +192,6 @@ func (c *observedCache) SetIfNotExist(ctx context.Context, key string, value any
 	start := time.Now()
 	ok, err := c.next.SetIfNotExist(ctx, key, value, ttl)
 	return ok, observeCacheOperation(c.cfg, ctx, "set_if_not_exist", start, err)
-}
-func (c *observedCache) Lock(ctx context.Context, key string, ttl time.Duration) (string, error) {
-	start := time.Now()
-	token, err := c.next.Lock(ctx, key, ttl)
-	return token, observeCacheOperation(c.cfg, ctx, "lock", start, err)
-}
-func (c *observedCache) Unlock(ctx context.Context, key, token string) error {
-	start := time.Now()
-	err := c.next.Unlock(ctx, key, token)
-	return observeCacheOperation(c.cfg, ctx, "unlock", start, err)
 }
 func (c *observedCache) Incr(ctx context.Context, key string) (int64, error) {
 	start := time.Now()

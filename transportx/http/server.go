@@ -67,7 +67,7 @@ func Middleware(m ...middleware.Middleware) ServerOption {
 // Filter with HTTP middleware option.
 func Filter(filters ...FilterFunc) ServerOption {
 	return func(o *Server) {
-		o.filters = append(o.filters, filters...)
+		o.filters = filters
 	}
 }
 

@@ -193,26 +193,6 @@ type LoginURL struct {
 	AppID       string
 }
 
-// LogoutURLRequest asks an identity provider for a hosted logout URL.
-type LogoutURLRequest struct {
-	PostLogoutRedirectURI string
-	IDTokenHint           string
-	State                 string
-	OrgID                 string
-	AppID                 string
-	Metadata              map[string]string
-}
-
-// LogoutURL is the safe redirect target returned by LogoutService.
-type LogoutURL struct {
-	URL                   string
-	PostLogoutRedirectURI string
-	State                 string
-	Provider              string
-	OrgID                 string
-	AppID                 string
-}
-
 // CallbackRequest is the provider-neutral OAuth/OIDC callback payload.
 type CallbackRequest struct {
 	Code          string

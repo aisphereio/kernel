@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"flag"
-	"log/slog"
-	"os"
 	"time"
 
 	kernel "github.com/aisphereio/kernel"
 	"github.com/aisphereio/kernel/configx"
 	"github.com/aisphereio/kernel/configx/file"
+	"github.com/aisphereio/kernel/dtmx"
+	_ "github.com/aisphereio/kernel/dtmx/dtm"
 	"github.com/aisphereio/kernel/logx"
+	"github.com/aisphereio/kernel/metricsx"
 
 	"github.com/aisphereio/kernel-layout/internal/biz"
 	"github.com/aisphereio/kernel-layout/internal/conf"
@@ -44,8 +45,28 @@ func main() {
 	}
 	applyBuildInfo(&bc)
 
-	logger := newLogger(bc.Log)
-	resources, cleanup, err := data.NewResources(context.Background(), bc)
+	logger, _, err := logx.New(bc.Log)
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = logger.Sync() }()
+
+	metrics := metricsx.Noop()
+	if bc.Metrics.Enabled {
+		metrics = metricsx.NewPrometheusManager(bc.Service.Name, bc.Service.Version, logger)
+	}
+
+	dtmManager, err := newDTMManager(bc, logger, metrics)
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = dtmManager.Close() }()
+
+	resources, cleanup, err := data.NewResources(context.Background(), bc, data.ResourceOptions{
+		Logger:  logger,
+		Metrics: metrics,
+		DTM:     dtmManager,
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -55,15 +76,28 @@ func main() {
 	todoRepo := data.NewTodoRepo(dataStore)
 	todoUsecase := biz.NewTodoUsecase(todoRepo)
 	todoService := service.NewTodoService(todoUsecase)
-	httpServer := server.NewHTTPServer(bc.Server, resources, todoService)
-	grpcServer := server.NewGRPCServer(bc.Server, todoService)
-	app := kernel.New(
+	httpServer := server.NewHTTPServer(bc.Server, bc.Log, bc.Metrics, logger, metrics, resources, todoService)
+	grpcServer := server.NewGRPCServer(bc.Server, bc.Log, bc.Metrics, logger, metrics, todoService)
+
+	options := []kernel.Option{
 		kernel.Name(bc.Service.Name),
 		kernel.Version(bc.Service.Version),
-		kernel.Logger(logger),
+		kernel.LogxLogger(logger),
+		kernel.Metrics(metrics),
+		kernel.DTM(dtmManager),
 		kernel.Server(httpServer, grpcServer),
-		kernel.StopTimeout(10*time.Second),
-	)
+		kernel.StopTimeout(10 * time.Second),
+	}
+	if bc.Metrics.Enabled && bc.Metrics.Addr != "" {
+		options = append(options,
+			kernel.PrometheusMetrics(bc.Metrics.Addr),
+			kernel.MetricsPath(bc.Metrics.Path),
+			kernel.MetricsPprof(bc.Metrics.Pprof),
+		)
+	}
+	options = append(options, kernel.MetricsSystem(bc.Metrics.Enabled && bc.Metrics.Runtime))
+
+	app := kernel.New(options...)
 	if err := app.Run(); err != nil {
 		panic(err)
 	}
@@ -76,26 +110,41 @@ func applyBuildInfo(bc *conf.Bootstrap) {
 	if bc.Service.Version == "" {
 		bc.Service.Version = Version
 	}
+	if bc.Service.Env == "" {
+		bc.Service.Env = "local"
+	}
 	if bc.Log.ServiceName == "" {
 		bc.Log.ServiceName = bc.Service.Name
+	}
+	if bc.Log.Env == "" {
+		bc.Log.Env = bc.Service.Env
 	}
 	if bc.Log.Version == "" {
 		bc.Log.Version = bc.Service.Version
 	}
+	if bc.Metrics.Path == "" {
+		bc.Metrics.Path = "/metrics"
+	}
+	if bc.DTM.ServiceBaseURL == "" && bc.Server.HTTP.Addr != "" {
+		// Use an explicit service_base_url in production, especially when DTM runs
+		// outside the process host or behind service discovery.
+		bc.DTM.ServiceBaseURL = "http://127.0.0.1" + normalizeAddrPort(bc.Server.HTTP.Addr)
+	}
 }
 
-func newLogger(cfg logx.Config) *slog.Logger {
-	if cfg.Output == "" {
-		cfg.Output = string(logx.OutputStdout)
+func newDTMManager(bc conf.Bootstrap, logger logx.Logger, metrics metricsx.Manager) (dtmx.Manager, error) {
+	cfg := bc.DTM
+	cfg.Logger = logger.Named("dtmx")
+	cfg.Metrics = metrics
+	cfg.MetricsEnabled = cfg.MetricsEnabled && bc.Metrics.Enabled
+	return dtmx.New(cfg)
+}
+
+func normalizeAddrPort(addr string) string {
+	for i := len(addr) - 1; i >= 0; i-- {
+		if addr[i] == ':' {
+			return addr[i:]
+		}
 	}
-	writer := os.Stdout
-	if cfg.Output == string(logx.OutputStderr) {
-		writer = os.Stderr
-	}
-	return slog.New(logx.NewHandler(
-		logx.WithWriter(writer),
-		logx.WithFormat(cfg.Format),
-		logx.WithLevel(logx.ParseLevel(cfg.Level)),
-		logx.WithAddSource(cfg.AddSource),
-	))
+	return ":8000"
 }

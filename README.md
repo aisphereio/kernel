@@ -11,6 +11,38 @@ runnable examples, and an AI coding recipe.
 
 ---
 
+## Quick example: kernel.New with observability
+
+```go
+logger, _, err := logx.New(logx.DefaultConfig("local"))
+if err != nil {
+    panic(err)
+}
+
+metrics := metricsx.NewPrometheusManager("app", "dev", logger)
+dtmManager, err := dtmx.New(dtmx.Config{
+    Enabled:        false, // set true with dtmx/dtm registered and DTM server configured
+    Logger:         logger,
+    Metrics:        metrics,
+    MetricsEnabled: true,
+})
+if err != nil {
+    panic(err)
+}
+
+app := kernel.New(
+    kernel.Name("app"),
+    kernel.Version("dev"),
+    kernel.LogxLogger(logger),
+    kernel.Metrics(metrics),
+    kernel.PrometheusMetrics("127.0.0.1:9090"),
+    kernel.DTM(dtmManager),
+    kernel.Server(httpServer, grpcServer),
+)
+```
+
+`kernel.New` installs logger, metrics and the optional distributed transaction manager before lifecycle hooks and servers run, so lower-level components can use `logx.FromContext`, `kernel.MetricsFromContext` and `kernel.DTMFromContext` consistently.
+
 ## What's inside
 
 | Module | Status | One-line | Entry doc |
@@ -20,6 +52,8 @@ runnable examples, and an AI coding recipe.
 | `transport/http/` | 🚧 in progress | HTTP server / client / middleware | — |
 | `transport/grpc/` | 🚧 in progress | gRPC server / client + errorx adapter | — |
 | `configx/` | ✅ stable | Multi-source config (file/env/remote) | [configx/README.md](configx/README.md) |
+| `metricsx/` | ✅ stable | Prometheus/OpenTelemetry metrics manager | [docs/ai/metricsx.md](docs/ai/metricsx.md) |
+| `dtmx/` | 🚧 in progress | Distributed transaction abstraction, DTM-backed Saga | [docs/ai/dtmx.md](docs/ai/dtmx.md) |
 | `middleware/` | 🚧 in progress | recovery / ratelimit / logging / selector | — |
 | `selector/` | ✅ stable | Load balancing (wrr/p2c/random/ewma) | — |
 | `registry/` | ✅ stable | Service discovery | [registry/README.md](registry/README.md) |

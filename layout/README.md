@@ -15,13 +15,32 @@ modules instead of importing infrastructure SDKs directly.
 - Authz: `__KERNEL_AUTHZ_PROVIDER__`
 - Audit: `auditx` memory recorder by default
 - Logging: `logx` console output for local development
+- Metrics: shared `metricsx.Manager`, optional admin `/metrics` server
+- DTM: optional `dtmx.Manager`, provider-neutral Saga abstraction backed by DTM when enabled
 - Config: `configx` file source
-- Transports: Kernel HTTP and gRPC servers
+- Transports: Kernel HTTP and gRPC servers with access log and metrics hooks
 - API example: protobuf-first Todo CRUD, HTTP binding, gRPC binding, streaming
 
 External dependencies are present in `configs/config.yaml`, but DB, cache,
-object storage, authn, and authz are disabled by default so the service starts
-without local Postgres, Redis, Minio, Casdoor, or SpiceDB.
+object storage, authn, authz, and DTM are disabled by default so the service starts
+without local Postgres, Redis, Minio, Casdoor, SpiceDB, or DTM.
+
+## Boot Order
+
+The generated `cmd/server/main.go` follows the current Kernel startup pattern:
+
+```text
+configx load
+  -> logx.New and install via kernel.LogxLogger
+  -> metricsx manager creation
+  -> optional dtmx.New
+  -> dbx/cachex/objectstorex/authn/authz resource initialization with shared logger/metrics
+  -> HTTP/gRPC server construction with access log + metrics
+  -> kernel.New(..., kernel.Metrics(...), kernel.DTM(...))
+```
+
+This order ensures component initialization logs and metrics use the same logger
+and metric registry as transport access logs.
 
 ## Layout
 
@@ -58,6 +77,31 @@ Default transport ports:
 
 - HTTP: `0.0.0.0:8000`
 - gRPC: `0.0.0.0:9000`
+- Metrics admin server: `127.0.0.1:9090/metrics` when `metrics.enabled=true`
+
+## DTM
+
+`dtm.enabled=false` by default. When enabled, import the concrete DTM driver once:
+
+```go
+import _ "github.com/aisphereio/kernel/dtmx/dtm"
+```
+
+Application code should still depend only on `dtmx.Manager`. DTM server storage
+and deployment are external infrastructure concerns; the app config only points
+to the DTM API endpoint and its own branch callback base URL.
+
+`dtmx/dtm` already supports the branch header mechanism. When `branch_secret` is
+configured, DTM branch callbacks carry:
+
+```text
+X-Kernel-DTM-Branch-Token: <branch_secret>
+```
+
+Business branch endpoints should wrap internal routes with `dtmx.BranchAuthMiddleware`
+or call `dtmx.ValidateBranchRequest`. This protects branch callback endpoints but
+does not replace private networking, firewall rules, mTLS, or service mesh policy
+for the DTM server itself.
 
 ## Generate
 

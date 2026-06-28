@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/aisphereio/kernel/dtmx"
 	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/metricsx"
 	"github.com/aisphereio/kernel/registry"
@@ -30,6 +31,7 @@ type options struct {
 	logger            *slog.Logger
 	logxLogger        logx.Logger
 	metrics           metricsx.Manager
+	dtm               dtmx.Manager
 	prometheusMetrics bool
 	metricsAddr       string
 	metricsPath       string
@@ -138,6 +140,16 @@ func MetricsPprof(enabled bool) Option {
 // It defaults to true when Metrics or PrometheusMetrics is used.
 func MetricsSystem(enabled bool) Option {
 	return func(o *options) { o.metricsSystem = enabled }
+}
+
+// DTM installs a shared distributed transaction manager before lifecycle hooks
+// or transport servers start. The manager is injected into kernel contexts so
+// hooks and business bootstrap code can call kernel.DTMFromContext(ctx) without
+// importing a concrete DTM implementation.
+func DTM(manager dtmx.Manager) Option {
+	return func(o *options) {
+		o.dtm = manager
+	}
 }
 
 // Server with transport servers.

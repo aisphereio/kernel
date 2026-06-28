@@ -7,8 +7,10 @@ import (
 	"github.com/aisphereio/kernel/authz/spicedb"
 	"github.com/aisphereio/kernel/cachex"
 	"github.com/aisphereio/kernel/dbx"
+	"github.com/aisphereio/kernel/dtmx"
 	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/objectstorex"
+	khttp "github.com/aisphereio/kernel/transportx/http"
 )
 
 type Bootstrap struct {
@@ -19,6 +21,7 @@ type Bootstrap struct {
 	Security SecurityConfig `json:"security" yaml:"security"`
 	Audit    AuditConfig    `json:"audit" yaml:"audit"`
 	Metrics  MetricsConfig  `json:"metrics" yaml:"metrics"`
+	DTM      dtmx.Config    `json:"dtm" yaml:"dtm"`
 }
 
 type ServiceConfig struct {
@@ -33,8 +36,9 @@ type ServerConfig struct {
 }
 
 type HTTPConfig struct {
-	Addr    string        `json:"addr" yaml:"addr"`
-	Timeout time.Duration `json:"timeout_ns" yaml:"timeout_ns"`
+	Addr    string           `json:"addr" yaml:"addr"`
+	Timeout time.Duration    `json:"timeout_ns" yaml:"timeout_ns"`
+	CORS    khttp.CORSConfig `json:"cors" yaml:"cors"`
 }
 
 type GRPCConfig struct {
@@ -87,5 +91,9 @@ type AuditConfig struct {
 }
 
 type MetricsConfig struct {
-	Enabled bool `json:"enabled" yaml:"enabled"`
+	Enabled bool   `json:"enabled" yaml:"enabled"`
+	Addr    string `json:"addr" yaml:"addr"`
+	Path    string `json:"path" yaml:"path"`
+	Pprof   bool   `json:"pprof" yaml:"pprof"`
+	Runtime bool   `json:"runtime" yaml:"runtime"`
 }

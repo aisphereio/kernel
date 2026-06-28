@@ -9,11 +9,3 @@ type LoginService interface {
 	BuildLoginURL(ctx context.Context, req LoginURLRequest) (LoginURL, error)
 	HandleCallback(ctx context.Context, req CallbackRequest) (CallbackResult, error)
 }
-
-// LogoutService is the provider-neutral browser logout contract used by HTTP
-// handlers and application boot code. Implementations should return a hosted
-// IdP logout URL without requiring callers to know provider-specific endpoint
-// shapes.
-type LogoutService interface {
-	BuildLogoutURL(ctx context.Context, req LogoutURLRequest) (LogoutURL, error)
-}

@@ -9,10 +9,12 @@ import (
 	"github.com/aisphereio/kernel-layout/internal/conf"
 	"github.com/aisphereio/kernel-layout/internal/data"
 	"github.com/aisphereio/kernel-layout/internal/service"
+	"github.com/aisphereio/kernel/logx"
+	"github.com/aisphereio/kernel/metricsx"
 	khttp "github.com/aisphereio/kernel/transportx/http"
 )
 
-func NewHTTPServer(cfg conf.ServerConfig, resources *data.Resources, todo *service.TodoService) *khttp.Server {
+func NewHTTPServer(cfg conf.ServerConfig, logCfg logx.Config, metricsCfg conf.MetricsConfig, logger logx.Logger, metrics metricsx.Manager, resources *data.Resources, todo *service.TodoService) *khttp.Server {
 	addr := cfg.HTTP.Addr
 	if addr == "" {
 		addr = "0.0.0.0:8000"
@@ -21,7 +23,17 @@ func NewHTTPServer(cfg conf.ServerConfig, resources *data.Resources, todo *servi
 	if timeout <= 0 {
 		timeout = time.Second
 	}
-	srv := khttp.NewServer(khttp.Address(addr), khttp.Timeout(timeout))
+	opts := []khttp.ServerOption{
+		khttp.Address(addr),
+		khttp.Timeout(timeout),
+		khttp.Logger(logger.Named("transport.http")),
+		khttp.AccessLog(logCfg.AccessLog),
+		khttp.CORS(cfg.HTTP.CORS),
+	}
+	if metricsCfg.Enabled {
+		opts = append(opts, khttp.Metrics(metrics))
+	}
+	srv := khttp.NewServer(opts...)
 	v1.RegisterTodoServiceHTTPServer(srv, todo)
 	srv.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

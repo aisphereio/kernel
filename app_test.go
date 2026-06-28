@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aisphereio/kernel/dtmx"
 	"github.com/aisphereio/kernel/metricsx"
 	"github.com/aisphereio/kernel/registry"
 	"github.com/aisphereio/kernel/transportx/grpc"
@@ -327,5 +328,28 @@ func TestApp_MetricsDefaultIsNoop(t *testing.T) {
 	app := New(Name("kernel"))
 	if got := app.metrics(); got == nil {
 		t.Fatal("default metrics manager should be a no-op manager, got nil")
+	}
+}
+
+func TestApp_DTMInjectedIntoLifecycle(t *testing.T) {
+	manager := dtmx.Disabled()
+	seen := false
+	app := New(
+		Name("kernel"),
+		DTM(manager),
+		BeforeStart(func(ctx context.Context) error {
+			seen = true
+			if got := DTMFromContext(ctx); got != manager {
+				t.Fatalf("DTMFromContext() = %#v, want configured manager %#v", got, manager)
+			}
+			return nil
+		}),
+	)
+	time.AfterFunc(10*time.Millisecond, func() { _ = app.Stop() })
+	if err := app.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if !seen {
+		t.Fatal("before-start hook did not run")
 	}
 }

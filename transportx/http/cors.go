@@ -9,15 +9,15 @@ import (
 
 // CORSConfig configures the built-in HTTP CORS filter.
 type CORSConfig struct {
-	Enabled bool
+	Enabled bool `json:"enabled" yaml:"enabled"`
 
-	AllowedOrigins []string
-	AllowedMethods []string
-	AllowedHeaders []string
-	ExposedHeaders []string
+	AllowedOrigins []string `json:"allowed_origins" yaml:"allowed_origins"`
+	AllowedMethods []string `json:"allowed_methods" yaml:"allowed_methods"`
+	AllowedHeaders []string `json:"allowed_headers" yaml:"allowed_headers"`
+	ExposedHeaders []string `json:"exposed_headers" yaml:"exposed_headers"`
 
-	AllowCredentials bool
-	MaxAge           time.Duration
+	AllowCredentials bool          `json:"allow_credentials" yaml:"allow_credentials"`
+	MaxAge           time.Duration `json:"max_age_ns" yaml:"max_age_ns"`
 }
 
 // CORS installs a CORS filter. Unlike Filter(...), it appends to the existing
