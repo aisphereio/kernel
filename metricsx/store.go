@@ -24,6 +24,46 @@ func newStore() *store {
 	}
 }
 
+func (s *store) hasCounter(name string) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.counter[name]
+	return ok
+}
+
+func (s *store) hasUpDownCounter(name string) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.upDownCounter[name]
+	return ok
+}
+
+func (s *store) hasHistogram(name string) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.histogram[name]
+	return ok
+}
+
+func (s *store) hasGauge(name string) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.gauge[name]
+	return ok
+}
+
 func (s *store) getCounter(name string) (metric.Int64Counter, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

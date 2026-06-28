@@ -72,24 +72,40 @@ func NewManager(meter metric.Meter, logger Logger) Manager {
 // Errors are logged via the Manager's logger; the method does not return error
 // to keep call sites clean.
 func (m *otelManager) NewCounter(name, desc string) {
+	if m.store.hasCounter(name) {
+		m.logger.Debug("metricsx counter already registered", logx.String("metric", name))
+		return
+	}
 	counter, err := m.meter.Int64Counter(name, metric.WithDescription(desc))
 	if err != nil {
 		m.logger.Error("metricsx register counter failed", logx.String("metric", name), logx.Err(err))
 		return
 	}
 	if err := m.store.setCounter(name, counter); err != nil {
+		if _, ok := err.(*ErrAlreadyRegistered); ok {
+			m.logger.Debug("metricsx counter already registered", logx.String("metric", name))
+			return
+		}
 		m.logger.Error("metricsx register counter failed", logx.String("metric", name), logx.Err(err))
 	}
 }
 
 // NewUpDownCounter registers a float64 up-down counter (can increase or decrease).
 func (m *otelManager) NewUpDownCounter(name, desc string) {
+	if m.store.hasUpDownCounter(name) {
+		m.logger.Debug("metricsx up-down counter already registered", logx.String("metric", name))
+		return
+	}
 	udc, err := m.meter.Float64UpDownCounter(name, metric.WithDescription(desc))
 	if err != nil {
 		m.logger.Error("metricsx register up-down counter failed", logx.String("metric", name), logx.Err(err))
 		return
 	}
 	if err := m.store.setUpDownCounter(name, udc); err != nil {
+		if _, ok := err.(*ErrAlreadyRegistered); ok {
+			m.logger.Debug("metricsx up-down counter already registered", logx.String("metric", name))
+			return
+		}
 		m.logger.Error("metricsx register up-down counter failed", logx.String("metric", name), logx.Err(err))
 	}
 }
@@ -99,6 +115,10 @@ func (m *otelManager) NewUpDownCounter(name, desc string) {
 //
 //	m.NewHistogram("latency_seconds", "Request latency", 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5)
 func (m *otelManager) NewHistogram(name, desc string, buckets ...float64) {
+	if m.store.hasHistogram(name) {
+		m.logger.Debug("metricsx histogram already registered", logx.String("metric", name))
+		return
+	}
 	opts := []metric.Float64HistogramOption{metric.WithDescription(desc)}
 	if len(buckets) > 0 {
 		opts = append(opts, metric.WithExplicitBucketBoundaries(buckets...))
@@ -109,12 +129,20 @@ func (m *otelManager) NewHistogram(name, desc string, buckets ...float64) {
 		return
 	}
 	if err := m.store.setHistogram(name, hist); err != nil {
+		if _, ok := err.(*ErrAlreadyRegistered); ok {
+			m.logger.Debug("metricsx histogram already registered", logx.String("metric", name))
+			return
+		}
 		m.logger.Error("metricsx register histogram failed", logx.String("metric", name), logx.Err(err))
 	}
 }
 
 // NewGauge registers a float64 gauge (current value, observable asynchronously).
 func (m *otelManager) NewGauge(name, desc string) {
+	if m.store.hasGauge(name) {
+		m.logger.Debug("metricsx gauge already registered", logx.String("metric", name))
+		return
+	}
 	g := &float64Gauge{observations: make(map[attribute.Set]float64)}
 	_, err := m.meter.Float64ObservableGauge(
 		name,
@@ -126,6 +154,10 @@ func (m *otelManager) NewGauge(name, desc string) {
 		return
 	}
 	if err := m.store.setGauge(name, g); err != nil {
+		if _, ok := err.(*ErrAlreadyRegistered); ok {
+			m.logger.Debug("metricsx gauge already registered", logx.String("metric", name))
+			return
+		}
 		m.logger.Error("metricsx register gauge failed", logx.String("metric", name), logx.Err(err))
 	}
 }

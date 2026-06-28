@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"runtime"
+	"strings"
 
 	"github.com/gorilla/mux"
 	promotel "go.opentelemetry.io/otel/exporters/prometheus"
@@ -52,29 +53,67 @@ func NewPrometheusManager(appName, appVersion string, logger Logger) Manager {
 	return NewManager(meter, logger)
 }
 
+type handlerConfig struct {
+	metricsPath string
+	pprof       bool
+}
+
+// HandlerOption customizes the admin handler returned by GetHandler.
+type HandlerOption func(*handlerConfig)
+
+// WithMetricsPath changes the Prometheus exposition path. Empty or malformed
+// values fall back to /metrics.
+func WithMetricsPath(path string) HandlerOption {
+	return func(cfg *handlerConfig) { cfg.metricsPath = cleanMetricsPath(path) }
+}
+
+// WithPprof controls whether /debug/pprof/* endpoints are added to the returned
+// handler. GetHandler defaults to true for compatibility; kernel's built-in
+// metrics server disables pprof unless explicitly requested.
+func WithPprof(enabled bool) HandlerOption {
+	return func(cfg *handlerConfig) { cfg.pprof = enabled }
+}
+
 // GetHandler returns an HTTP handler that serves:
-//   - /metrics — Prometheus exposition format
-//   - /debug/pprof/* — Go pprof profiling endpoints
+//   - /metrics by default, or a custom path via WithMetricsPath
+//   - /debug/pprof/* when WithPprof(true) is used
 //
 // It also records system metrics (goroutine count, memory usage, GC count)
-// on each /metrics scrape.
-func GetHandler(m Manager) http.Handler {
-	router := mux.NewRouter()
-	router.NewRoute().Methods(http.MethodGet).Path("/metrics").Handler(systemMetricsHandler(m, promhttp.Handler()))
+// on each metrics scrape. A nil Manager is treated as a no-op Manager.
+func GetHandler(m Manager, opts ...HandlerOption) http.Handler {
+	cfg := handlerConfig{metricsPath: "/metrics", pprof: true}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
+	}
+	cfg.metricsPath = cleanMetricsPath(cfg.metricsPath)
+	m = ensureManager(m)
 
-	// pprof endpoints
-	router.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	router.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	router.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	router.HandleFunc("/debug/pprof/trace", pprof.Trace)
-	router.NewRoute().Methods(http.MethodGet).PathPrefix("/debug/pprof/").HandlerFunc(pprof.Index)
+	router := mux.NewRouter()
+	router.NewRoute().Methods(http.MethodGet).Path(cfg.metricsPath).Handler(systemMetricsHandler(m, promhttp.Handler()))
+
+	if cfg.pprof {
+		router.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		router.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		router.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		router.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		router.NewRoute().Methods(http.MethodGet).PathPrefix("/debug/pprof/").HandlerFunc(pprof.Index)
+	}
 
 	return router
+}
+
+// GetMetricsHandler returns a metrics-only handler suitable for mounting on an
+// existing admin server. It does not expose pprof endpoints.
+func GetMetricsHandler(m Manager) http.Handler {
+	return systemMetricsHandler(ensureManager(m), promhttp.Handler())
 }
 
 // systemMetricsHandler wraps the Prometheus handler and records Go runtime
 // metrics on each scrape.
 func systemMetricsHandler(m Manager, next http.Handler) http.Handler {
+	m = ensureManager(m)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var stats runtime.MemStats
 		runtime.ReadMemStats(&stats)
@@ -90,9 +129,10 @@ func systemMetricsHandler(m Manager, next http.Handler) http.Handler {
 }
 
 // RegisterSystemMetrics registers the standard system metric names so they
-// appear in the metric store before the first /metrics scrape. Call this at
-// startup if you want the system metrics to always be present.
+// appear in the metric store before the first metrics scrape. It is safe to call
+// multiple times with the same Manager.
 func RegisterSystemMetrics(m Manager) {
+	m = ensureManager(m)
 	m.NewGauge("app_go_goroutines", "Number of goroutines")
 	m.NewGauge("app_sys_memory_alloc", "Allocated memory in bytes")
 	m.NewGauge("app_sys_total_alloc", "Total allocated memory in bytes")
@@ -115,4 +155,21 @@ func PromCounter(name, help string) prometheus.Counter {
 		Name: name,
 		Help: help,
 	})
+}
+
+func cleanMetricsPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "/metrics"
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if path != "/" {
+		path = strings.TrimRight(path, "/")
+	}
+	if path == "" || path == "/" {
+		return "/metrics"
+	}
+	return path
 }

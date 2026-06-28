@@ -293,3 +293,28 @@ func (h *SkillHandler) Create(w http.ResponseWriter, r *http.Request) {
 - `metricsx/example_test.go` — 所有 API 的 Go 标准 Example
 - `metricsx/example_business_test.go` — 10 个完整业务场景
 - `examples/metricsx-basic/` — 最小可运行示例
+
+
+## Kernel app bootstrap
+
+For Kernel services, prefer app-level wiring instead of creating separate metrics
+managers per component:
+
+```go
+app := kernel.New(
+    kernel.Name("aihub"),
+    kernel.Version(version),
+    kernel.LogxLogger(logger),
+    kernel.PrometheusMetrics(":9090"),
+)
+```
+
+Inside lifecycle hooks:
+
+```go
+manager := kernel.MetricsFromContext(ctx)
+```
+
+Then pass `manager` into dbx/cachex/objectstorex/authn/authz configs with
+`MetricsEnabled: true`. See `docs/ai/observability-metrics.md` for the full
+startup pattern.

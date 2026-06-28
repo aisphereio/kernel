@@ -145,3 +145,7 @@ Labels: `service`, `method`, `grpc_code`, `code`.
   query strings are not used as metrics labels.
 - Existing sentinel errors remain in the error chain through `errorx.Wrap`, so
   `errors.Is(err, dbx.ErrNoRows)` and similar checks continue to work.
+
+## Metrics bootstrap update
+
+Metrics bootstrap is now documented in `docs/ai/observability-metrics.md`. Prefer `kernel.PrometheusMetrics(":9090")` or `kernel.Metrics(manager)` at app creation, then use `kernel.MetricsFromContext(ctx)` inside lifecycle hooks to pass the shared manager into component configs.

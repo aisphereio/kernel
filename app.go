@@ -52,6 +52,10 @@ func New(opts ...Option) *App {
 	if o.logxLogger == nil {
 		o.logxLogger = logger
 	}
+	o.metrics = configureDefaultMetrics(&o, logger)
+	if o.prometheusMetrics && o.metricsAddr != "" {
+		o.servers = append(o.servers, newMetricsServer(o.metricsAddr, o.metricsPath, o.metrics, logger, o.metricsPprof))
+	}
 	ctx, cancel := context.WithCancel(o.ctx)
 	return &App{
 		ctx:    ctx,
@@ -92,7 +96,7 @@ func (a *App) Run() error {
 	a.mu.Lock()
 	a.instance = instance
 	a.mu.Unlock()
-	sctx := injectAppLogger(NewContext(a.ctx, a), logger)
+	sctx := injectAppObservability(NewContext(a.ctx, a), logger, a.metrics())
 	eg, ctx := errgroup.WithContext(sctx)
 	wg := sync.WaitGroup{}
 
@@ -102,7 +106,7 @@ func (a *App) Run() error {
 			return err
 		}
 	}
-	octx := injectAppLogger(NewContext(a.opts.ctx, a), logger)
+	octx := injectAppObservability(NewContext(a.opts.ctx, a), logger, a.metrics())
 	for _, srv := range a.opts.servers {
 		server := srv
 		eg.Go(func() error {
@@ -177,7 +181,7 @@ func (a *App) Run() error {
 func (a *App) Stop() (err error) {
 	logger := a.logger()
 	logger.Info("kernel app stopping")
-	sctx := injectAppLogger(NewContext(a.ctx, a), logger)
+	sctx := injectAppObservability(NewContext(a.ctx, a), logger, a.metrics())
 	for _, fn := range a.opts.beforeStop {
 		err = fn(sctx)
 		if err != nil {
@@ -189,7 +193,7 @@ func (a *App) Stop() (err error) {
 	instance := a.instance
 	a.mu.Unlock()
 	if a.opts.registrar != nil && instance != nil {
-		ctx, cancel := context.WithTimeout(injectAppLogger(NewContext(a.ctx, a), logger), a.opts.registrarTimeout)
+		ctx, cancel := context.WithTimeout(injectAppObservability(NewContext(a.ctx, a), logger, a.metrics()), a.opts.registrarTimeout)
 		defer cancel()
 		if err = a.opts.registrar.Deregister(ctx, instance); err != nil {
 			logger.Error("kernel service deregistration failed", logx.Err(err))

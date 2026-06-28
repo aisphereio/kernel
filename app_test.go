@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aisphereio/kernel/metricsx"
 	"github.com/aisphereio/kernel/registry"
 	"github.com/aisphereio/kernel/transportx/grpc"
 	"github.com/aisphereio/kernel/transportx/http"
@@ -297,4 +298,34 @@ func TestApp_ContextCanceled(t *testing.T) {
 	app := New(Context(ctx), Server(&mockServer{stopFn: stopFn}), StopTimeout(time.Hour))
 	time.AfterFunc(time.Millisecond*10, stop)
 	_ = app.Run()
+}
+
+func TestApp_MetricsInjectedIntoLifecycle(t *testing.T) {
+	manager := metricsx.Noop()
+	seen := false
+	app := New(
+		Name("kernel"),
+		Metrics(manager),
+		BeforeStart(func(ctx context.Context) error {
+			seen = true
+			if got := MetricsFromContext(ctx); got != manager {
+				t.Fatalf("MetricsFromContext() = %#v, want configured manager %#v", got, manager)
+			}
+			return nil
+		}),
+	)
+	time.AfterFunc(10*time.Millisecond, func() { _ = app.Stop() })
+	if err := app.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if !seen {
+		t.Fatal("before-start hook did not run")
+	}
+}
+
+func TestApp_MetricsDefaultIsNoop(t *testing.T) {
+	app := New(Name("kernel"))
+	if got := app.metrics(); got == nil {
+		t.Fatal("default metrics manager should be a no-op manager, got nil")
+	}
 }
