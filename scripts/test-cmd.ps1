@@ -17,7 +17,7 @@ function Invoke-Step {
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $RepoRoot
 
-foreach ($dir in @("cmd/kernel", "cmd/protoc-gen-go-http", "cmd/protoc-gen-go-errors")) {
+foreach ($dir in @("cmd/kernel", "cmd/protoc-gen-go-http", "cmd/protoc-gen-go-errors", "cmd/protoc-gen-go-authz")) {
     if (Test-Path $dir) {
         Invoke-Step "go test ./$dir" {
             Push-Location $dir

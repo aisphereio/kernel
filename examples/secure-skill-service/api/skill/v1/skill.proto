@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package examples.secureskill.v1;
+
+import "api/aisphere/options/v1/authz.proto";
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/aisphereio/kernel/examples/secure-skill-service/api/skill/v1;skillv1";
+
+// SkillService demonstrates the complete Kernel contract runtime loop:
+//   proto contract -> make api -> authz rules/manifest/secure client ->
+//   grpcx context/token propagation -> server SELF_CHECK guard.
+service SkillService {
+  rpc DownloadSkillPackage(DownloadSkillPackageRequest) returns (DownloadSkillPackageReply) {
+    option (google.api.http) = {
+      get: "/api/v1/skills/{skill_id}/package"
+    };
+    option (aisphere.options.v1.authz) = {
+      action: "skill.download"
+      resource: "skill:{skill_id}"
+      audience: "skill-service"
+      mode: SCOPED_TOKEN
+    };
+    option (aisphere.options.v1.audit) = {
+      event: "skill.package.download"
+      risk: "medium"
+    };
+    option (aisphere.options.v1.capability) = {
+      group: "skill"
+      name: "download"
+    };
+  }
+
+  rpc DeleteSkill(DeleteSkillRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/v1/skills/{skill_id}"
+    };
+    option (aisphere.options.v1.authz) = {
+      action: "skill.delete"
+      resource: "skill:{skill_id}"
+      audience: "skill-service"
+      mode: SELF_CHECK
+    };
+    option (aisphere.options.v1.audit) = {
+      event: "skill.delete"
+      risk: "high"
+    };
+    option (aisphere.options.v1.capability) = {
+      group: "skill"
+      name: "delete"
+    };
+  }
+}
+
+message DownloadSkillPackageRequest {
+  string skill_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message DownloadSkillPackageReply {
+  bytes package_data = 1;
+}
+
+message DeleteSkillRequest {
+  string skill_id = 1 [(buf.validate.field).string.min_len = 1];
+}

@@ -100,15 +100,16 @@ else
 	@if [ -d cmd/kernel ]; then cd cmd/kernel && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
 	@if [ -d cmd/protoc-gen-go-http ]; then cd cmd/protoc-gen-go-http && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
 	@if [ -d cmd/protoc-gen-go-errors ]; then cd cmd/protoc-gen-go-errors && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
+	@if [ -d cmd/protoc-gen-go-authz ]; then cd cmd/protoc-gen-go-authz && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
 	@GOBIN=$(LOCAL_BIN) $(GO) install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
 	@GOBIN=$(LOCAL_BIN) $(GO) install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.29.0
+	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.29.0
 	@if ! command -v buf >/dev/null 2>&1; then GOBIN=$(LOCAL_BIN) $(GO) install github.com/bufbuild/buf/cmd/buf@v1.50.0; fi
 endif
 
 generate: tools
 	$(GO) generate ./...
-
-api: proto
 
 proto: tools
 ifeq ($(OS),Windows_NT)
@@ -116,6 +117,9 @@ ifeq ($(OS),Windows_NT)
 else
 	buf generate
 endif
+
+api: proto
+	@echo "✓ api generation complete: protobuf, grpc, kernel http, grpc-gateway, openapi"
 
 test: test-root
 
@@ -137,6 +141,7 @@ else
 	@if [ -d cmd/kernel ]; then cd cmd/kernel && $(GO) test ./...; fi
 	@if [ -d cmd/protoc-gen-go-http ]; then cd cmd/protoc-gen-go-http && $(GO) test ./...; fi
 	@if [ -d cmd/protoc-gen-go-errors ]; then cd cmd/protoc-gen-go-errors && $(GO) test ./...; fi
+	@if [ -d cmd/protoc-gen-go-authz ]; then cd cmd/protoc-gen-go-authz && $(GO) test ./...; fi
 endif
 
 test-race:

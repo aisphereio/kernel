@@ -70,9 +70,12 @@ try {
     Install-LocalCommand -Name "kernel" -Path (Join-Path $RepoRoot "cmd/kernel")
     Install-LocalCommand -Name "protoc-gen-go-http" -Path (Join-Path $RepoRoot "cmd/protoc-gen-go-http")
     Install-LocalCommand -Name "protoc-gen-go-errors" -Path (Join-Path $RepoRoot "cmd/protoc-gen-go-errors")
+    Install-LocalCommand -Name "protoc-gen-go-authz" -Path (Join-Path $RepoRoot "cmd/protoc-gen-go-authz")
 
     Install-GoTool "google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11"
     Install-GoTool "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1"
+    Install-GoTool "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.29.0"
+    Install-GoTool "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.29.0"
 
     $bufExe = Join-Path $LocalBin "buf.exe"
     $bufOnPath = Get-Command buf -ErrorAction SilentlyContinue

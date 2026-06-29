@@ -97,6 +97,9 @@ func _{{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv {{$svrType}}HTTPServer) fu
 			return err
 		}
 		{{- end}}
+		if err := http.ValidateRequest(ctx, &in); err != nil {
+			return err
+		}
 		stream := http.NewServerSentEventServerStream(ctx)
 		http.SetOperation(ctx,Operation{{$svrType}}{{.OriginalName}})
 		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
@@ -126,6 +129,9 @@ func _{{$svrType}}_{{.Name}}{{.Num}}_HTTP_Handler(srv {{$svrType}}HTTPServer) fu
 			return err
 		}
 		{{- end}}
+		if err := http.ValidateRequest(ctx, &in); err != nil {
+			return err
+		}
 		http.SetOperation(ctx,Operation{{$svrType}}{{.OriginalName}})
 		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
 			return srv.{{.Name}}(ctx, req.(*{{.Request}}))

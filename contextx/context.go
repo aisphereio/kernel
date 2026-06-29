@@ -16,6 +16,7 @@ const (
 	keyPrincipal
 	keyTenant
 	keyLogger
+	keyServiceContext
 	keyCustom // for With/From generic key-value
 )
 

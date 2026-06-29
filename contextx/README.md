@@ -2,7 +2,7 @@
 
 `contextx` is the Aisphere Kernel request-context package. It is the **only**
 package business code should use for request-scoped values: `request_id`,
-`trace_id`, `principal`, `tenant`, and the request-bound logger. It works with
+`trace_id`, `principal`, `tenant`, the request-bound logger, metrics manager, and optional ServiceContext. It works with
 logx (FromContext) and errorx (WithRequestID / WithTraceID) without creating
 import cycles.
 
@@ -431,3 +431,32 @@ AI 编码指南（AI 写业务代码时看）
 
 > **contextx is the only request-context package. Inject once at the handler boundary, extract everywhere with typed nil-safe helpers. Never use raw context.WithValue with string keys in business code.**
 > If you're about to write `context.WithValue(ctx, "request_id", ...)` or prop-drill a logger through 5 function args — STOP, use `contextx.WithRequestID` / `contextx.InjectRequestContext` instead.
+
+
+---
+
+## ServiceContext integration
+
+Kernel now exposes the go-zero-style dependency handoff point through
+`contextx.ServiceContext`.
+
+Startup owns wiring:
+
+```go
+svc := contextx.MustNewServiceContext()
+contextx.MustPutDependency(svc, skillClient)
+contextx.MustPutDependency(svc, authzGuard)
+ctx := contextx.WithServiceContext(context.Background(), svc)
+```
+
+Generated Gateway/BFF logic can fetch dependencies from context when it does not
+own a typed service struct:
+
+```go
+skill := contextx.MustGetDependencyFromContext[skillv1.SkillServiceClient](ctx)
+```
+
+Use this sparingly. Normal handler/logic code should still prefer explicit
+fields on a generated `ServiceContext` struct. The context bridge is for
+middleware, generated grpc-gateway mounting, and workers that receive only
+`context.Context`.

@@ -39,7 +39,7 @@ func run(_ *cobra.Command, args []string) {
 		err   error
 		proto = strings.TrimSpace(args[0])
 	)
-	if err = look("protoc-gen-go", "protoc-gen-go-grpc", "protoc-gen-go-http", "protoc-gen-go-errors", "protoc-gen-openapi"); err != nil {
+	if err = look("protoc-gen-go", "protoc-gen-go-grpc", "protoc-gen-go-http", "protoc-gen-grpc-gateway", "protoc-gen-go-errors", "protoc-gen-go-authz", "protoc-gen-openapiv2"); err != nil {
 		// update the kernel plugins
 		cmd := exec.Command("kernel", "upgrade")
 		cmd.Stdout = os.Stdout
@@ -94,8 +94,9 @@ func generate(proto string, args []string) error {
 		"--go_out=paths=source_relative:.",
 		"--go-grpc_out=paths=source_relative:.",
 		"--go-http_out=paths=source_relative:.",
+		"--grpc-gateway_out=paths=source_relative,generate_unbound_methods=false:.",
 		"--go-errors_out=paths=source_relative:.",
-		"--openapi_out=paths=source_relative:.",
+		"--openapiv2_out=logtostderr=true,allow_merge=true,merge_file_name=aisphere:.",
 	}
 	input = append(input, inputExt...)
 	protoBytes, err := os.ReadFile(proto)

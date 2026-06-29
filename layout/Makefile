@@ -50,16 +50,24 @@ ifeq ($(OS),Windows_NT)
 	@cmd /c "if not exist .bin mkdir .bin"
 	@cmd /c "set GOBIN=$(LOCAL_BIN)&& $(GO) install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11"
 	@cmd /c "set GOBIN=$(LOCAL_BIN)&& $(GO) install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1"
+	@cmd /c "set GOBIN=$(LOCAL_BIN)&& $(GO) install github.com/aisphereio/kernel/cmd/protoc-gen-go-http@$(KERNEL_VERSION)"
+	@cmd /c "set GOBIN=$(LOCAL_BIN)&& $(GO) install github.com/aisphereio/kernel/cmd/protoc-gen-go-errors@$(KERNEL_VERSION)"
+	@cmd /c "set GOBIN=$(LOCAL_BIN)&& $(GO) install github.com/aisphereio/kernel/cmd/protoc-gen-go-authz@$(KERNEL_VERSION)"
+	@cmd /c "set GOBIN=$(LOCAL_BIN)&& $(GO) install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.29.0"
 	@cmd /c "set GOBIN=$(LOCAL_BIN)&& $(GO) install github.com/bufbuild/buf/cmd/buf@v1.50.0"
 	@cmd /c "set GOBIN=$(LOCAL_BIN)&& $(GO) install github.com/google/wire/cmd/wire@v0.7.0"
-	@cmd /c "set GOBIN=$(LOCAL_BIN)&& $(GO) install github.com/google/gnostic/cmd/protoc-gen-openapi@v0.7.1"
+	@cmd /c "set GOBIN=$(LOCAL_BIN)&& $(GO) install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.29.0"
 else
 	@mkdir -p $(LOCAL_BIN)
 	@GOBIN=$(LOCAL_BIN) $(GO) install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
 	@GOBIN=$(LOCAL_BIN) $(GO) install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/aisphereio/kernel/cmd/protoc-gen-go-http@$(KERNEL_VERSION)
+	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/aisphereio/kernel/cmd/protoc-gen-go-errors@$(KERNEL_VERSION)
+	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/aisphereio/kernel/cmd/protoc-gen-go-authz@$(KERNEL_VERSION)
+	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.29.0
 	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/bufbuild/buf/cmd/buf@v1.50.0
 	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/google/wire/cmd/wire@v0.7.0
-	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/google/gnostic/cmd/protoc-gen-openapi@v0.7.1
+	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.29.0
 endif
 
 check-tools:
@@ -69,14 +77,20 @@ ifeq ($(OS),Windows_NT)
 	@cmd /c "if not exist .bin\protoc-gen-go.exe echo missing .bin\protoc-gen-go.exe && exit /b 1"
 	@cmd /c "if not exist .bin\protoc-gen-go-grpc.exe echo missing .bin\protoc-gen-go-grpc.exe && exit /b 1"
 	@cmd /c "if not exist .bin\protoc-gen-go-http.exe echo missing .bin\protoc-gen-go-http.exe && exit /b 1"
-	@cmd /c "if not exist .bin\protoc-gen-openapi.exe echo missing .bin\protoc-gen-openapi.exe && exit /b 1"
+	@cmd /c "if not exist .bin\protoc-gen-go-errors.exe echo missing .bin\protoc-gen-go-errors.exe && exit /b 1"
+	@cmd /c "if not exist .bin\protoc-gen-go-authz.exe echo missing .bin\protoc-gen-go-authz.exe && exit /b 1"
+	@cmd /c "if not exist .bin\protoc-gen-grpc-gateway.exe echo missing .bin\protoc-gen-grpc-gateway.exe && exit /b 1"
+	@cmd /c "if not exist .bin\protoc-gen-openapiv2.exe echo missing .bin\protoc-gen-openapiv2.exe && exit /b 1"
 else
 	@test -x "$(LOCAL_BIN)/buf" || (echo "missing $(LOCAL_BIN)/buf"; exit 1)
 	@test -x "$(LOCAL_BIN)/wire" || (echo "missing $(LOCAL_BIN)/wire"; exit 1)
 	@test -x "$(LOCAL_BIN)/protoc-gen-go" || (echo "missing $(LOCAL_BIN)/protoc-gen-go"; exit 1)
 	@test -x "$(LOCAL_BIN)/protoc-gen-go-grpc" || (echo "missing $(LOCAL_BIN)/protoc-gen-go-grpc"; exit 1)
 	@test -x "$(LOCAL_BIN)/protoc-gen-go-http" || (echo "missing $(LOCAL_BIN)/protoc-gen-go-http"; exit 1)
-	@test -x "$(LOCAL_BIN)/protoc-gen-openapi" || (echo "missing $(LOCAL_BIN)/protoc-gen-openapi"; exit 1)
+	@test -x "$(LOCAL_BIN)/protoc-gen-go-errors" || (echo "missing $(LOCAL_BIN)/protoc-gen-go-errors"; exit 1)
+	@test -x "$(LOCAL_BIN)/protoc-gen-go-authz" || (echo "missing $(LOCAL_BIN)/protoc-gen-go-authz"; exit 1)
+	@test -x "$(LOCAL_BIN)/protoc-gen-grpc-gateway" || (echo "missing $(LOCAL_BIN)/protoc-gen-grpc-gateway"; exit 1)
+	@test -x "$(LOCAL_BIN)/protoc-gen-openapiv2" || (echo "missing $(LOCAL_BIN)/protoc-gen-openapiv2"; exit 1)
 endif
 
 api: check-tools

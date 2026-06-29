@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package examples.protoauthz.v1;
+
+import "api/aisphere/options/v1/authz.proto";
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+
+option go_package = "github.com/aisphereio/kernel/examples/proto-authz;protoauthz";
+
+service SkillService {
+  rpc DownloadSkillPackage(DownloadSkillPackageRequest) returns (DownloadSkillPackageReply) {
+    option (google.api.http) = {
+      get: "/api/v1/skills/{skill_id}/package"
+    };
+    option (aisphere.options.v1.authz) = {
+      action: "skill.download"
+      resource: "skill:{skill_id}"
+      audience: "skill-service"
+      mode: SCOPED_TOKEN
+    };
+    option (aisphere.options.v1.audit) = {
+      event: "skill.package.download"
+      risk: "medium"
+    };
+    option (aisphere.options.v1.capability) = {
+      group: "skill"
+      name: "download"
+    };
+  }
+}
+
+message DownloadSkillPackageRequest {
+  string skill_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message DownloadSkillPackageReply {
+  bytes package_data = 1;
+}

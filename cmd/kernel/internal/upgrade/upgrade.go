@@ -22,9 +22,11 @@ func Run(_ *cobra.Command, _ []string) {
 		"github.com/aisphereio/kernel/cmd/kernel@latest",
 		"github.com/aisphereio/kernel/cmd/protoc-gen-go-http@latest",
 		"github.com/aisphereio/kernel/cmd/protoc-gen-go-errors@latest",
+		"github.com/aisphereio/kernel/cmd/protoc-gen-go-authz@latest",
 		"google.golang.org/protobuf/cmd/protoc-gen-go@latest",
 		"google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest",
-		"github.com/google/gnostic/cmd/protoc-gen-openapi@latest",
+		"github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.29.0",
+		"github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.29.0",
 	)
 	if err != nil {
 		fmt.Println(err)

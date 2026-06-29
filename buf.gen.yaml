@@ -1,9 +1,42 @@
 version: v2
 plugins:
-  - local:
-      - go
-      - run
-      - google.golang.org/protobuf/cmd/protoc-gen-go
+  - local: protoc-gen-go
     out: .
     opt:
       - paths=source_relative
+
+  - local: protoc-gen-go-grpc
+    out: .
+    opt:
+      - paths=source_relative
+
+  - local: protoc-gen-go-http
+    out: .
+    opt:
+      - paths=source_relative
+
+  - local: protoc-gen-grpc-gateway
+    out: .
+    opt:
+      - paths=source_relative
+      - generate_unbound_methods=false
+
+  - local: protoc-gen-go-errors
+    out: .
+    opt:
+      - paths=source_relative
+
+
+  - local: protoc-gen-go-authz
+    out: .
+    opt:
+      - paths=source_relative
+
+  - local: protoc-gen-openapiv2
+    out: docs/openapi
+    strategy: all
+    opt:
+      - logtostderr=true
+      - allow_merge=true
+      - merge_file_name=aisphere
+      - use_go_templates=true

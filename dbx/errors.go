@@ -79,6 +79,12 @@ var (
 
 	// ErrNoEffect is returned by AssertAffected when RowsAffected == 0.
 	ErrNoEffect = newSentinel("dbx: operation affected 0 rows")
+
+	// ErrNilDB is returned by helper functions when the canonical DB entrypoint is nil.
+	ErrNilDB = newSentinel("dbx: nil DB")
+
+	// ErrNilTxFunc is returned when a transaction helper receives a nil callback.
+	ErrNilTxFunc = newSentinel("dbx: nil transaction function")
 )
 
 // ============================================================================
