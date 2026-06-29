@@ -124,20 +124,20 @@ version as the runtime packages. Service templates should pin `KERNEL_VERSION`.
 KERNEL_VERSION ?= v0.0.2
 ```
 
-Because these commands are separate Go modules, each command module needs its
-own directory-prefixed tag for the same version:
+Kernel releases runtime libraries and command tools from the root Go module.
+Do not add `go.mod` files under `cmd/*`; that would make each tool require its
+own directory-prefixed tag and complicate user installs. A release needs one
+root tag:
 
 ```bash
 git tag v0.1.12
-git tag cmd/kernel/v0.1.12
-git tag cmd/protoc-gen-go-authz/v0.1.12
-git tag cmd/protoc-gen-go-errors/v0.1.12
-git tag cmd/protoc-gen-go-http/v0.1.12
-git push origin v0.1.12 cmd/kernel/v0.1.12 cmd/protoc-gen-go-authz/v0.1.12 cmd/protoc-gen-go-errors/v0.1.12 cmd/protoc-gen-go-http/v0.1.12
+git push origin v0.1.12
 ```
 
-Run this before publishing tags to check module paths. After creating local
-tags, include `RELEASE_VERSION` to verify the root and command tags exist:
+Run this before publishing tags to verify the root module owns command packages
+and no nested command `go.mod` files exist. After committing and creating the
+local tag, include `RELEASE_VERSION` to verify the worktree is clean and the
+root tag points at `HEAD`:
 
 ```bash
 make release-check

@@ -1,4 +1,4 @@
-# Run command submodule tests on Windows.
+# Run command package tests on Windows.
 $ErrorActionPreference = "Stop"
 
 function Invoke-Step {

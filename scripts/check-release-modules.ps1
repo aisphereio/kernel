@@ -2,12 +2,12 @@ param(
     [string]$Version = ""
 )
 
-# Verify that command tools are ready for multi-module Go releases.
+# Verify that command tools are released from the root Go module.
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $rootModule = "github.com/aisphereio/kernel"
-$commandModules = @(
+$commandPackages = @(
     "cmd/kernel",
     "cmd/protoc-gen-go-authz",
     "cmd/protoc-gen-go-errors",
@@ -19,48 +19,49 @@ function Fail {
     throw $Message
 }
 
-function Read-ModulePath {
-    param([Parameter(Mandatory = $true)][string]$GoMod)
-
-    $line = Get-Content $GoMod | Where-Object { $_ -match '^module\s+' } | Select-Object -First 1
-    if (-not $line) {
-        Fail "missing module declaration: $GoMod"
-    }
-    return ($line -replace '^module\s+', '').Trim()
-}
-
 Push-Location $repoRoot
 try {
-    foreach ($dir in $commandModules) {
+    $rootGoMod = Join-Path $repoRoot "go.mod"
+    $rootModuleLine = Get-Content $rootGoMod | Where-Object { $_ -match '^module\s+' } | Select-Object -First 1
+    $gotRootModule = ($rootModuleLine -replace '^module\s+', '').Trim()
+    if ($gotRootModule -ne $rootModule) {
+        Fail "wrong root module path: want $rootModule, got $gotRootModule"
+    }
+    Write-Host "ok root module $rootModule" -ForegroundColor Green
+
+    foreach ($dir in $commandPackages) {
+        if (-not (Test-Path $dir)) {
+            Fail "missing command package directory: $dir"
+        }
+
         $goMod = Join-Path $dir "go.mod"
-        if (-not (Test-Path $goMod)) {
-            Fail "missing command module go.mod: $goMod"
+        if (Test-Path $goMod) {
+            Fail "command package must stay in root module; remove nested go.mod: $goMod"
         }
 
-        $want = "$rootModule/$dir"
-        $got = Read-ModulePath $goMod
-        if ($got -ne $want) {
-            Fail "wrong module path in ${goMod}: want $want, got $got"
-        }
-
-        Write-Host "ok module $want" -ForegroundColor Green
-
-        if ($Version -ne "") {
-            $tag = "$dir/$Version"
-            git rev-parse -q --verify "refs/tags/$tag" | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                Fail "missing command module tag: $tag"
-            }
-            Write-Host "ok tag $tag" -ForegroundColor Green
-        }
+        Write-Host "ok root-owned package $rootModule/$dir" -ForegroundColor Green
     }
 
     if ($Version -ne "") {
+        git diff --quiet
+        if ($LASTEXITCODE -ne 0) {
+            Fail "worktree has unstaged changes; commit before checking release tag $Version"
+        }
+        git diff --cached --quiet
+        if ($LASTEXITCODE -ne 0) {
+            Fail "worktree has staged changes; commit before checking release tag $Version"
+        }
+
         git rev-parse -q --verify "refs/tags/$Version" | Out-Null
         if ($LASTEXITCODE -ne 0) {
             Fail "missing root module tag: $Version"
         }
-        Write-Host "ok tag $Version" -ForegroundColor Green
+        $tagCommit = git rev-list -n 1 $Version
+        $headCommit = git rev-parse HEAD
+        if ($tagCommit -ne $headCommit) {
+            Fail "root tag $Version does not point to HEAD"
+        }
+        Write-Host "ok root tag $Version" -ForegroundColor Green
     }
 } finally {
     Pop-Location
