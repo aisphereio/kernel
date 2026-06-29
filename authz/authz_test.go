@@ -57,3 +57,22 @@ func TestAuditedAuthorizer(t *testing.T) {
 		t.Fatalf("unexpected audit records: %#v", records)
 	}
 }
+
+func TestRuleResolverNestedFieldPath(t *testing.T) {
+	type Owner struct {
+		ID string `json:"id" protobuf:"bytes,1,opt,name=id,json=id,proto3"`
+	}
+	type Request struct {
+		SkillID string `json:"skill_id" protobuf:"bytes,1,opt,name=skill_id,json=skillId,proto3"`
+		Owner   *Owner `json:"owner" protobuf:"bytes,2,opt,name=owner,json=owner,proto3"`
+	}
+
+	resolver := RuleResolver{}
+	resource, err := resolver.ResolveResource(Rule{Resource: "skill:{owner.id}:{skill_id}"}, &Request{SkillID: "s_1", Owner: &Owner{ID: "u_1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resource.Type != "skill" || resource.ID != "u_1:s_1" {
+		t.Fatalf("unexpected resource: %#v", resource)
+	}
+}

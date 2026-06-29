@@ -1,0 +1,2000 @@
+diff --git a/authz/authz_test.go b/authz/authz_test.go
+index acfd015..3d203d6 100644
+--- a/authz/authz_test.go
++++ b/authz/authz_test.go
+@@ -57,3 +57,22 @@ func TestAuditedAuthorizer(t *testing.T) {
+ 		t.Fatalf("unexpected audit records: %#v", records)
+ 	}
+ }
++
++func TestRuleResolverNestedFieldPath(t *testing.T) {
++	type Owner struct {
++		ID string `json:"id" protobuf:"bytes,1,opt,name=id,json=id,proto3"`
++	}
++	type Request struct {
++		SkillID string `json:"skill_id" protobuf:"bytes,1,opt,name=skill_id,json=skillId,proto3"`
++		Owner   *Owner `json:"owner" protobuf:"bytes,2,opt,name=owner,json=owner,proto3"`
++	}
++
++	resolver := RuleResolver{}
++	resource, err := resolver.ResolveResource(Rule{Resource: "skill:{owner.id}:{skill_id}"}, &Request{SkillID: "s_1", Owner: &Owner{ID: "u_1"}})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if resource.Type != "skill" || resource.ID != "u_1:s_1" {
++		t.Fatalf("unexpected resource: %#v", resource)
++	}
++}
+diff --git a/authz/rule.go b/authz/rule.go
+index dab127e..124e78d 100644
+--- a/authz/rule.go
++++ b/authz/rule.go
+@@ -112,34 +112,85 @@ func expandTemplate(tpl string, req any) string {
+ }
+ 
+ func fieldString(req any, name string) string {
+-	if req == nil {
++	fv, ok := fieldValue(req, strings.Split(name, "."))
++	if !ok {
+ 		return ""
+ 	}
++	for fv.Kind() == reflect.Pointer || fv.Kind() == reflect.Interface {
++		if fv.IsNil() {
++			return ""
++		}
++		fv = fv.Elem()
++	}
++	if fv.Kind() == reflect.String {
++		return fv.String()
++	}
++	if fv.CanInterface() {
++		return fmt.Sprint(fv.Interface())
++	}
++	return ""
++}
++
++func fieldValue(req any, path []string) (reflect.Value, bool) {
++	if req == nil || len(path) == 0 {
++		return reflect.Value{}, false
++	}
+ 	v := reflect.ValueOf(req)
+ 	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
+ 		if v.IsNil() {
+-			return ""
++			return reflect.Value{}, false
+ 		}
+ 		v = v.Elem()
+ 	}
+ 	if v.Kind() != reflect.Struct {
+-		return ""
++		return reflect.Value{}, false
+ 	}
+ 	t := v.Type()
+-	camel := snakeToCamel(name)
++	want := path[0]
+ 	for i := 0; i < v.NumField(); i++ {
+ 		f := t.Field(i)
+ 		if f.PkgPath != "" { // unexported
+ 			continue
+ 		}
+-		if f.Name == camel || strings.EqualFold(f.Name, name) || strings.EqualFold(snakeCase(f.Name), name) {
+-			fv := v.Field(i)
+-			if fv.Kind() == reflect.String {
+-				return fv.String()
+-			}
+-			if fv.CanInterface() {
+-				return fmt.Sprint(fv.Interface())
+-			}
++		if !fieldMatches(f, want) {
++			continue
++		}
++		fv := v.Field(i)
++		if len(path) == 1 {
++			return fv, true
++		}
++		return fieldValue(fv.Interface(), path[1:])
++	}
++	return reflect.Value{}, false
++}
++
++func fieldMatches(f reflect.StructField, name string) bool {
++	if f.Name == snakeToCamel(name) || strings.EqualFold(f.Name, name) || strings.EqualFold(snakeCase(f.Name), name) {
++		return true
++	}
++	for _, candidate := range []string{jsonTagName(f.Tag.Get("json")), protobufTagName(f.Tag.Get("protobuf"), "name"), protobufTagName(f.Tag.Get("protobuf"), "json")} {
++		if candidate != "" && (candidate == name || strings.EqualFold(candidate, name)) {
++			return true
++		}
++	}
++	return false
++}
++
++func jsonTagName(tag string) string {
++	if tag == "" || tag == "-" {
++		return ""
++	}
++	name := strings.Split(tag, ",")[0]
++	if name == "-" {
++		return ""
++	}
++	return name
++}
++
++func protobufTagName(tag, key string) string {
++	for _, part := range strings.Split(tag, ",") {
++		if strings.HasPrefix(part, key+"=") {
++			return strings.TrimPrefix(part, key+"=")
+ 		}
+ 	}
+ 	return ""
+diff --git a/cmd/buf-check-aisphere/README.md b/cmd/buf-check-aisphere/README.md
+new file mode 100644
+index 0000000..8fe41b0
+--- /dev/null
++++ b/cmd/buf-check-aisphere/README.md
+@@ -0,0 +1,25 @@
++# buf-check-aisphere
++
++`buf-check-aisphere` is a descriptor-level contract checker for Aisphere proto APIs. It is designed to run after `buf build -o -` and before code generation or CI merge.
++
++It currently checks:
++
++1. RPC methods exposed through `google.api.http` must declare `aisphere.authz`.
++2. `aisphere.authz.action`, `resource`, `audience`, and `mode` must be set.
++3. High-risk actions such as `delete`, `publish`, `grant`, `share`, `transfer`, `owner`, `admin`, `remove`, and `revoke` must declare `aisphere.audit`.
++4. High-risk audited methods should set `aisphere.audit.risk`.
++5. Resource templates such as `skill:{skill_id}` and `skill:{owner.id}` must reference existing request fields.
++
++Example:
++
++```bash
++buf build -o - | buf-check-aisphere
++```
++
++Override high-risk action tokens:
++
++```bash
++buf build -o - | buf-check-aisphere --high-risk-actions=delete,publish,grant
++```
++
++The checker parses encoded unknown option payloads by extension number. This keeps it independent from generated Go code for the options proto and aligns it with `protoc-gen-go-authz`.
+diff --git a/cmd/buf-check-aisphere/main.go b/cmd/buf-check-aisphere/main.go
+index 623f5e8..b094f4f 100644
+--- a/cmd/buf-check-aisphere/main.go
++++ b/cmd/buf-check-aisphere/main.go
+@@ -1,440 +1,291 @@
+-package main
+-
+-import (
+-	"bytes"
+-	"flag"
+-	"fmt"
+-	"io"
+-	"os"
+-	"regexp"
+-	"sort"
+-	"strings"
+-
+-	"google.golang.org/protobuf/encoding/protowire"
+-	"google.golang.org/protobuf/proto"
+-	"google.golang.org/protobuf/types/descriptorpb"
+-)
+-
+-const (
+-	toolVersion = "v0.1.0"
+-
+-	// google.api.http = 72295728, see google/api/annotations.proto.
+-	extGoogleHTTP protowire.Number = 72295728
+-
+-	// aisphere.options.v1 method extensions, see api/aisphere/options/v1/authz.proto.
+-	extAuthz protowire.Number = 51001
+-	extAudit protowire.Number = 51002
+-
+-	exitDiagnostics = 1
+-	exitToolError   = 2
+-)
+-
+-var (
+-	descriptorPath = flag.String("descriptor", "-", "FileDescriptorSet path generated by `buf build -o`, or - for stdin")
+-	showVersion    = flag.Bool("version", false, "print version and exit")
+-	highRiskCSV    = flag.String("high-risk-actions", "delete,publish,grant,share,transfer,owner,admin,remove,revoke", "comma-separated action substrings that require aisphere.audit")
+-)
+-
+-func main() {
+-	flag.Parse()
+-	if *showVersion {
+-		fmt.Println("buf-check-aisphere " + toolVersion)
+-		return
+-	}
+-
+-	data, err := readInput(*descriptorPath)
+-	if err != nil {
+-		fatal(err)
+-	}
+-
+-	var set descriptorpb.FileDescriptorSet
+-	if err := proto.Unmarshal(data, &set); err != nil {
+-		fatal(fmt.Errorf("parse descriptor set: %w", err))
+-	}
+-
+-	diags := analyze(&set, checkConfig{HighRiskActions: splitCSV(*highRiskCSV)})
+-	for _, d := range diags {
+-		fmt.Fprintln(os.Stderr, d)
+-	}
+-	if len(diags) > 0 {
+-		fmt.Fprintf(os.Stderr, "buf-check-aisphere: %d contract violation(s) found\n", len(diags))
+-		os.Exit(exitDiagnostics)
+-	}
+-	fmt.Printf("buf-check-aisphere: checked %d proto files\n", len(set.GetFile()))
+-}
+-
+-func readInput(path string) ([]byte, error) {
+-	if path == "" || path == "-" {
+-		return io.ReadAll(os.Stdin)
+-	}
+-	return os.ReadFile(path)
+-}
+-
+-func fatal(err error) {
+-	fmt.Fprintln(os.Stderr, "buf-check-aisphere:", err)
+-	os.Exit(exitToolError)
+-}
+-
+-type checkConfig struct {
+-	HighRiskActions []string
+-}
+-
+-type analyzer struct {
+-	messages map[string]*descriptorpb.DescriptorProto
+-	config   checkConfig
+-}
+-
+-func analyze(set *descriptorpb.FileDescriptorSet, config checkConfig) []string {
+-	a := &analyzer{messages: indexMessages(set), config: config}
+-	var diags []string
+-	for _, f := range set.GetFile() {
+-		if skipFile(f.GetName()) {
+-			continue
+-		}
+-		pkg := f.GetPackage()
+-		for _, svc := range f.GetService() {
+-			for _, method := range svc.GetMethod() {
+-				diags = append(diags, a.checkMethod(f.GetName(), pkg, svc, method)...)
+-			}
+-		}
+-	}
+-	sort.Strings(diags)
+-	return diags
+-}
+-
+-func indexMessages(set *descriptorpb.FileDescriptorSet) map[string]*descriptorpb.DescriptorProto {
+-	messages := map[string]*descriptorpb.DescriptorProto{}
+-	for _, f := range set.GetFile() {
+-		if skipFile(f.GetName()) {
+-			continue
+-		}
+-		pkg := f.GetPackage()
+-		for _, m := range f.GetMessageType() {
+-			indexMessage(messages, pkg, "", m)
+-		}
+-	}
+-	return messages
+-}
+-
+-func (a *analyzer) checkMethod(fileName, pkg string, svc *descriptorpb.ServiceDescriptorProto, method *descriptorpb.MethodDescriptorProto) []string {
+-	methodRef := fmt.Sprintf("%s:%s.%s/%s", fileName, pkg, svc.GetName(), method.GetName())
+-	unknown := methodUnknown(method)
+-
+-	hasHTTP := hasExtension(unknown, extGoogleHTTP)
+-	authzPayloads := findExtensionPayloads(unknown, extAuthz)
+-	auditPayloads := findExtensionPayloads(unknown, extAudit)
+-	hasAuthz := len(authzPayloads) > 0
+-	hasAudit := len(auditPayloads) > 0
+-
+-	var diags []string
+-	if hasHTTP && !hasAuthz {
+-		diags = append(diags, methodRef+": external google.api.http method must declare aisphere.authz")
+-		return diags
+-	}
+-	if !hasAuthz {
+-		return diags
+-	}
+-
+-	authz := parseAuthz(authzPayloads[len(authzPayloads)-1])
+-	if authz.Action == "" {
+-		diags = append(diags, methodRef+": aisphere.authz.action must not be empty")
+-	}
+-	if authz.Resource == "" {
+-		diags = append(diags, methodRef+": aisphere.authz.resource must not be empty")
+-	}
+-	if authz.Audience == "" {
+-		diags = append(diags, methodRef+": aisphere.authz.audience must not be empty")
+-	}
+-	if authz.Mode == 0 {
+-		diags = append(diags, methodRef+": aisphere.authz.mode must not be AUTHZ_MODE_UNSPECIFIED")
+-	}
+-
+-	if isHighRiskAction(authz.Action, a.config.HighRiskActions) && !hasAudit {
+-		diags = append(diags, methodRef+": high-risk authz action "+quote(authz.Action)+" must declare aisphere.audit")
+-	}
+-	if hasAudit {
+-		audit := parseAudit(auditPayloads[len(auditPayloads)-1])
+-		if audit.Event == "" {
+-			diags = append(diags, methodRef+": aisphere.audit.event must not be empty")
+-		}
+-		if audit.Risk == "" && isHighRiskAction(authz.Action, a.config.HighRiskActions) {
+-			diags = append(diags, methodRef+": high-risk authz action "+quote(authz.Action)+" should set aisphere.audit.risk")
+-		}
+-	}
+-
+-	if authz.Resource != "" {
+-		input := strings.TrimPrefix(method.GetInputType(), ".")
+-		msg := a.messages[input]
+-		for _, fieldPath := range templateFields(authz.Resource) {
+-			if msg == nil || !a.messageHasFieldPath(msg, fieldPath) {
+-				diags = append(diags, methodRef+": authz resource template references missing request field {"+fieldPath+"}")
+-			}
+-		}
+-	}
+-	return diags
+-}
+-
+-func skipFile(name string) bool {
+-	return strings.HasPrefix(name, "third_party/") ||
+-		strings.HasPrefix(name, "vendor/") ||
+-		strings.Contains(name, "/internal/testdata/") ||
+-		strings.HasPrefix(name, "internal/testdata/") ||
+-		strings.Contains(name, "/testdata/") ||
+-		strings.HasSuffix(name, "aisphere/options/v1/authz.proto")
+-}
+-
+-func indexMessage(out map[string]*descriptorpb.DescriptorProto, pkg, prefix string, m *descriptorpb.DescriptorProto) {
+-	name := strings.Trim(strings.Join(nonEmpty(pkg, prefix, m.GetName()), "."), ".")
+-	out[name] = m
+-	for _, nested := range m.GetNestedType() {
+-		indexMessage(out, pkg, strings.Trim(strings.Join(nonEmpty(prefix, m.GetName()), "."), "."), nested)
+-	}
+-}
+-
+-func nonEmpty(values ...string) []string {
+-	out := make([]string, 0, len(values))
+-	for _, v := range values {
+-		if v != "" {
+-			out = append(out, v)
+-		}
+-	}
+-	return out
+-}
+-
+-func methodUnknown(m *descriptorpb.MethodDescriptorProto) []byte {
+-	if m == nil || m.Options == nil {
+-		return nil
+-	}
+-	return m.Options.ProtoReflect().GetUnknown()
+-}
+-
+-func hasExtension(b []byte, ext protowire.Number) bool {
+-	return len(findExtensionPayloads(b, ext)) > 0
+-}
+-
+-func findExtensionPayloads(b []byte, ext protowire.Number) [][]byte {
+-	var payloads [][]byte
+-	for len(b) > 0 {
+-		num, typ, n := protowire.ConsumeTag(b)
+-		if n < 0 {
+-			return payloads
+-		}
+-		b = b[n:]
+-		if num == ext && typ == protowire.BytesType {
+-			v, n := protowire.ConsumeBytes(b)
+-			if n < 0 {
+-				return payloads
+-			}
+-			payloads = append(payloads, append([]byte(nil), v...))
+-			b = b[n:]
+-			continue
+-		}
+-		n = protowire.ConsumeFieldValue(num, typ, b)
+-		if n < 0 {
+-			return payloads
+-		}
+-		b = b[n:]
+-	}
+-	return payloads
+-}
+-
+-type authzOpt struct {
+-	Action   string
+-	Resource string
+-	Audience string
+-	Mode     int32
+-}
+-
+-type auditOpt struct {
+-	Event string
+-	Risk  string
+-}
+-
+-func parseAuthz(b []byte) authzOpt {
+-	var o authzOpt
+-	for len(b) > 0 {
+-		num, typ, n := protowire.ConsumeTag(b)
+-		if n < 0 {
+-			return o
+-		}
+-		b = b[n:]
+-		switch num {
+-		case 1:
+-			if typ == protowire.BytesType {
+-				v, n := protowire.ConsumeString(b)
+-				if n >= 0 {
+-					o.Action = v
+-					b = b[n:]
+-					continue
+-				}
+-			}
+-		case 2:
+-			if typ == protowire.BytesType {
+-				v, n := protowire.ConsumeString(b)
+-				if n >= 0 {
+-					o.Resource = v
+-					b = b[n:]
+-					continue
+-				}
+-			}
+-		case 3:
+-			if typ == protowire.BytesType {
+-				v, n := protowire.ConsumeString(b)
+-				if n >= 0 {
+-					o.Audience = v
+-					b = b[n:]
+-					continue
+-				}
+-			}
+-		case 4:
+-			if typ == protowire.VarintType {
+-				v, n := protowire.ConsumeVarint(b)
+-				if n >= 0 {
+-					o.Mode = int32(v)
+-					b = b[n:]
+-					continue
+-				}
+-			}
+-		}
+-		n = protowire.ConsumeFieldValue(num, typ, b)
+-		if n < 0 {
+-			return o
+-		}
+-		b = b[n:]
+-	}
+-	return o
+-}
+-
+-func parseAudit(b []byte) auditOpt {
+-	var o auditOpt
+-	for len(b) > 0 {
+-		num, typ, n := protowire.ConsumeTag(b)
+-		if n < 0 {
+-			return o
+-		}
+-		b = b[n:]
+-		switch num {
+-		case 1:
+-			if typ == protowire.BytesType {
+-				v, n := protowire.ConsumeString(b)
+-				if n >= 0 {
+-					o.Event = v
+-					b = b[n:]
+-					continue
+-				}
+-			}
+-		case 2:
+-			if typ == protowire.BytesType {
+-				v, n := protowire.ConsumeString(b)
+-				if n >= 0 {
+-					o.Risk = v
+-					b = b[n:]
+-					continue
+-				}
+-			}
+-		}
+-		n = protowire.ConsumeFieldValue(num, typ, b)
+-		if n < 0 {
+-			return o
+-		}
+-		b = b[n:]
+-	}
+-	return o
+-}
+-
+-func splitCSV(s string) []string {
+-	parts := strings.Split(s, ",")
+-	out := make([]string, 0, len(parts))
+-	for _, p := range parts {
+-		p = strings.TrimSpace(strings.ToLower(p))
+-		if p != "" {
+-			out = append(out, p)
+-		}
+-	}
+-	return out
+-}
+-
+-func isHighRiskAction(action string, tokens []string) bool {
+-	action = strings.ToLower(action)
+-	for _, token := range tokens {
+-		if token != "" && strings.Contains(action, token) {
+-			return true
+-		}
+-	}
+-	return false
+-}
+-
+-var fieldRefRe = regexp.MustCompile(`\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\}`)
+-
+-func templateFields(resource string) []string {
+-	matches := fieldRefRe.FindAllStringSubmatch(resource, -1)
+-	out := make([]string, 0, len(matches))
+-	seen := map[string]bool{}
+-	for _, m := range matches {
+-		if len(m) > 1 && !seen[m[1]] {
+-			seen[m[1]] = true
+-			out = append(out, m[1])
+-		}
+-	}
+-	return out
+-}
+-
+-func (a *analyzer) messageHasFieldPath(m *descriptorpb.DescriptorProto, path string) bool {
+-	cur := m
+-	parts := strings.Split(path, ".")
+-	for i, part := range parts {
+-		field := findField(cur, part)
+-		if field == nil {
+-			return false
+-		}
+-		if i == len(parts)-1 {
+-			return true
+-		}
+-		if field.GetType() != descriptorpb.FieldDescriptorProto_TYPE_MESSAGE {
+-			return false
+-		}
+-		next := a.messages[strings.TrimPrefix(field.GetTypeName(), ".")]
+-		if next == nil {
+-			return false
+-		}
+-		cur = next
+-	}
+-	return true
+-}
+-
+-func findField(m *descriptorpb.DescriptorProto, name string) *descriptorpb.FieldDescriptorProto {
+-	for _, f := range m.GetField() {
+-		if f.GetName() == name || f.GetJsonName() == name || snakeToCamel(name) == f.GetJsonName() || strings.EqualFold(name, f.GetJsonName()) {
+-			return f
+-		}
+-	}
+-	return nil
+-}
+-
+-func snakeToCamel(s string) string {
+-	var b bytes.Buffer
+-	upper := false
+-	for i, r := range s {
+-		if r == '_' || r == '-' {
+-			upper = true
+-			continue
+-		}
+-		if i == 0 {
+-			b.WriteRune(r)
+-			continue
+-		}
+-		if upper && r >= 'a' && r <= 'z' {
+-			r = r - 'a' + 'A'
+-		}
+-		upper = false
+-		b.WriteRune(r)
+-	}
+-	return b.String()
+-}
+-
+-func quote(s string) string {
+-	if s == "" {
+-		return "<empty>"
+-	}
+-	return fmt.Sprintf("%q", s)
+-}
++package main
++
++import (
++	"bytes"
++	"flag"
++	"fmt"
++	"io"
++	"os"
++	"regexp"
++	"sort"
++	"strings"
++
++	"google.golang.org/protobuf/proto"
++	"google.golang.org/protobuf/types/descriptorpb"
++
++	"github.com/aisphereio/kernel/internal/protooptions"
++)
++
++const (
++	exitDiagnostics = 1
++	exitToolError   = 2
++)
++
++var (
++	descriptorPath = flag.String("descriptor", "-", "FileDescriptorSet path generated by `buf build -o`, or - for stdin")
++	showVersion    = flag.Bool("version", false, "print version and exit")
++	highRiskCSV    = flag.String("high-risk-actions", "delete,publish,grant,share,transfer,owner,admin,remove,revoke", "comma-separated action substrings that require aisphere.audit")
++)
++
++func main() {
++	flag.Parse()
++	if *showVersion {
++		fmt.Println("buf-check-aisphere " + release)
++		return
++	}
++
++	data, err := readInput(*descriptorPath)
++	if err != nil {
++		fatal(err)
++	}
++
++	var set descriptorpb.FileDescriptorSet
++	if err := proto.Unmarshal(data, &set); err != nil {
++		fatal(fmt.Errorf("parse descriptor set: %w", err))
++	}
++
++	diags := analyze(&set, checkConfig{HighRiskActions: splitCSV(*highRiskCSV)})
++	for _, d := range diags {
++		fmt.Fprintln(os.Stderr, d)
++	}
++	if len(diags) > 0 {
++		fmt.Fprintf(os.Stderr, "buf-check-aisphere: %d contract violation(s) found\n", len(diags))
++		os.Exit(exitDiagnostics)
++	}
++	fmt.Printf("buf-check-aisphere: checked %d proto files\n", len(set.GetFile()))
++}
++
++func readInput(path string) ([]byte, error) {
++	if path == "" || path == "-" {
++		return io.ReadAll(os.Stdin)
++	}
++	return os.ReadFile(path)
++}
++
++func fatal(err error) {
++	fmt.Fprintln(os.Stderr, "buf-check-aisphere:", err)
++	os.Exit(exitToolError)
++}
++
++type checkConfig struct {
++	HighRiskActions []string
++}
++
++type analyzer struct {
++	messages map[string]*descriptorpb.DescriptorProto
++	config   checkConfig
++}
++
++func analyze(set *descriptorpb.FileDescriptorSet, config checkConfig) []string {
++	a := &analyzer{messages: indexMessages(set), config: config}
++	var diags []string
++	for _, f := range set.GetFile() {
++		if skipFile(f.GetName()) {
++			continue
++		}
++		pkg := f.GetPackage()
++		for _, svc := range f.GetService() {
++			for _, method := range svc.GetMethod() {
++				diags = append(diags, a.checkMethod(f.GetName(), pkg, svc, method)...)
++			}
++		}
++	}
++	sort.Strings(diags)
++	return diags
++}
++
++func indexMessages(set *descriptorpb.FileDescriptorSet) map[string]*descriptorpb.DescriptorProto {
++	messages := map[string]*descriptorpb.DescriptorProto{}
++	for _, f := range set.GetFile() {
++		if skipFile(f.GetName()) {
++			continue
++		}
++		pkg := f.GetPackage()
++		for _, m := range f.GetMessageType() {
++			indexMessage(messages, pkg, "", m)
++		}
++	}
++	return messages
++}
++
++func (a *analyzer) checkMethod(fileName, pkg string, svc *descriptorpb.ServiceDescriptorProto, method *descriptorpb.MethodDescriptorProto) []string {
++	methodRef := fmt.Sprintf("%s:%s.%s/%s", fileName, pkg, svc.GetName(), method.GetName())
++	unknown := protooptions.MethodUnknown(method)
++
++	hasHTTP := protooptions.HasExtension(unknown, protooptions.ExtGoogleHTTP)
++	authzPayloads := protooptions.FindExtensionPayloads(unknown, protooptions.ExtAuthz)
++	auditPayloads := protooptions.FindExtensionPayloads(unknown, protooptions.ExtAudit)
++	hasAuthz := len(authzPayloads) > 0
++	hasAudit := len(auditPayloads) > 0
++
++	var diags []string
++	if hasHTTP && !hasAuthz {
++		diags = append(diags, methodRef+": external google.api.http method must declare aisphere.authz")
++		return diags
++	}
++	if !hasAuthz {
++		return diags
++	}
++
++	authz := protooptions.ParseAuthz(authzPayloads[len(authzPayloads)-1])
++	if authz.Action == "" {
++		diags = append(diags, methodRef+": aisphere.authz.action must not be empty")
++	}
++	if authz.Resource == "" {
++		diags = append(diags, methodRef+": aisphere.authz.resource must not be empty")
++	}
++	if authz.Audience == "" {
++		diags = append(diags, methodRef+": aisphere.authz.audience must not be empty")
++	}
++	if authz.Mode == 0 {
++		diags = append(diags, methodRef+": aisphere.authz.mode must not be AUTHZ_MODE_UNSPECIFIED")
++	}
++
++	if isHighRiskAction(authz.Action, a.config.HighRiskActions) && !hasAudit {
++		diags = append(diags, methodRef+": high-risk authz action "+quote(authz.Action)+" must declare aisphere.audit")
++	}
++	if hasAudit {
++		audit := protooptions.ParseAudit(auditPayloads[len(auditPayloads)-1])
++		if audit.Event == "" {
++			diags = append(diags, methodRef+": aisphere.audit.event must not be empty")
++		}
++		if audit.Risk == "" && isHighRiskAction(authz.Action, a.config.HighRiskActions) {
++			diags = append(diags, methodRef+": high-risk authz action "+quote(authz.Action)+" should set aisphere.audit.risk")
++		}
++	}
++
++	if authz.Resource != "" {
++		input := strings.TrimPrefix(method.GetInputType(), ".")
++		msg := a.messages[input]
++		for _, fieldPath := range templateFields(authz.Resource) {
++			if msg == nil || !a.messageHasFieldPath(msg, fieldPath) {
++				diags = append(diags, methodRef+": authz resource template references missing request field {"+fieldPath+"}")
++			}
++		}
++	}
++	return diags
++}
++
++func skipFile(name string) bool {
++	return strings.HasPrefix(name, "third_party/") ||
++		strings.HasPrefix(name, "vendor/") ||
++		strings.Contains(name, "/internal/testdata/") ||
++		strings.HasPrefix(name, "internal/testdata/") ||
++		strings.Contains(name, "/testdata/") ||
++		strings.HasSuffix(name, "aisphere/options/v1/authz.proto")
++}
++
++func indexMessage(out map[string]*descriptorpb.DescriptorProto, pkg, prefix string, m *descriptorpb.DescriptorProto) {
++	name := strings.Trim(strings.Join(nonEmpty(pkg, prefix, m.GetName()), "."), ".")
++	out[name] = m
++	for _, nested := range m.GetNestedType() {
++		indexMessage(out, pkg, strings.Trim(strings.Join(nonEmpty(prefix, m.GetName()), "."), "."), nested)
++	}
++}
++
++func nonEmpty(values ...string) []string {
++	out := make([]string, 0, len(values))
++	for _, v := range values {
++		if v != "" {
++			out = append(out, v)
++		}
++	}
++	return out
++}
++
++func splitCSV(s string) []string {
++	parts := strings.Split(s, ",")
++	out := make([]string, 0, len(parts))
++	for _, p := range parts {
++		p = strings.TrimSpace(strings.ToLower(p))
++		if p != "" {
++			out = append(out, p)
++		}
++	}
++	return out
++}
++
++func isHighRiskAction(action string, tokens []string) bool {
++	action = strings.ToLower(action)
++	for _, token := range tokens {
++		if token != "" && strings.Contains(action, token) {
++			return true
++		}
++	}
++	return false
++}
++
++var fieldRefRe = regexp.MustCompile(`\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\}`)
++
++func templateFields(resource string) []string {
++	matches := fieldRefRe.FindAllStringSubmatch(resource, -1)
++	out := make([]string, 0, len(matches))
++	seen := map[string]bool{}
++	for _, m := range matches {
++		if len(m) > 1 && !seen[m[1]] {
++			seen[m[1]] = true
++			out = append(out, m[1])
++		}
++	}
++	return out
++}
++
++func (a *analyzer) messageHasFieldPath(m *descriptorpb.DescriptorProto, path string) bool {
++	cur := m
++	parts := strings.Split(path, ".")
++	for i, part := range parts {
++		field := findField(cur, part)
++		if field == nil {
++			return false
++		}
++		if i == len(parts)-1 {
++			return true
++		}
++		if field.GetType() != descriptorpb.FieldDescriptorProto_TYPE_MESSAGE {
++			return false
++		}
++		next := a.messages[strings.TrimPrefix(field.GetTypeName(), ".")]
++		if next == nil {
++			return false
++		}
++		cur = next
++	}
++	return true
++}
++
++func findField(m *descriptorpb.DescriptorProto, name string) *descriptorpb.FieldDescriptorProto {
++	for _, f := range m.GetField() {
++		if f.GetName() == name || f.GetJsonName() == name || snakeToCamel(name) == f.GetJsonName() || strings.EqualFold(name, f.GetJsonName()) {
++			return f
++		}
++	}
++	return nil
++}
++
++func snakeToCamel(s string) string {
++	var b bytes.Buffer
++	upper := false
++	for i, r := range s {
++		if r == '_' || r == '-' {
++			upper = true
++			continue
++		}
++		if i == 0 {
++			b.WriteRune(r)
++			continue
++		}
++		if upper && r >= 'a' && r <= 'z' {
++			r = r - 'a' + 'A'
++		}
++		upper = false
++		b.WriteRune(r)
++	}
++	return b.String()
++}
++
++func quote(s string) string {
++	if s == "" {
++		return "<empty>"
++	}
++	return fmt.Sprintf("%q", s)
++}
+diff --git a/cmd/buf-check-aisphere/main_test.go b/cmd/buf-check-aisphere/main_test.go
+new file mode 100644
+index 0000000..ed3071c
+--- /dev/null
++++ b/cmd/buf-check-aisphere/main_test.go
+@@ -0,0 +1,143 @@
++package main
++
++import (
++	"strings"
++	"testing"
++
++	"google.golang.org/protobuf/encoding/protowire"
++	"google.golang.org/protobuf/types/descriptorpb"
++
++	"github.com/aisphereio/kernel/internal/protooptions"
++)
++
++func TestAnalyzeRequiresAuthzForExternalHTTP(t *testing.T) {
++	set := descriptorSet(methodWithUnknown("GetSkill", ".skill.v1.GetSkillRequest", appendOption(nil, protooptions.ExtGoogleHTTP, nil)))
++
++	diags := analyze(set, checkConfig{HighRiskActions: splitCSV("delete")})
++
++	assertDiagContains(t, diags, "external google.api.http method must declare aisphere.authz")
++}
++
++func TestAnalyzeValidatesAuthzAuditAndResourceTemplate(t *testing.T) {
++	unknown := appendOption(nil, protooptions.ExtGoogleHTTP, nil)
++	unknown = appendOption(unknown, protooptions.ExtAuthz, authzPayload("skill.delete", "skill:{missing_id}", "skill-service", 2))
++	set := descriptorSet(methodWithUnknown("DeleteSkill", ".skill.v1.GetSkillRequest", unknown))
++
++	diags := analyze(set, checkConfig{HighRiskActions: splitCSV("delete")})
++
++	assertDiagContains(t, diags, "high-risk authz action \"skill.delete\" must declare aisphere.audit")
++	assertDiagContains(t, diags, "authz resource template references missing request field {missing_id}")
++}
++
++func TestAnalyzeAcceptsNestedResourceTemplateAndAudit(t *testing.T) {
++	unknown := appendOption(nil, protooptions.ExtGoogleHTTP, nil)
++	unknown = appendOption(unknown, protooptions.ExtAuthz, authzPayload("skill.download", "skill:{owner.id}:{skill_id}", "skill-service", 2))
++	unknown = appendOption(unknown, protooptions.ExtAudit, auditPayload("skill.download", "medium"))
++	set := descriptorSet(methodWithUnknown("DownloadSkill", ".skill.v1.GetSkillRequest", unknown))
++
++	diags := analyze(set, checkConfig{HighRiskActions: splitCSV("delete")})
++
++	if len(diags) != 0 {
++		t.Fatalf("expected no diagnostics, got %#v", diags)
++	}
++}
++
++func assertDiagContains(t *testing.T, diags []string, want string) {
++	t.Helper()
++	for _, diag := range diags {
++		if strings.Contains(diag, want) {
++			return
++		}
++	}
++	t.Fatalf("diagnostics missing %q: %#v", want, diags)
++}
++
++func descriptorSet(method *descriptorpb.MethodDescriptorProto) *descriptorpb.FileDescriptorSet {
++	return &descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{
++		{
++			Name:    strPtr("skill.proto"),
++			Package: strPtr("skill.v1"),
++			MessageType: []*descriptorpb.DescriptorProto{
++				{
++					Name: strPtr("Owner"),
++					Field: []*descriptorpb.FieldDescriptorProto{
++						field("id", 1, descriptorpb.FieldDescriptorProto_TYPE_STRING, ""),
++					},
++				},
++				{
++					Name: strPtr("GetSkillRequest"),
++					Field: []*descriptorpb.FieldDescriptorProto{
++						field("skill_id", 1, descriptorpb.FieldDescriptorProto_TYPE_STRING, ""),
++						field("owner", 2, descriptorpb.FieldDescriptorProto_TYPE_MESSAGE, ".skill.v1.Owner"),
++					},
++				},
++			},
++			Service: []*descriptorpb.ServiceDescriptorProto{
++				{
++					Name:   strPtr("SkillService"),
++					Method: []*descriptorpb.MethodDescriptorProto{method},
++				},
++			},
++		},
++	}}
++}
++
++func methodWithUnknown(name, inputType string, unknown []byte) *descriptorpb.MethodDescriptorProto {
++	opts := &descriptorpb.MethodOptions{}
++	opts.ProtoReflect().SetUnknown(unknown)
++	return &descriptorpb.MethodDescriptorProto{
++		Name:       strPtr(name),
++		InputType:  strPtr(inputType),
++		OutputType: strPtr(".skill.v1.GetSkillReply"),
++		Options:    opts,
++	}
++}
++
++func field(name string, num int32, typ descriptorpb.FieldDescriptorProto_Type, typeName string) *descriptorpb.FieldDescriptorProto {
++	f := &descriptorpb.FieldDescriptorProto{
++		Name:   strPtr(name),
++		Number: int32Ptr(num),
++		Label:  labelPtr(descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL),
++		Type:   typePtr(typ),
++	}
++	if typeName != "" {
++		f.TypeName = strPtr(typeName)
++	}
++	return f
++}
++
++func strPtr(v string) *string { return &v }
++func int32Ptr(v int32) *int32 { return &v }
++func labelPtr(v descriptorpb.FieldDescriptorProto_Label) *descriptorpb.FieldDescriptorProto_Label {
++	return &v
++}
++func typePtr(v descriptorpb.FieldDescriptorProto_Type) *descriptorpb.FieldDescriptorProto_Type {
++	return &v
++}
++
++func appendOption(dst []byte, ext protowire.Number, payload []byte) []byte {
++	dst = protowire.AppendTag(dst, ext, protowire.BytesType)
++	return protowire.AppendBytes(dst, payload)
++}
++
++func authzPayload(action, resource, audience string, mode int32) []byte {
++	var b []byte
++	b = protowire.AppendTag(b, 1, protowire.BytesType)
++	b = protowire.AppendString(b, action)
++	b = protowire.AppendTag(b, 2, protowire.BytesType)
++	b = protowire.AppendString(b, resource)
++	b = protowire.AppendTag(b, 3, protowire.BytesType)
++	b = protowire.AppendString(b, audience)
++	b = protowire.AppendTag(b, 4, protowire.VarintType)
++	b = protowire.AppendVarint(b, uint64(mode))
++	return b
++}
++
++func auditPayload(event, risk string) []byte {
++	var b []byte
++	b = protowire.AppendTag(b, 1, protowire.BytesType)
++	b = protowire.AppendString(b, event)
++	b = protowire.AppendTag(b, 2, protowire.BytesType)
++	b = protowire.AppendString(b, risk)
++	return b
++}
+diff --git a/cmd/buf-check-aisphere/version.go b/cmd/buf-check-aisphere/version.go
+new file mode 100644
+index 0000000..60970f3
+--- /dev/null
++++ b/cmd/buf-check-aisphere/version.go
+@@ -0,0 +1,4 @@
++package main
++
++// release is the current buf-check-aisphere contract checker version.
++const release = "v0.2.0"
+diff --git a/cmd/protoc-gen-go-authz/README.md b/cmd/protoc-gen-go-authz/README.md
+new file mode 100644
+index 0000000..36d000e
+--- /dev/null
++++ b/cmd/protoc-gen-go-authz/README.md
+@@ -0,0 +1,56 @@
++# protoc-gen-go-authz
++
++`protoc-gen-go-authz` turns Aisphere proto method options into provider-neutral Kernel authorization helpers.
++
++It reads these options from `api/aisphere/options/v1/authz.proto`:
++
++```proto
++option (aisphere.options.v1.authz) = {
++  action: "skill.download"
++  resource: "skill:{skill_id}"
++  audience: "skill-service"
++  mode: SCOPED_TOKEN
++};
++option (aisphere.options.v1.audit) = {
++  event: "skill.package.download"
++  risk: "medium"
++};
++option (aisphere.options.v1.capability) = {
++  group: "skill"
++  name: "download"
++};
++```
++
++Generated helpers:
++
++```go
++var SkillServiceAuthzRules authz.Rules
++const SkillServiceAuthzManifestJSON = `...`
++type SkillServiceSecureClient struct { ... }
++func NewSkillServiceSecureClient(raw SkillServiceClient, guard authz.Guard) *SkillServiceSecureClient
++```
++
++Runtime rule: the generator does not depend on SpiceDB, OpenFGA, OPA, Casdoor, or any concrete IAM backend. It only converts proto contracts into `github.com/aisphereio/kernel/authz` rules. Deployment code supplies an `authz.Guard` implementation.
++
++## Rule modes
++
++| mode | Generated client behavior |
++|---|---|
++| `CHECK_ONLY` | Calls `Guard.Require` before the target RPC and propagates the decision token in `contextx`. |
++| `SCOPED_TOKEN` | Calls `Guard.RequireScopedToken`, then propagates the scoped token and decision token in `contextx`. |
++| `SELF_CHECK` | Does not pre-check on the client; the resource service must enforce authorization at its own boundary. |
++| `UNSPECIFIED` | Treated as an invalid generated contract. `buf-check-aisphere` should catch this before generation. |
++
++Resource templates support top-level and nested request fields, for example `skill:{skill_id}` and `skill:{owner.id}:{skill_id}`.
++
++## Build integration
++
++```yaml
++plugins:
++  - local: protoc-gen-go-authz
++    out: .
++    opt:
++      - paths=source_relative
++```
++
++Before generation, run `buf-check-aisphere` against the descriptor set to fail fast on missing authz/audit contracts.
+diff --git a/cmd/protoc-gen-go-authz/main.go b/cmd/protoc-gen-go-authz/main.go
+index c91e66e..4a685c2 100644
+--- a/cmd/protoc-gen-go-authz/main.go
++++ b/cmd/protoc-gen-go-authz/main.go
+@@ -4,23 +4,12 @@ import (
+ 	"encoding/json"
+ 	"flag"
+ 	"fmt"
+-	"path/filepath"
+-	"regexp"
+ 	"strings"
+ 
+ 	"google.golang.org/protobuf/compiler/protogen"
+-	"google.golang.org/protobuf/encoding/protowire"
+-	"google.golang.org/protobuf/reflect/protoreflect"
+-	"google.golang.org/protobuf/types/descriptorpb"
+ 	"google.golang.org/protobuf/types/pluginpb"
+-)
+-
+-const (
+-	version = "v0.1.0"
+ 
+-	extAuthz      protowire.Number = 51001
+-	extAudit      protowire.Number = 51002
+-	extCapability protowire.Number = 51003
++	"github.com/aisphereio/kernel/internal/protooptions"
+ )
+ 
+ var showVersion = flag.Bool("version", false, "print version and exit")
+@@ -28,7 +17,7 @@ var showVersion = flag.Bool("version", false, "print version and exit")
+ func main() {
+ 	flag.Parse()
+ 	if *showVersion {
+-		fmt.Printf("protoc-gen-go-authz %s\n", version)
++		fmt.Printf("protoc-gen-go-authz %s (generates github.com/aisphereio/kernel/authz helpers)\n", release)
+ 		return
+ 	}
+ 	protogen.Options{ParamFunc: flag.CommandLine.Set}.Run(func(gen *protogen.Plugin) error {
+@@ -69,7 +58,7 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
+ 	g := gen.NewGeneratedFile(filename, file.GoImportPath)
+ 	g.P("// Code generated by protoc-gen-go-authz. DO NOT EDIT.")
+ 	g.P("// versions:")
+-	g.P("// - protoc-gen-go-authz ", version)
++	g.P("// - protoc-gen-go-authz ", release)
+ 	g.P("// source: ", file.Desc.Path())
+ 	g.P()
+ 	g.P("package ", file.GoPackageName)
+@@ -109,16 +98,16 @@ func collectRules(file *protogen.File) map[string][]methodRule {
+ }
+ 
+ func parseMethodRule(svc *protogen.Service, m *protogen.Method) (rule, bool) {
+-	opts, _ := m.Desc.Options().(*descriptorpb.MethodOptions)
++	opts := m.Desc.Options()
+ 	if opts == nil {
+ 		return rule{}, false
+ 	}
+ 	unknown := opts.ProtoReflect().GetUnknown()
+-	authzPayloads := findExtensionPayloads(unknown, extAuthz)
+-	if len(authzPayloads) == 0 {
++	authzPayload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtAuthz)
++	if !ok {
+ 		return rule{}, false
+ 	}
+-	a := parseAuthz(authzPayloads[len(authzPayloads)-1])
++	a := protooptions.ParseAuthz(authzPayload)
+ 	if a.Action == "" && a.Resource == "" && a.Audience == "" {
+ 		return rule{}, false
+ 	}
+@@ -129,18 +118,18 @@ func parseMethodRule(svc *protogen.Service, m *protogen.Method) (rule, bool) {
+ 		Action:     a.Action,
+ 		Resource:   a.Resource,
+ 		Audience:   a.Audience,
+-		Mode:       modeName(a.Mode),
++		Mode:       modeName(int(a.Mode)),
+ 	}
+ 	if r.Mode == "" {
+ 		r.Mode = "CHECK_ONLY"
+ 	}
+-	if payloads := findExtensionPayloads(unknown, extAudit); len(payloads) > 0 {
+-		audit := parseAudit(payloads[len(payloads)-1])
++	if payload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtAudit); ok {
++		audit := protooptions.ParseAudit(payload)
+ 		r.AuditEvent = audit.Event
+ 		r.AuditRisk = audit.Risk
+ 	}
+-	if payloads := findExtensionPayloads(unknown, extCapability); len(payloads) > 0 {
+-		cap := parseCapability(payloads[len(payloads)-1])
++	if payload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtCapability); ok {
++		cap := protooptions.ParseCapability(payload)
+ 		if cap.Group != "" && cap.Name != "" {
+ 			r.Capability = cap.Group + "." + cap.Name
+ 		} else {
+@@ -150,168 +139,6 @@ func parseMethodRule(svc *protogen.Service, m *protogen.Method) (rule, bool) {
+ 	return r, true
+ }
+ 
+-type authzOpt struct {
+-	Action, Resource, Audience string
+-	Mode                       int
+-}
+-type auditOpt struct{ Event, Risk string }
+-type capabilityOpt struct{ Name, Group string }
+-
+-func parseAuthz(b []byte) authzOpt {
+-	var o authzOpt
+-	for len(b) > 0 {
+-		num, typ, n := protowire.ConsumeTag(b)
+-		if n < 0 {
+-			return o
+-		}
+-		b = b[n:]
+-		switch num {
+-		case 1:
+-			if typ == protowire.BytesType {
+-				v, n := protowire.ConsumeString(b)
+-				if n >= 0 {
+-					o.Action = v
+-					b = b[n:]
+-					continue
+-				}
+-			}
+-		case 2:
+-			if typ == protowire.BytesType {
+-				v, n := protowire.ConsumeString(b)
+-				if n >= 0 {
+-					o.Resource = v
+-					b = b[n:]
+-					continue
+-				}
+-			}
+-		case 3:
+-			if typ == protowire.BytesType {
+-				v, n := protowire.ConsumeString(b)
+-				if n >= 0 {
+-					o.Audience = v
+-					b = b[n:]
+-					continue
+-				}
+-			}
+-		case 4:
+-			if typ == protowire.VarintType {
+-				v, n := protowire.ConsumeVarint(b)
+-				if n >= 0 {
+-					o.Mode = int(v)
+-					b = b[n:]
+-					continue
+-				}
+-			}
+-		}
+-		n = protowire.ConsumeFieldValue(num, typ, b)
+-		if n < 0 {
+-			return o
+-		}
+-		b = b[n:]
+-	}
+-	return o
+-}
+-
+-func parseAudit(b []byte) auditOpt {
+-	var o auditOpt
+-	for len(b) > 0 {
+-		num, typ, n := protowire.ConsumeTag(b)
+-		if n < 0 {
+-			return o
+-		}
+-		b = b[n:]
+-		switch num {
+-		case 1:
+-			if typ == protowire.BytesType {
+-				v, n := protowire.ConsumeString(b)
+-				if n >= 0 {
+-					o.Event = v
+-					b = b[n:]
+-					continue
+-				}
+-			}
+-		case 2:
+-			if typ == protowire.BytesType {
+-				v, n := protowire.ConsumeString(b)
+-				if n >= 0 {
+-					o.Risk = v
+-					b = b[n:]
+-					continue
+-				}
+-			}
+-		}
+-		n = protowire.ConsumeFieldValue(num, typ, b)
+-		if n < 0 {
+-			return o
+-		}
+-		b = b[n:]
+-	}
+-	return o
+-}
+-
+-func parseCapability(b []byte) capabilityOpt {
+-	var o capabilityOpt
+-	for len(b) > 0 {
+-		num, typ, n := protowire.ConsumeTag(b)
+-		if n < 0 {
+-			return o
+-		}
+-		b = b[n:]
+-		switch num {
+-		case 1:
+-			if typ == protowire.BytesType {
+-				v, n := protowire.ConsumeString(b)
+-				if n >= 0 {
+-					o.Name = v
+-					b = b[n:]
+-					continue
+-				}
+-			}
+-		case 2:
+-			if typ == protowire.BytesType {
+-				v, n := protowire.ConsumeString(b)
+-				if n >= 0 {
+-					o.Group = v
+-					b = b[n:]
+-					continue
+-				}
+-			}
+-		}
+-		n = protowire.ConsumeFieldValue(num, typ, b)
+-		if n < 0 {
+-			return o
+-		}
+-		b = b[n:]
+-	}
+-	return o
+-}
+-
+-func findExtensionPayloads(b []byte, ext protowire.Number) [][]byte {
+-	var payloads [][]byte
+-	for len(b) > 0 {
+-		num, typ, n := protowire.ConsumeTag(b)
+-		if n < 0 {
+-			return payloads
+-		}
+-		b = b[n:]
+-		if num == ext && typ == protowire.BytesType {
+-			v, n := protowire.ConsumeBytes(b)
+-			if n < 0 {
+-				return payloads
+-			}
+-			payloads = append(payloads, append([]byte(nil), v...))
+-			b = b[n:]
+-			continue
+-		}
+-		n = protowire.ConsumeFieldValue(num, typ, b)
+-		if n < 0 {
+-			return payloads
+-		}
+-		b = b[n:]
+-	}
+-	return payloads
+-}
+-
+ func genRules(g *protogen.GeneratedFile, authzPkg protogen.GoImportPath, svc *protogen.Service, mrs []methodRule) {
+ 	g.P("var ", svc.GoName, "AuthzRules = ", authzPkg.Ident("Rules"), "{")
+ 	for _, mr := range mrs {
+@@ -362,7 +189,7 @@ func genSecureClient(g *protogen.GeneratedFile, authzPkg, contextxPkg, contextPk
+ 	g.P("}")
+ 	g.P()
+ 	g.P("func New", clientName, "(raw ", svc.GoName, "Client, guard ", authzPkg.Ident("Guard"), ") *", clientName, " {")
+-	g.P("return &", clientName, "{raw: raw, guard: guard}")
++	g.P("return &", clientName, "{raw: raw, guard: guard, resolver: ", authzPkg.Ident("RuleResolver"), "{}}")
+ 	g.P("}")
+ 	g.P()
+ 	g.P("var _ ", svc.GoName, "Client = (*", clientName, ")(nil)")
+@@ -387,6 +214,12 @@ func genSecureClient(g *protogen.GeneratedFile, authzPkg, contextxPkg, contextPk
+ 				g.P("decision, err := c.guard.Require(ctx, ", authzPkg.Ident("CheckRequest"), "{Subject: subject, Resource: resource, Permission: rule.Action, TenantID: ", contextxPkg.Ident("TenantFromContext"), "(ctx)})")
+ 				g.P("if err != nil { return nil, err }")
+ 				g.P("if decision.ConsistencyToken != \"\" { ctx = ", contextxPkg.Ident("WithAuthzDecisionID"), "(ctx, decision.ConsistencyToken) }")
++				g.P("case ", authzPkg.Ident("RuleModeSelfCheck"), ":")
++				g.P("// SELF_CHECK means the target resource service performs the final check.")
++				g.P("case ", authzPkg.Ident("RuleModeUnspecified"), ":")
++				g.P("return nil, ", authzPkg.Ident("ErrInvalidRequest"), "(\"authz rule mode must not be UNSPECIFIED\")")
++				g.P("default:")
++				g.P("return nil, ", authzPkg.Ident("ErrInvalidRequest"), "(\"unsupported authz rule mode: \" + string(rule.Mode))")
+ 				g.P("}")
+ 				g.P("}")
+ 			}
+@@ -410,8 +243,8 @@ func genSecureClient(g *protogen.GeneratedFile, authzPkg, contextxPkg, contextPk
+ 	g.P("func ", helperName(svc), "SubjectFromContext(ctx ", contextPkg.Ident("Context"), ") ", authzPkg.Ident("SubjectRef"), " {")
+ 	g.P("p := ", contextxPkg.Ident("PrincipalFromContext"), "(ctx)")
+ 	g.P("if p == nil { return ", authzPkg.Ident("SubjectRef"), "{} }")
+-	g.P("typ := ", fmt.Sprintf("%q", "user"))
+-	g.P("if ", stringsPkg.Ident("HasPrefix"), "(p.SubjectID, \"svc:\") { typ = ", fmt.Sprintf("%q", "service"), " }")
++	g.P("typ := ", authzPkg.Ident("SubjectTypeUser"))
++	g.P("if ", stringsPkg.Ident("HasPrefix"), "(p.SubjectID, \"svc:\") { typ = ", authzPkg.Ident("SubjectTypeService"), " }")
+ 	g.P("return ", authzPkg.Ident("SubjectRef"), "{Type: typ, ID: p.SubjectID}")
+ 	g.P("}")
+ 	g.P()
+@@ -440,9 +273,3 @@ func firstNonEmpty(values ...string) string {
+ 	}
+ 	return ""
+ }
+-
+-var identRe = regexp.MustCompile(`[^a-zA-Z0-9_]`)
+-
+-func safeIdent(s string) string { return identRe.ReplaceAllString(filepath.Base(s), "_") }
+-
+-var _ protoreflect.FullName
+diff --git a/cmd/protoc-gen-go-authz/main_test.go b/cmd/protoc-gen-go-authz/main_test.go
+new file mode 100644
+index 0000000..4e502d3
+--- /dev/null
++++ b/cmd/protoc-gen-go-authz/main_test.go
+@@ -0,0 +1,144 @@
++package main
++
++import (
++	"testing"
++
++	"google.golang.org/protobuf/compiler/protogen"
++	"google.golang.org/protobuf/encoding/protowire"
++	"google.golang.org/protobuf/types/descriptorpb"
++	"google.golang.org/protobuf/types/pluginpb"
++
++	"github.com/aisphereio/kernel/internal/protooptions"
++)
++
++func TestParseMethodRuleFromUnknownOptions(t *testing.T) {
++	plugin := newTestPlugin(t, testFileDescriptor(authzUnknown("skill.download", "skill:{skill_id}", "skill-service", 2)))
++	file := plugin.Files[0]
++	svc := file.Services[0]
++	method := svc.Methods[0]
++
++	r, ok := parseMethodRule(svc, method)
++	if !ok {
++		t.Fatal("expected authz rule")
++	}
++	if r.Service != "skill.v1.SkillService" || r.Method != "DownloadSkill" || r.FullMethod != "/skill.v1.SkillService/DownloadSkill" {
++		t.Fatalf("unexpected method identity: %#v", r)
++	}
++	if r.Action != "skill.download" || r.Resource != "skill:{skill_id}" || r.Audience != "skill-service" || r.Mode != "SCOPED_TOKEN" {
++		t.Fatalf("unexpected rule: %#v", r)
++	}
++	if r.AuditEvent != "skill.download" || r.AuditRisk != "medium" || r.Capability != "skill.download" {
++		t.Fatalf("unexpected audit/capability: %#v", r)
++	}
++}
++
++func TestModeName(t *testing.T) {
++	tests := map[int]string{0: "UNSPECIFIED", 1: "CHECK_ONLY", 2: "SCOPED_TOKEN", 3: "SELF_CHECK", 99: "UNSPECIFIED"}
++	for in, want := range tests {
++		if got := modeName(in); got != want {
++			t.Fatalf("modeName(%d) = %q, want %q", in, got, want)
++		}
++	}
++}
++
++func newTestPlugin(t *testing.T, files ...*descriptorpb.FileDescriptorProto) *protogen.Plugin {
++	t.Helper()
++	req := &pluginpb.CodeGeneratorRequest{
++		FileToGenerate: []string{files[0].GetName()},
++		ProtoFile:      files,
++	}
++	plugin, err := protogen.Options{}.New(req)
++	if err != nil {
++		t.Fatal(err)
++	}
++	return plugin
++}
++
++func testFileDescriptor(unknown []byte) *descriptorpb.FileDescriptorProto {
++	opts := &descriptorpb.MethodOptions{}
++	opts.ProtoReflect().SetUnknown(unknown)
++	return &descriptorpb.FileDescriptorProto{
++		Name:    strPtr("skill.proto"),
++		Package: strPtr("skill.v1"),
++		Options: &descriptorpb.FileOptions{GoPackage: strPtr("github.com/aisphereio/kernel/internal/test;testpb")},
++		MessageType: []*descriptorpb.DescriptorProto{
++			{Name: strPtr("DownloadSkillRequest"), Field: []*descriptorpb.FieldDescriptorProto{field("skill_id", 1, descriptorpb.FieldDescriptorProto_TYPE_STRING, "")}},
++			{Name: strPtr("DownloadSkillReply")},
++		},
++		Service: []*descriptorpb.ServiceDescriptorProto{{
++			Name: strPtr("SkillService"),
++			Method: []*descriptorpb.MethodDescriptorProto{{
++				Name:       strPtr("DownloadSkill"),
++				InputType:  strPtr(".skill.v1.DownloadSkillRequest"),
++				OutputType: strPtr(".skill.v1.DownloadSkillReply"),
++				Options:    opts,
++			}},
++		}},
++	}
++}
++
++func strPtr(v string) *string { return &v }
++func int32Ptr(v int32) *int32 { return &v }
++func labelPtr(v descriptorpb.FieldDescriptorProto_Label) *descriptorpb.FieldDescriptorProto_Label {
++	return &v
++}
++func typePtr(v descriptorpb.FieldDescriptorProto_Type) *descriptorpb.FieldDescriptorProto_Type {
++	return &v
++}
++
++func field(name string, num int32, typ descriptorpb.FieldDescriptorProto_Type, typeName string) *descriptorpb.FieldDescriptorProto {
++	f := &descriptorpb.FieldDescriptorProto{
++		Name:   strPtr(name),
++		Number: int32Ptr(num),
++		Label:  labelPtr(descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL),
++		Type:   typePtr(typ),
++	}
++	if typeName != "" {
++		f.TypeName = strPtr(typeName)
++	}
++	return f
++}
++
++func authzUnknown(action, resource, audience string, mode int32) []byte {
++	var unknown []byte
++	unknown = appendOption(unknown, protooptions.ExtAuthz, authzPayload(action, resource, audience, mode))
++	unknown = appendOption(unknown, protooptions.ExtAudit, auditPayload("skill.download", "medium"))
++	unknown = appendOption(unknown, protooptions.ExtCapability, capabilityPayload("download", "skill"))
++	return unknown
++}
++
++func appendOption(dst []byte, ext protowire.Number, payload []byte) []byte {
++	dst = protowire.AppendTag(dst, ext, protowire.BytesType)
++	return protowire.AppendBytes(dst, payload)
++}
++
++func authzPayload(action, resource, audience string, mode int32) []byte {
++	var b []byte
++	b = protowire.AppendTag(b, 1, protowire.BytesType)
++	b = protowire.AppendString(b, action)
++	b = protowire.AppendTag(b, 2, protowire.BytesType)
++	b = protowire.AppendString(b, resource)
++	b = protowire.AppendTag(b, 3, protowire.BytesType)
++	b = protowire.AppendString(b, audience)
++	b = protowire.AppendTag(b, 4, protowire.VarintType)
++	b = protowire.AppendVarint(b, uint64(mode))
++	return b
++}
++
++func auditPayload(event, risk string) []byte {
++	var b []byte
++	b = protowire.AppendTag(b, 1, protowire.BytesType)
++	b = protowire.AppendString(b, event)
++	b = protowire.AppendTag(b, 2, protowire.BytesType)
++	b = protowire.AppendString(b, risk)
++	return b
++}
++
++func capabilityPayload(name, group string) []byte {
++	var b []byte
++	b = protowire.AppendTag(b, 1, protowire.BytesType)
++	b = protowire.AppendString(b, name)
++	b = protowire.AppendTag(b, 2, protowire.BytesType)
++	b = protowire.AppendString(b, group)
++	return b
++}
+diff --git a/cmd/protoc-gen-go-authz/version.go b/cmd/protoc-gen-go-authz/version.go
+new file mode 100644
+index 0000000..5985c47
+--- /dev/null
++++ b/cmd/protoc-gen-go-authz/version.go
+@@ -0,0 +1,5 @@
++package main
++
++// release is the current protoc-gen-go-authz compatibility plugin version.
++// It generates authz rule tables, manifests, and secure client wrappers.
++const release = "v0.2.0"
+diff --git a/docs/README.md b/docs/README.md
+index 5ca89c8..8bb8571 100644
+--- a/docs/README.md
++++ b/docs/README.md
+@@ -34,6 +34,7 @@ Aisphere Kernel 文档导航。文档按"角色 × 场景"组织，按需查阅
+ | `ai/configx.md` | configx 完整 AI 指南：Source + Scan + Watch + 禁用模式 |
+ | `ai/metricsx.md` | metricsx 与 kernel.PrometheusMetrics / kernel.Metrics 启动指南 |
+ | `ai/dtmx.md` | dtmx 分布式事务抽象、DTM Saga、branch header 认证边界 |
++| `ai/proto-authz-generation.md` | proto authz 生成器与 secure client 说明 |
+ 
+ > 该文档合并了原 `ai/00-quickstart.md` + `ai/recipes/errorx.md` + `ai/99-forbidden-patterns.md`，
+ > AI 拿到这一个文件即可写对所有 errorx 场景。
+@@ -46,6 +47,8 @@ Aisphere Kernel 文档导航。文档按"角色 × 场景"组织，按需查阅
+ | `process/configx-acceptance-checklist.md` | configx 静态/单元/集成验收清单 |
+ | `process/errorx-test-report.md` | errorx 测试报告 |
+ | `process/module-acceptance.md` | 通用模块验收流程 |
++| `../cmd/protoc-gen-go-authz/README.md` | authz 生成器用法与规则模式 |
++| `../cmd/buf-check-aisphere/README.md` | proto 安全契约检查器用法 |
+ | `process/windows-script-policy.md` | Windows 脚本执行策略说明 |
+ 
+ ### 迁移与历史（升级时看）
+diff --git a/docs/ai/proto-authz-generation.md b/docs/ai/proto-authz-generation.md
+index 07e7deb..67906cc 100644
+--- a/docs/ai/proto-authz-generation.md
++++ b/docs/ai/proto-authz-generation.md
+@@ -1,7 +1,6 @@
+ # Proto authz generation
+ 
+-`protoc-gen-go-authz` reads Aisphere method options from proto descriptors and
+-emits Go authz metadata plus a secure client wrapper.
++`protoc-gen-go-authz` reads Aisphere method options from proto descriptors and emits Go authz metadata plus a secure client wrapper.
+ 
+ ## Options
+ 
+@@ -15,6 +14,30 @@ extend google.protobuf.MethodOptions {
+ }
+ ```
+ 
++A typical external RPC should look like this:
++
++```proto
++rpc DownloadSkillPackage(DownloadSkillPackageRequest) returns (DownloadSkillPackageReply) {
++  option (google.api.http) = {
++    get: "/api/v1/skills/{skill_id}/package"
++  };
++  option (aisphere.options.v1.authz) = {
++    action: "skill.download"
++    resource: "skill:{skill_id}"
++    audience: "skill-service"
++    mode: SCOPED_TOKEN
++  };
++  option (aisphere.options.v1.audit) = {
++    event: "skill.package.download"
++    risk: "medium"
++  };
++  option (aisphere.options.v1.capability) = {
++    group: "skill"
++    name: "download"
++  };
++}
++```
++
+ ## Generated Go
+ 
+ For a service named `SkillService`, the plugin generates:
+@@ -26,13 +49,43 @@ type SkillServiceSecureClient struct { ... }
+ func NewSkillServiceSecureClient(raw SkillServiceClient, guard authz.Guard) *SkillServiceSecureClient
+ ```
+ 
+-The plugin intentionally does not bind to SpiceDB, OpenFGA, OPA, Casdoor or any
+-other concrete backend. It only converts proto contract rules into Kernel
+-runtime objects. The concrete IAM service implements `authz.Guard`.
++The plugin intentionally does not bind to SpiceDB, OpenFGA, OPA, Casdoor or any other concrete backend. It only converts proto contract rules into Kernel runtime objects. The concrete IAM service implements `authz.Guard`.
++
++## Rule mode guidance
++
++| Mode | Use when | Runtime behavior |
++|---|---|---|
++| `CHECK_ONLY` | Internal service calls where a decision token is enough | Generated client calls `Guard.Require` before invoking RPC. |
++| `SCOPED_TOKEN` | Gateway/BFF calls downstream services and needs delegated proof | Generated client calls `Guard.RequireScopedToken` and propagates scoped token. |
++| `SELF_CHECK` | High-risk resource-owner operations | Generated client does not pre-check; target service must check at boundary. |
++| `UNSPECIFIED` | Never use | `buf-check-aisphere` reports it as a contract violation. |
++
++Resource templates support request field references, including nested paths:
++
++```proto
++resource: "skill:{skill_id}"
++resource: "skill:{owner.id}:{skill_id}"
++```
++
++`authz.RuleResolver` and `buf-check-aisphere` now validate/resolve these paths consistently.
++
++## Contract check before generation
++
++Run the checker against a descriptor set:
++
++```bash
++buf build -o - | buf-check-aisphere
++```
++
++The checker enforces:
++
++1. `google.api.http` external methods must declare `aisphere.authz`.
++2. authz `action/resource/audience/mode` must not be empty or unspecified.
++3. high-risk actions must declare `aisphere.audit`.
++4. resource template fields must exist on the request message.
+ 
+ ## Why custom unknown-option parsing?
+ 
+-The generator parses the encoded `google.protobuf.MethodOptions` extension
+-payloads directly by extension field number. This keeps the generator independent
+-from generated Go code for the options proto during bootstrapping. Once `make
+-api` runs, normal generated option code can still be produced for consumers.
++The generator and checker parse encoded `google.protobuf.MethodOptions` extension payloads directly by extension field number. This keeps them independent from generated Go code for the options proto during bootstrapping. Once `make api` runs, normal generated option code can still be produced for consumers.
++
++The parsing logic is centralized in `internal/protooptions` so `protoc-gen-go-authz` and `buf-check-aisphere` cannot drift apart.
+diff --git a/internal/protooptions/options.go b/internal/protooptions/options.go
+new file mode 100644
+index 0000000..d9bf616
+--- /dev/null
++++ b/internal/protooptions/options.go
+@@ -0,0 +1,213 @@
++// Package protooptions contains low-level parsers for Aisphere protobuf custom
++// options.
++//
++// The cmd generators intentionally parse unknown option payloads by extension
++// number so they do not depend on already-generated Go code for the options
++// protos during bootstrapping.
++package protooptions
++
++import (
++	"google.golang.org/protobuf/encoding/protowire"
++	"google.golang.org/protobuf/types/descriptorpb"
++)
++
++const (
++	// google.api.http = 72295728, see google/api/annotations.proto.
++	ExtGoogleHTTP protowire.Number = 72295728
++
++	// aisphere.options.v1 method extensions, see api/aisphere/options/v1/authz.proto.
++	ExtAuthz      protowire.Number = 51001
++	ExtAudit      protowire.Number = 51002
++	ExtCapability protowire.Number = 51003
++)
++
++type AuthzRule struct {
++	Action   string
++	Resource string
++	Audience string
++	Mode     int32
++}
++
++type AuditRule struct {
++	Event string
++	Risk  string
++}
++
++type CapabilityRule struct {
++	Name  string
++	Group string
++}
++
++func MethodUnknown(m *descriptorpb.MethodDescriptorProto) []byte {
++	if m == nil || m.Options == nil {
++		return nil
++	}
++	return m.Options.ProtoReflect().GetUnknown()
++}
++
++func HasExtension(b []byte, ext protowire.Number) bool {
++	return len(FindExtensionPayloads(b, ext)) > 0
++}
++
++func FindExtensionPayloads(b []byte, ext protowire.Number) [][]byte {
++	var payloads [][]byte
++	for len(b) > 0 {
++		num, typ, n := protowire.ConsumeTag(b)
++		if n < 0 {
++			return payloads
++		}
++		b = b[n:]
++		if num == ext && typ == protowire.BytesType {
++			v, n := protowire.ConsumeBytes(b)
++			if n < 0 {
++				return payloads
++			}
++			payloads = append(payloads, append([]byte(nil), v...))
++			b = b[n:]
++			continue
++		}
++		n = protowire.ConsumeFieldValue(num, typ, b)
++		if n < 0 {
++			return payloads
++		}
++		b = b[n:]
++	}
++	return payloads
++}
++
++func LastExtensionPayload(b []byte, ext protowire.Number) ([]byte, bool) {
++	payloads := FindExtensionPayloads(b, ext)
++	if len(payloads) == 0 {
++		return nil, false
++	}
++	return payloads[len(payloads)-1], true
++}
++
++func ParseAuthz(b []byte) AuthzRule {
++	var o AuthzRule
++	for len(b) > 0 {
++		num, typ, n := protowire.ConsumeTag(b)
++		if n < 0 {
++			return o
++		}
++		b = b[n:]
++		switch num {
++		case 1:
++			if typ == protowire.BytesType {
++				v, n := protowire.ConsumeString(b)
++				if n >= 0 {
++					o.Action = v
++					b = b[n:]
++					continue
++				}
++			}
++		case 2:
++			if typ == protowire.BytesType {
++				v, n := protowire.ConsumeString(b)
++				if n >= 0 {
++					o.Resource = v
++					b = b[n:]
++					continue
++				}
++			}
++		case 3:
++			if typ == protowire.BytesType {
++				v, n := protowire.ConsumeString(b)
++				if n >= 0 {
++					o.Audience = v
++					b = b[n:]
++					continue
++				}
++			}
++		case 4:
++			if typ == protowire.VarintType {
++				v, n := protowire.ConsumeVarint(b)
++				if n >= 0 {
++					o.Mode = int32(v)
++					b = b[n:]
++					continue
++				}
++			}
++		}
++		n = protowire.ConsumeFieldValue(num, typ, b)
++		if n < 0 {
++			return o
++		}
++		b = b[n:]
++	}
++	return o
++}
++
++func ParseAudit(b []byte) AuditRule {
++	var o AuditRule
++	for len(b) > 0 {
++		num, typ, n := protowire.ConsumeTag(b)
++		if n < 0 {
++			return o
++		}
++		b = b[n:]
++		switch num {
++		case 1:
++			if typ == protowire.BytesType {
++				v, n := protowire.ConsumeString(b)
++				if n >= 0 {
++					o.Event = v
++					b = b[n:]
++					continue
++				}
++			}
++		case 2:
++			if typ == protowire.BytesType {
++				v, n := protowire.ConsumeString(b)
++				if n >= 0 {
++					o.Risk = v
++					b = b[n:]
++					continue
++				}
++			}
++		}
++		n = protowire.ConsumeFieldValue(num, typ, b)
++		if n < 0 {
++			return o
++		}
++		b = b[n:]
++	}
++	return o
++}
++
++func ParseCapability(b []byte) CapabilityRule {
++	var o CapabilityRule
++	for len(b) > 0 {
++		num, typ, n := protowire.ConsumeTag(b)
++		if n < 0 {
++			return o
++		}
++		b = b[n:]
++		switch num {
++		case 1:
++			if typ == protowire.BytesType {
++				v, n := protowire.ConsumeString(b)
++				if n >= 0 {
++					o.Name = v
++					b = b[n:]
++					continue
++				}
++			}
++		case 2:
++			if typ == protowire.BytesType {
++				v, n := protowire.ConsumeString(b)
++				if n >= 0 {
++					o.Group = v
++					b = b[n:]
++					continue
++				}
++			}
++		}
++		n = protowire.ConsumeFieldValue(num, typ, b)
++		if n < 0 {
++			return o
++		}
++		b = b[n:]
++	}
++	return o
++}
+diff --git a/internal/protooptions/options_test.go b/internal/protooptions/options_test.go
+new file mode 100644
+index 0000000..9eca3e9
+--- /dev/null
++++ b/internal/protooptions/options_test.go
+@@ -0,0 +1,77 @@
++package protooptions
++
++import (
++	"testing"
++
++	"google.golang.org/protobuf/encoding/protowire"
++)
++
++func TestParseAuthzAuditCapability(t *testing.T) {
++	unknown := appendOption(nil, ExtAuthz, authzPayload("skill.download", "skill:{skill_id}", "skill-service", 2))
++	unknown = appendOption(unknown, ExtAudit, auditPayload("skill.package.download", "medium"))
++	unknown = appendOption(unknown, ExtCapability, capabilityPayload("download", "skill"))
++
++	authzRaw, ok := LastExtensionPayload(unknown, ExtAuthz)
++	if !ok {
++		t.Fatal("authz payload missing")
++	}
++	authz := ParseAuthz(authzRaw)
++	if authz.Action != "skill.download" || authz.Resource != "skill:{skill_id}" || authz.Audience != "skill-service" || authz.Mode != 2 {
++		t.Fatalf("unexpected authz: %#v", authz)
++	}
++
++	audit := ParseAudit(mustLast(t, unknown, ExtAudit))
++	if audit.Event != "skill.package.download" || audit.Risk != "medium" {
++		t.Fatalf("unexpected audit: %#v", audit)
++	}
++
++	capability := ParseCapability(mustLast(t, unknown, ExtCapability))
++	if capability.Group != "skill" || capability.Name != "download" {
++		t.Fatalf("unexpected capability: %#v", capability)
++	}
++}
++
++func mustLast(t *testing.T, unknown []byte, ext protowire.Number) []byte {
++	t.Helper()
++	b, ok := LastExtensionPayload(unknown, ext)
++	if !ok {
++		t.Fatalf("missing extension %d", ext)
++	}
++	return b
++}
++
++func appendOption(dst []byte, ext protowire.Number, payload []byte) []byte {
++	dst = protowire.AppendTag(dst, ext, protowire.BytesType)
++	return protowire.AppendBytes(dst, payload)
++}
++
++func authzPayload(action, resource, audience string, mode int32) []byte {
++	var b []byte
++	b = protowire.AppendTag(b, 1, protowire.BytesType)
++	b = protowire.AppendString(b, action)
++	b = protowire.AppendTag(b, 2, protowire.BytesType)
++	b = protowire.AppendString(b, resource)
++	b = protowire.AppendTag(b, 3, protowire.BytesType)
++	b = protowire.AppendString(b, audience)
++	b = protowire.AppendTag(b, 4, protowire.VarintType)
++	b = protowire.AppendVarint(b, uint64(mode))
++	return b
++}
++
++func auditPayload(event, risk string) []byte {
++	var b []byte
++	b = protowire.AppendTag(b, 1, protowire.BytesType)
++	b = protowire.AppendString(b, event)
++	b = protowire.AppendTag(b, 2, protowire.BytesType)
++	b = protowire.AppendString(b, risk)
++	return b
++}
++
++func capabilityPayload(name, group string) []byte {
++	var b []byte
++	b = protowire.AppendTag(b, 1, protowire.BytesType)
++	b = protowire.AppendString(b, name)
++	b = protowire.AppendTag(b, 2, protowire.BytesType)
++	b = protowire.AppendString(b, group)
++	return b
++}

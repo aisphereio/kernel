@@ -10,21 +10,13 @@ import (
 	"sort"
 	"strings"
 
-	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
+
+	"github.com/aisphereio/kernel/internal/protooptions"
 )
 
 const (
-	toolVersion = "v0.1.0"
-
-	// google.api.http = 72295728, see google/api/annotations.proto.
-	extGoogleHTTP protowire.Number = 72295728
-
-	// aisphere.options.v1 method extensions, see api/aisphere/options/v1/authz.proto.
-	extAuthz protowire.Number = 51001
-	extAudit protowire.Number = 51002
-
 	exitDiagnostics = 1
 	exitToolError   = 2
 )
@@ -38,7 +30,7 @@ var (
 func main() {
 	flag.Parse()
 	if *showVersion {
-		fmt.Println("buf-check-aisphere " + toolVersion)
+		fmt.Println("buf-check-aisphere " + release)
 		return
 	}
 
@@ -118,11 +110,11 @@ func indexMessages(set *descriptorpb.FileDescriptorSet) map[string]*descriptorpb
 
 func (a *analyzer) checkMethod(fileName, pkg string, svc *descriptorpb.ServiceDescriptorProto, method *descriptorpb.MethodDescriptorProto) []string {
 	methodRef := fmt.Sprintf("%s:%s.%s/%s", fileName, pkg, svc.GetName(), method.GetName())
-	unknown := methodUnknown(method)
+	unknown := protooptions.MethodUnknown(method)
 
-	hasHTTP := hasExtension(unknown, extGoogleHTTP)
-	authzPayloads := findExtensionPayloads(unknown, extAuthz)
-	auditPayloads := findExtensionPayloads(unknown, extAudit)
+	hasHTTP := protooptions.HasExtension(unknown, protooptions.ExtGoogleHTTP)
+	authzPayloads := protooptions.FindExtensionPayloads(unknown, protooptions.ExtAuthz)
+	auditPayloads := protooptions.FindExtensionPayloads(unknown, protooptions.ExtAudit)
 	hasAuthz := len(authzPayloads) > 0
 	hasAudit := len(auditPayloads) > 0
 
@@ -135,7 +127,7 @@ func (a *analyzer) checkMethod(fileName, pkg string, svc *descriptorpb.ServiceDe
 		return diags
 	}
 
-	authz := parseAuthz(authzPayloads[len(authzPayloads)-1])
+	authz := protooptions.ParseAuthz(authzPayloads[len(authzPayloads)-1])
 	if authz.Action == "" {
 		diags = append(diags, methodRef+": aisphere.authz.action must not be empty")
 	}
@@ -153,7 +145,7 @@ func (a *analyzer) checkMethod(fileName, pkg string, svc *descriptorpb.ServiceDe
 		diags = append(diags, methodRef+": high-risk authz action "+quote(authz.Action)+" must declare aisphere.audit")
 	}
 	if hasAudit {
-		audit := parseAudit(auditPayloads[len(auditPayloads)-1])
+		audit := protooptions.ParseAudit(auditPayloads[len(auditPayloads)-1])
 		if audit.Event == "" {
 			diags = append(diags, methodRef+": aisphere.audit.event must not be empty")
 		}
@@ -199,147 +191,6 @@ func nonEmpty(values ...string) []string {
 		}
 	}
 	return out
-}
-
-func methodUnknown(m *descriptorpb.MethodDescriptorProto) []byte {
-	if m == nil || m.Options == nil {
-		return nil
-	}
-	return m.Options.ProtoReflect().GetUnknown()
-}
-
-func hasExtension(b []byte, ext protowire.Number) bool {
-	return len(findExtensionPayloads(b, ext)) > 0
-}
-
-func findExtensionPayloads(b []byte, ext protowire.Number) [][]byte {
-	var payloads [][]byte
-	for len(b) > 0 {
-		num, typ, n := protowire.ConsumeTag(b)
-		if n < 0 {
-			return payloads
-		}
-		b = b[n:]
-		if num == ext && typ == protowire.BytesType {
-			v, n := protowire.ConsumeBytes(b)
-			if n < 0 {
-				return payloads
-			}
-			payloads = append(payloads, append([]byte(nil), v...))
-			b = b[n:]
-			continue
-		}
-		n = protowire.ConsumeFieldValue(num, typ, b)
-		if n < 0 {
-			return payloads
-		}
-		b = b[n:]
-	}
-	return payloads
-}
-
-type authzOpt struct {
-	Action   string
-	Resource string
-	Audience string
-	Mode     int32
-}
-
-type auditOpt struct {
-	Event string
-	Risk  string
-}
-
-func parseAuthz(b []byte) authzOpt {
-	var o authzOpt
-	for len(b) > 0 {
-		num, typ, n := protowire.ConsumeTag(b)
-		if n < 0 {
-			return o
-		}
-		b = b[n:]
-		switch num {
-		case 1:
-			if typ == protowire.BytesType {
-				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Action = v
-					b = b[n:]
-					continue
-				}
-			}
-		case 2:
-			if typ == protowire.BytesType {
-				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Resource = v
-					b = b[n:]
-					continue
-				}
-			}
-		case 3:
-			if typ == protowire.BytesType {
-				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Audience = v
-					b = b[n:]
-					continue
-				}
-			}
-		case 4:
-			if typ == protowire.VarintType {
-				v, n := protowire.ConsumeVarint(b)
-				if n >= 0 {
-					o.Mode = int32(v)
-					b = b[n:]
-					continue
-				}
-			}
-		}
-		n = protowire.ConsumeFieldValue(num, typ, b)
-		if n < 0 {
-			return o
-		}
-		b = b[n:]
-	}
-	return o
-}
-
-func parseAudit(b []byte) auditOpt {
-	var o auditOpt
-	for len(b) > 0 {
-		num, typ, n := protowire.ConsumeTag(b)
-		if n < 0 {
-			return o
-		}
-		b = b[n:]
-		switch num {
-		case 1:
-			if typ == protowire.BytesType {
-				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Event = v
-					b = b[n:]
-					continue
-				}
-			}
-		case 2:
-			if typ == protowire.BytesType {
-				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Risk = v
-					b = b[n:]
-					continue
-				}
-			}
-		}
-		n = protowire.ConsumeFieldValue(num, typ, b)
-		if n < 0 {
-			return o
-		}
-		b = b[n:]
-	}
-	return o
 }
 
 func splitCSV(s string) []string {

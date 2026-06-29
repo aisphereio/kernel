@@ -112,34 +112,85 @@ func expandTemplate(tpl string, req any) string {
 }
 
 func fieldString(req any, name string) string {
-	if req == nil {
+	fv, ok := fieldValue(req, strings.Split(name, "."))
+	if !ok {
 		return ""
+	}
+	for fv.Kind() == reflect.Pointer || fv.Kind() == reflect.Interface {
+		if fv.IsNil() {
+			return ""
+		}
+		fv = fv.Elem()
+	}
+	if fv.Kind() == reflect.String {
+		return fv.String()
+	}
+	if fv.CanInterface() {
+		return fmt.Sprint(fv.Interface())
+	}
+	return ""
+}
+
+func fieldValue(req any, path []string) (reflect.Value, bool) {
+	if req == nil || len(path) == 0 {
+		return reflect.Value{}, false
 	}
 	v := reflect.ValueOf(req)
 	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
-			return ""
+			return reflect.Value{}, false
 		}
 		v = v.Elem()
 	}
 	if v.Kind() != reflect.Struct {
-		return ""
+		return reflect.Value{}, false
 	}
 	t := v.Type()
-	camel := snakeToCamel(name)
+	want := path[0]
 	for i := 0; i < v.NumField(); i++ {
 		f := t.Field(i)
 		if f.PkgPath != "" { // unexported
 			continue
 		}
-		if f.Name == camel || strings.EqualFold(f.Name, name) || strings.EqualFold(snakeCase(f.Name), name) {
-			fv := v.Field(i)
-			if fv.Kind() == reflect.String {
-				return fv.String()
-			}
-			if fv.CanInterface() {
-				return fmt.Sprint(fv.Interface())
-			}
+		if !fieldMatches(f, want) {
+			continue
+		}
+		fv := v.Field(i)
+		if len(path) == 1 {
+			return fv, true
+		}
+		return fieldValue(fv.Interface(), path[1:])
+	}
+	return reflect.Value{}, false
+}
+
+func fieldMatches(f reflect.StructField, name string) bool {
+	if f.Name == snakeToCamel(name) || strings.EqualFold(f.Name, name) || strings.EqualFold(snakeCase(f.Name), name) {
+		return true
+	}
+	for _, candidate := range []string{jsonTagName(f.Tag.Get("json")), protobufTagName(f.Tag.Get("protobuf"), "name"), protobufTagName(f.Tag.Get("protobuf"), "json")} {
+		if candidate != "" && (candidate == name || strings.EqualFold(candidate, name)) {
+			return true
+		}
+	}
+	return false
+}
+
+func jsonTagName(tag string) string {
+	if tag == "" || tag == "-" {
+		return ""
+	}
+	name := strings.Split(tag, ",")[0]
+	if name == "-" {
+		return ""
+	}
+	return name
+}
+
+func protobufTagName(tag, key string) string {
+	for _, part := range strings.Split(tag, ",") {
+		if strings.HasPrefix(part, key+"=") {
+			return strings.TrimPrefix(part, key+"=")
 		}
 	}
 	return ""
