@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -41,6 +42,7 @@ var (
 	objectStoreDriver string
 	authnProvider     string
 	authzProvider     string
+	kernelVersion     string
 )
 
 func init() {
@@ -55,6 +57,7 @@ func init() {
 	CmdNew.Flags().StringVar(&objectStoreDriver, "objectstore-driver", defaults.ObjectStoreDriver, "default objectstorex driver")
 	CmdNew.Flags().StringVar(&authnProvider, "authn-provider", defaults.AuthnProvider, "default authn provider")
 	CmdNew.Flags().StringVar(&authzProvider, "authz-provider", defaults.AuthzProvider, "default authz provider")
+	CmdNew.Flags().StringVar(&kernelVersion, "kernel-version", defaults.KernelVersion, "kernel module/tool version for generated Makefile installs")
 }
 
 func run(_ *cobra.Command, args []string) {
@@ -138,6 +141,7 @@ type ScaffoldOptions struct {
 	ObjectStoreDriver string
 	AuthnProvider     string
 	AuthzProvider     string
+	KernelVersion     string
 }
 
 func defaultScaffoldOptions() ScaffoldOptions {
@@ -148,10 +152,15 @@ func defaultScaffoldOptions() ScaffoldOptions {
 		ObjectStoreDriver: "minio",
 		AuthnProvider:     "casdoor",
 		AuthzProvider:     "spicedb",
+		KernelVersion:     defaultKernelVersion(),
 	}
 }
 
 func scaffoldOptionsFromFlags() ScaffoldOptions {
+	version := strings.TrimSpace(kernelVersion)
+	if version == "" {
+		version = defaultKernelVersion()
+	}
 	return ScaffoldOptions{
 		Features:          splitCSV(features),
 		DBDriver:          strings.TrimSpace(dbDriver),
@@ -159,7 +168,20 @@ func scaffoldOptionsFromFlags() ScaffoldOptions {
 		ObjectStoreDriver: strings.TrimSpace(objectStoreDriver),
 		AuthnProvider:     strings.TrimSpace(authnProvider),
 		AuthzProvider:     strings.TrimSpace(authzProvider),
+		KernelVersion:     version,
 	}
+}
+
+func defaultKernelVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "latest"
+	}
+	version := strings.TrimSpace(info.Main.Version)
+	if version == "" || version == "(devel)" {
+		return "latest"
+	}
+	return version
 }
 
 func (o ScaffoldOptions) HasFeature(feature string) bool {

@@ -13,7 +13,7 @@ func TestUnderscoreToUpperCamelCase(t *testing.T) {
 		},
 		{
 			name: "v2_kernel_dev",
-			want: "V2Aisphere KernelDev",
+			want: "V2KernelDev",
 		},
 		{
 			name: "www_Google_com",

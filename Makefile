@@ -1,4 +1,4 @@
-.PHONY: check check-errorx golangci-lint-install pre-commit-install pre-commit-run help deps tools api wire build run test test-integration verify-full test-root test-errorx test-logx test-cmd test-race cover cover-html vet vuln lint contract verify verify-errorx bench-errorx fuzz-errorx clean proto generate
+.PHONY: check check-errorx release-check golangci-lint-install pre-commit-install pre-commit-run help deps tools api wire build run test test-integration verify-full test-root test-errorx test-logx test-cmd test-race cover cover-html vet vuln lint contract verify verify-errorx bench-errorx fuzz-errorx clean proto generate
 
 help:
 	@echo "Aisphere Kernel targets:"
@@ -15,6 +15,7 @@ help:
 	@echo "  make lint          run kernel-lint when installed/built"
 	@echo "  make verify        run local verification gate"
 	@echo "  make verify-errorx run errorx acceptance checks"
+	@echo "  make release-check verify command module release layout"
 	@echo "  make proto         run buf generate using local .bin"
 	@echo "  make clean         remove generated local artifacts"
 	@echo "  make api           alias of proto, generate api code"
@@ -36,6 +37,13 @@ ifeq ($(OS),Windows_NT)
 else
 	@chmod +x scripts/check-errorx-usage.sh 2>/dev/null || true
 	@./scripts/check-errorx-usage.sh
+endif
+
+release-check:
+ifeq ($(OS),Windows_NT)
+	@cmd /c scripts\check-release-modules.cmd $(RELEASE_VERSION)
+else
+	@sh scripts/check-release-modules.sh $(RELEASE_VERSION)
 endif
 
 # ---- Install golangci-lint (one-time) ----
@@ -80,6 +88,7 @@ GO ?= go
 LOCAL_BIN := $(CURDIR)/.bin
 COVERPROFILE ?= coverage.out
 FUZZTIME ?= 30s
+RELEASE_VERSION ?=
 ifeq ($(OS),Windows_NT)
 LOCAL_BIN := $(CURDIR)\.bin
 export PATH := $(LOCAL_BIN);$(PATH)

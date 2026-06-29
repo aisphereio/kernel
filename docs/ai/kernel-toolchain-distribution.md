@@ -17,7 +17,6 @@ The following packages are compiled into binaries:
 | `protoc-gen-go-http` | `github.com/aisphereio/kernel/cmd/protoc-gen-go-http` | `make tools` | `buf generate` / `make api` | Generate kernel direct HTTP transport bindings. |
 | `protoc-gen-go-errors` | `github.com/aisphereio/kernel/cmd/protoc-gen-go-errors` | `make tools` | `buf generate` / `make api` | Generate error contracts. |
 | `protoc-gen-go-authz` | `github.com/aisphereio/kernel/cmd/protoc-gen-go-authz` | `make tools` | `buf generate` / `make api` | Generate authz rules, manifest, secure client, and SELF_CHECK guard. |
-| `buf-check-aisphere` | `github.com/aisphereio/kernel/cmd/buf-check-aisphere` | `make tools` | `make proto-check` / `make api` | Validate Aisphere proto contract rules. |
 
 A service repository normally does not import these packages. It installs the
 binaries into local `.bin`:
@@ -36,15 +35,17 @@ make proto-check
 `layout/Makefile` already installs these tools from the published Kernel module:
 
 ```text
+GOBIN=.bin go install github.com/aisphereio/kernel/cmd/protoc-gen-go-http@$(KERNEL_VERSION)
+GOBIN=.bin go install github.com/aisphereio/kernel/cmd/protoc-gen-go-errors@$(KERNEL_VERSION)
 GOBIN=.bin go install github.com/aisphereio/kernel/cmd/protoc-gen-go-authz@$(KERNEL_VERSION)
-GOBIN=.bin go install github.com/aisphereio/kernel/cmd/buf-check-aisphere@$(KERNEL_VERSION)
 ```
 
 For local Kernel development, the root `Makefile` builds them from local source:
 
 ```text
+cd cmd/protoc-gen-go-http && GOBIN=.bin go install .
+cd cmd/protoc-gen-go-errors && GOBIN=.bin go install .
 cd cmd/protoc-gen-go-authz && GOBIN=.bin go install .
-cd cmd/buf-check-aisphere && GOBIN=.bin go install .
 ```
 
 ## Runtime libraries
@@ -83,9 +84,9 @@ cmd/protoc-gen-go-authz
   -> reads the annotation from descriptors
   -> generates *_authz.pb.go
 
-cmd/buf-check-aisphere
-  -> reads a descriptor set
-  -> fails CI when required contract rules are missing or invalid
+buf
+  -> builds a descriptor set
+  -> fails when proto files are invalid or fail buf lint rules
 ```
 
 ## Generated files
@@ -121,6 +122,26 @@ version as the runtime packages. Service templates should pin `KERNEL_VERSION`.
 
 ```make
 KERNEL_VERSION ?= v0.0.2
+```
+
+Because these commands are separate Go modules, each command module needs its
+own directory-prefixed tag for the same version:
+
+```bash
+git tag v0.1.12
+git tag cmd/kernel/v0.1.12
+git tag cmd/protoc-gen-go-authz/v0.1.12
+git tag cmd/protoc-gen-go-errors/v0.1.12
+git tag cmd/protoc-gen-go-http/v0.1.12
+git push origin v0.1.12 cmd/kernel/v0.1.12 cmd/protoc-gen-go-authz/v0.1.12 cmd/protoc-gen-go-errors/v0.1.12 cmd/protoc-gen-go-http/v0.1.12
+```
+
+Run this before publishing tags to check module paths. After creating local
+tags, include `RELEASE_VERSION` to verify the root and command tags exist:
+
+```bash
+make release-check
+make release-check RELEASE_VERSION=v0.1.12
 ```
 
 This ensures that:

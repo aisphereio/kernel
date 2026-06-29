@@ -14,9 +14,11 @@ func applyScaffoldOptions(root string, opts ScaffoldOptions) error {
 		"__KERNEL_OBJECTSTORE_DRIVER__": opts.ObjectStoreDriver,
 		"__KERNEL_AUTHN_PROVIDER__":     opts.AuthnProvider,
 		"__KERNEL_AUTHZ_PROVIDER__":     opts.AuthzProvider,
+		"__KERNEL_VERSION__":            opts.KernelVersion,
 	}
 	for _, name := range []string{
 		filepath.Join(root, "configs", "config.yaml"),
+		filepath.Join(root, "Makefile"),
 		filepath.Join(root, "README.md"),
 	} {
 		if err := replaceInFile(name, replacements); err != nil {
