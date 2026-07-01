@@ -4,10 +4,63 @@ Aisphere Kernel is a breaking-rewrite microservice foundation for Aisphere proje
 It is AI-native: every module ships a single-entry README, a Go-doc-rich `doc.go`,
 runnable examples, and an AI coding recipe.
 
-> **New here?** Read [docs/README.md](docs/README.md) for the doc map, then
-> [errorx/README.md](errorx/README.md) and [logx/README.md](logx/README.md) for
-> the two foundational modules. Run `go run ./examples/errorx-basic` to see
-> errorx in action.
+> **New here?** Start with [docs/getting-started.md](docs/getting-started.md), then read
+> [docs/README.md](docs/README.md) for the full doc map.
+
+---
+
+## Quick start: install the CLI and create a service
+
+For a quick first run, install the latest released CLI and scaffold a service from the standalone layout repository:
+
+```bash
+go install github.com/aisphereio/kernel/cmd/kernel@latest
+kernel version
+kernel new todo-service --repo https://github.com/aisphereio/kernel-layout.git
+cd todo-service
+make tools
+make api
+make proto-check
+make verify
+make run
+```
+
+For engineering work, prefer pinning one Kernel release and using the same version everywhere:
+
+```bash
+KERNEL_VERSION=v0.1.16
+
+go install github.com/aisphereio/kernel/cmd/kernel@${KERNEL_VERSION}
+go install github.com/aisphereio/kernel/cmd/protoc-gen-go-http@${KERNEL_VERSION}
+go install github.com/aisphereio/kernel/cmd/protoc-gen-go-errors@${KERNEL_VERSION}
+go install github.com/aisphereio/kernel/cmd/protoc-gen-go-gateway@${KERNEL_VERSION}
+go install github.com/aisphereio/kernel/cmd/protoc-gen-go-kernel@${KERNEL_VERSION}
+go install github.com/aisphereio/kernel/cmd/buf-check-aisphere@${KERNEL_VERSION}
+
+kernel new todo-service \
+  --repo https://github.com/aisphereio/kernel-layout.git \
+  --kernel-version ${KERNEL_VERSION}
+```
+
+Why `--repo` is required for public installs: the CLI supports local layout discovery for repository development, but a binary installed with `go install` does not carry the layout directory. Passing `--repo https://github.com/aisphereio/kernel-layout.git` makes the scaffold source explicit and reproducible.
+
+Alternative local development path:
+
+```bash
+export KERNEL_LAYOUT=/path/to/kernel-layout
+kernel new todo-service --kernel-version ${KERNEL_VERSION}
+```
+
+---
+
+## How to use Kernel in a business project
+
+Kernel has two roles:
+
+1. **Runtime libraries** are imported by generated/business code, for example `github.com/aisphereio/kernel/errorx`, `logx`, `configx`, `serverx`, `dbx`, `cachex`, and `objectstorex`.
+2. **Development tools** are installed with `go install github.com/aisphereio/kernel/cmd/...@<version>` and used by `make tools`, `make api`, `make proto-check`, and CI.
+
+Do not ask application developers to import generator packages directly. The generated project Makefile should install the same Kernel version as the runtime module dependency.
 
 ---
 
@@ -58,7 +111,7 @@ app := kernel.New(
 | `selector/` | ✅ stable | Load balancing (wrr/p2c/random/ewma) | — |
 | `registry/` | ✅ stable | Service discovery | [registry/README.md](registry/README.md) |
 | `encoding/` | ✅ stable | json / yaml / xml / form / proto | [encoding/README.md](encoding/README.md) |
-| `cmd/kernel/` | ✅ stable | Project scaffolding CLI | — |
+| `cmd/kernel/` | ✅ stable | Project scaffolding CLI | [docs/getting-started.md](docs/getting-started.md) |
 
 Status legend: ✅ stable / 🚧 in progress / ⬜ planned
 
@@ -161,6 +214,7 @@ So old proto contracts can remain, while runtime errors are standardized on `err
 ```text
 Quick start (everyone)
 ├── README.md                  ← you are here
+├── docs/getting-started.md    ← install CLI, scaffold service, run generated project
 ├── AGENTS.md                  ← AI work rules
 ├── errorx/README.md           ← error handling
 ├── logx/README.md             ← logging
@@ -189,6 +243,14 @@ Runnable examples
 ```
 
 See [docs/README.md](docs/README.md) for the complete index with recommended reading paths.
+
+---
+
+## Validation code is not framework runtime
+
+`validation/` contains scenario checks and generated-shape experiments. It is not part of the framework runtime API and must not force unrelated DTOs or demo contracts into default `go list ./...`, `go test ./...`, or `govulncheck ./...` flows.
+
+Core framework checks should target runtime packages and stable validation packages only. Experimental validation flows must be isolated behind explicit build tags or moved out of the default package graph.
 
 ---
 
