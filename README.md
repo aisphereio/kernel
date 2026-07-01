@@ -9,9 +9,9 @@ runnable examples, and an AI coding recipe.
 
 ---
 
-## Quick start: install the CLI and create a service
+## Quick start: install one CLI and create a service
 
-For a quick first run, install the latest released CLI and scaffold a service from the standalone layout repository:
+For a quick first run, install only the `kernel` CLI globally. After the project is generated, let the generated project Makefile install the remaining codegen tools into local `.bin/`.
 
 ```bash
 go install github.com/aisphereio/kernel/cmd/kernel@latest
@@ -25,22 +25,26 @@ make verify
 make run
 ```
 
-For engineering work, prefer pinning one Kernel release and using the same version everywhere:
+For engineering work, pin one Kernel release, but still install only the `kernel` CLI first:
 
 ```bash
 KERNEL_VERSION=v0.1.16
 
 go install github.com/aisphereio/kernel/cmd/kernel@${KERNEL_VERSION}
-go install github.com/aisphereio/kernel/cmd/protoc-gen-go-http@${KERNEL_VERSION}
-go install github.com/aisphereio/kernel/cmd/protoc-gen-go-errors@${KERNEL_VERSION}
-go install github.com/aisphereio/kernel/cmd/protoc-gen-go-gateway@${KERNEL_VERSION}
-go install github.com/aisphereio/kernel/cmd/protoc-gen-go-kernel@${KERNEL_VERSION}
-go install github.com/aisphereio/kernel/cmd/buf-check-aisphere@${KERNEL_VERSION}
 
 kernel new todo-service \
   --repo https://github.com/aisphereio/kernel-layout.git \
   --kernel-version ${KERNEL_VERSION}
+
+cd todo-service
+make tools
+make api
+make proto-check
+make verify
+make run
 ```
+
+`make tools` is the single project-local toolchain entrypoint. It installs `protoc-gen-go`, `protoc-gen-go-grpc`, Kernel generators, grpc-gateway, buf, wire, and OpenAPI generators into `.bin/` using the `KERNEL_VERSION` written by `kernel new`.
 
 Why `--repo` is required for public installs: the CLI supports local layout discovery for repository development, but a binary installed with `go install` does not carry the layout directory. Passing `--repo https://github.com/aisphereio/kernel-layout.git` makes the scaffold source explicit and reproducible.
 
@@ -58,9 +62,9 @@ kernel new todo-service --kernel-version ${KERNEL_VERSION}
 Kernel has two roles:
 
 1. **Runtime libraries** are imported by generated/business code, for example `github.com/aisphereio/kernel/errorx`, `logx`, `configx`, `serverx`, `dbx`, `cachex`, and `objectstorex`.
-2. **Development tools** are installed with `go install github.com/aisphereio/kernel/cmd/...@<version>` and used by `make tools`, `make api`, `make proto-check`, and CI.
+2. **Development tools** are installed by the generated project with `make tools` into local `.bin/`, not manually installed one by one by every developer.
 
-Do not ask application developers to import generator packages directly. The generated project Makefile should install the same Kernel version as the runtime module dependency.
+Do not ask application developers to import generator packages directly. Do not require them to globally install every `cmd/protoc-gen-*` tool. The generated project Makefile should own project-local tool installation and use the same Kernel version as the runtime module dependency.
 
 ---
 
