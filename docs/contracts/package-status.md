@@ -27,7 +27,7 @@
 | `objectstorex` | active | Object store 主线 |
 | `dtmx` | active | 分布式事务主线 |
 | `selectorx` | active | selector 主线 |
-| `registryx` | active | registry 主线 |
+| `registry` | active | 服务注册发现主线 |
 | `encodingx` | active | encoding 主线 |
 
 ## Tooling only
@@ -53,4 +53,4 @@
 
 ## Rule
 
-新代码如果需要基础设施能力，必须优先检查本表。表里没有的包不能被 AI 自行创造为主线 API。
+新代码如果需要基础设施能力，必须优先检查本表。
