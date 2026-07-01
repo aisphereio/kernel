@@ -2,12 +2,13 @@
 
 本目录只保留当前 Kernel 开发范式需要阅读的主线文档。过期、阶段性或历史对比材料移入 `docs/archive/legacy/`，不要作为新业务开发依据。
 
-## 1. 先读这四份
+## 1. 先读这五份
 
 1. [快速开始](getting-started.md)
 2. [Kernel 边界与分层](architecture/kernel-boundary.md)
 3. [规范驱动开发范式](ai/kernel-development-paradigm.md)
-4. [Agent 开发规则](../AGENTS.md)
+4. [AI 高级特性使用手册](ai/advanced-feature-playbook.md)
+5. [Agent 开发规则](../AGENTS.md)
 
 标准起步命令：
 
@@ -68,12 +69,15 @@ kernel new todo-service --mvp
 | 主题 | 文档 |
 |---|---|
 | 开发范式 | [ai/kernel-development-paradigm.md](ai/kernel-development-paradigm.md) |
+| 高级特性使用手册 | [ai/advanced-feature-playbook.md](ai/advanced-feature-playbook.md) |
 | GitHub Actions 委托构建 | [ai/github-actions-build-delegation.md](ai/github-actions-build-delegation.md) |
+
+AI 写业务代码前必须先判断需求是否命中高级特性触发条件。命中后必须使用对应 Kernel 包，不允许手写临时基础设施实现。
 
 ## 7. 文档维护规则
 
 - 新业务开发只参考当前 README 链接出的文档。
 - 历史分析、对比、阶段性草稿放入 `docs/archive/legacy/`。
 - 文档默认使用中文。
-- 代码能力变化时，必须同步更新对应 `docs/contracts/*.md` 和 `AGENTS.md`。
+- 代码能力变化时，必须同步更新对应 `docs/contracts/*.md`、`docs/ai/*.md` 和 `AGENTS.md`。
 - 如果文档与代码冲突，以代码和测试为准，并立即修正文档。
