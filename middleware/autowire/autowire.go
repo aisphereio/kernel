@@ -19,7 +19,6 @@ import (
 	"github.com/aisphereio/kernel/middleware/circuitbreaker"
 	"github.com/aisphereio/kernel/middleware/ctxinject"
 	metamw "github.com/aisphereio/kernel/middleware/metadata"
-	oldratelimit "github.com/aisphereio/kernel/middleware/ratelimit"
 	requestinfomw "github.com/aisphereio/kernel/middleware/requestinfo"
 	"github.com/aisphereio/kernel/middleware/retry"
 	timeoutmw "github.com/aisphereio/kernel/middleware/timeout"
@@ -52,10 +51,7 @@ type serverOptions struct {
 	allowAnonymous      bool
 	authnOptions        []authnmw.Option
 
-	rateLimitEnabled bool
-	limiter          oldratelimit.Limiter
-
-	rateLimitXEnabled bool
+	rateLimitEnabled  bool
 	rateLimitPolicy   ratelimitx.Policy
 	rateLimitProvider ratelimitx.Provider
 	rateLimitKey      RateLimitKeyFunc
@@ -125,16 +121,10 @@ func WithAllowAnonymous(allow bool) ServerOption {
 	return func(o *serverOptions) { o.authnEnabled = true; o.allowAnonymous = allow }
 }
 
-// WithRateLimit enables the legacy global server-side limiter. Prefer
-// WithRateLimitPolicy for new services because it carries backend/scope semantics.
-func WithRateLimit(limiter oldratelimit.Limiter) ServerOption {
-	return func(o *serverOptions) { o.rateLimitEnabled = true; o.limiter = limiter }
-}
-
 // WithRateLimitPolicy enables policy-driven server-side rate limiting.
 func WithRateLimitPolicy(policy ratelimitx.Policy, provider ratelimitx.Provider, key RateLimitKeyFunc) ServerOption {
 	return func(o *serverOptions) {
-		o.rateLimitXEnabled = true
+		o.rateLimitEnabled = true
 		o.rateLimitPolicy = policy
 		o.rateLimitProvider = provider
 		o.rateLimitKey = key
@@ -153,7 +143,7 @@ func WithAdmission(chain admissionx.Chain) ServerOption {
 
 // Server builds Kernel's default server pipeline in this order:
 //
-// custom before -> timeout -> ctx inject -> metadata -> authn -> rate limit -> authz/audit -> custom after
+// custom before -> timeout -> ctx inject -> request info -> metadata -> authn -> rate limit -> authz/audit -> admission -> custom after
 func Server(opts ...ServerOption) []middleware.Middleware {
 	o := &serverOptions{}
 	for _, opt := range opts {
@@ -177,14 +167,8 @@ func Server(opts ...ServerOption) []middleware.Middleware {
 		authnOpts = append(authnOpts, o.authnOptions...)
 		chain = append(chain, authnmw.Server(authnOpts...))
 	}
-	if o.rateLimitXEnabled {
+	if o.rateLimitEnabled {
 		chain = append(chain, rateLimitMiddleware(o.rateLimitPolicy, o.rateLimitProvider, o.rateLimitKey))
-	} else if o.rateLimitEnabled {
-		if o.limiter != nil {
-			chain = append(chain, oldratelimit.Server(oldratelimit.WithLimiter(o.limiter)))
-		} else {
-			chain = append(chain, oldratelimit.Server())
-		}
 	}
 	if o.accessEnabled {
 		chain = append(chain, accessmw.Server(o.guard, accessmw.WithResolver(o.resolver)))
@@ -279,7 +263,7 @@ func WithRetry(opts ...retry.Option) ClientOption {
 
 // Client builds Kernel's default client pipeline in this order:
 //
-// custom before -> metadata -> timeout -> rate limit -> circuit breaker -> retry -> custom after
+// custom before -> request info -> metadata -> timeout -> rate limit -> circuit breaker -> retry -> custom after
 func Client(opts ...ClientOption) []middleware.Middleware {
 	o := &clientOptions{}
 	for _, opt := range opts {
