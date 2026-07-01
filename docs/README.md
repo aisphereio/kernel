@@ -2,13 +2,29 @@
 
 本目录只保留当前 Kernel 开发范式需要阅读的主线文档。过期、阶段性或历史对比材料已经移入 `docs/archive/legacy/`，不要作为新业务开发依据。
 
-## 1. 先读这三份
+## 1. 先读这四份
 
-1. [Kernel 边界与分层](architecture/kernel-boundary.md)
-2. [规范驱动开发范式](ai/kernel-development-paradigm.md)
-3. [Agent 开发规则](../AGENTS.md)
+1. [快速开始](getting-started.md)
+2. [Kernel 边界与分层](architecture/kernel-boundary.md)
+3. [规范驱动开发范式](ai/kernel-development-paradigm.md)
+4. [Agent 开发规则](../AGENTS.md)
 
-这三份文档定义了 Kernel 的核心原则：**业务只声明契约，框架负责检查、生成、装配、治理和验证**。
+这四份文档定义了 Kernel 的核心原则：**业务只声明契约，框架负责检查、生成、装配、治理和验证**。
+
+公开安装后的标准起步命令是：
+
+```bash
+go install github.com/aisphereio/kernel/cmd/kernel@latest
+kernel new todo-service --repo https://github.com/aisphereio/kernel-layout.git
+```
+
+工程项目建议固定版本：
+
+```bash
+KERNEL_VERSION=v0.1.16
+go install github.com/aisphereio/kernel/cmd/kernel@${KERNEL_VERSION}
+kernel new todo-service --repo https://github.com/aisphereio/kernel-layout.git --kernel-version ${KERNEL_VERSION}
+```
 
 ## 2. Contract：写业务前必须对齐
 
@@ -35,12 +51,12 @@
 
 ## 4. Validation：验证业务代码放这里
 
-验证代码不属于 Kernel 核心能力包，统一放在 `validation/`。
+验证代码不属于 Kernel 核心能力包，统一放在 `validation/`。默认 `go list ./...`、`go test ./...`、`govulncheck ./...` 不应该被实验性 generated 验证文件阻塞。
 
-| 验证场景 | 文档 | 测试命令 |
-|---|---|---|
-| IAM + Gateway 治理链路 | [demos/iam-gateway-demo.md](demos/iam-gateway-demo.md) | `go test ./validation/iamgateway` |
-| 平台完整链路验证 | [demos/platform-gateway-iam-skill-flow.md](demos/platform-gateway-iam-skill-flow.md) | `go test ./validation/platformflow` |
+| 验证场景 | 文档 | 测试命令 | 默认状态 |
+|---|---|---|---|
+| IAM + Gateway 治理链路 | [demos/iam-gateway-demo.md](demos/iam-gateway-demo.md) | `go test ./validation/iamgateway` | 默认参与 |
+| 平台完整链路验证 | [demos/platform-gateway-iam-skill-flow.md](demos/platform-gateway-iam-skill-flow.md) | 显式 build tag / 重新生成 DTO 后再跑 | 实验性，默认排除 |
 
 ## 5. AI / Agent 工作方式
 
