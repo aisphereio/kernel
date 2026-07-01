@@ -12,7 +12,7 @@ transportx/http transportx/grpc
 requestx accessx authn authz auditx
 gatewayx admissionx ratelimitx clientpolicyx
 dbx cachex objectstorex dtmx
-selectorx registryx encodingx
+selectorx registry encodingx
 ```
 
 ## 2. Development tooling
