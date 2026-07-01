@@ -5,11 +5,10 @@ on:
   pull_request:
     paths:
       - 'serverx/**'
-      - 'validation/iamgateway/**'
-      - 'validation/platformflow/**'
       - 'gatewayx/**'
       - 'cmd/protoc-gen-go-gateway/**'
       - 'cmd/protoc-gen-go-kernel/**'
+      - 'cmd/buf-check-aisphere/**'
       - 'bootx/**'
       - 'requestx/**'
       - 'admissionx/**'
@@ -33,9 +32,8 @@ jobs:
       - name: Targeted governance tests
         run: |
           set -euxo pipefail
-          go test ./cmd/protoc-gen-go-gateway ./cmd/protoc-gen-go-kernel ./gatewayx ./serverx ./validation/iamgateway ./validation/platformflow ./bootx ./requestx ./admissionx ./middleware/autowire ./ratelimitx ./clientpolicyx ./middleware/retry ./middleware/timeout | tee governance-targeted-tests.log
-      - name: Optional fullflow compile smoke
-        continue-on-error: true
+          go test ./cmd/protoc-gen-go-gateway ./cmd/protoc-gen-go-kernel ./cmd/buf-check-aisphere ./gatewayx ./serverx ./bootx ./requestx ./admissionx ./middleware/autowire ./ratelimitx ./clientpolicyx ./middleware/retry ./middleware/timeout | tee governance-targeted-tests.log
+      - name: Generated layout compile smoke
         run: |
           set -euxo pipefail
           (cd layout && go test ./api/todo/v1 -run TestNonExistent -count=0) | tee governance-layout-api.log
