@@ -4,10 +4,10 @@
 
 Kernel 分成两类东西：
 
-1. **CLI / 代码生成工具**：通过 `go install github.com/aisphereio/kernel/cmd/...@<version>` 安装。
+1. **CLI / 代码生成工具**：开发者只需要先全局安装 `kernel` CLI；生成项目后，用项目内 `make tools` 安装剩余工具链到 `.bin/`。
 2. **运行时库**：由生成后的业务项目在 `go.mod` 中依赖，例如 `errorx`、`logx`、`configx`、`serverx`、`dbx`、`cachex`、`objectstorex`。
 
-业务开发者不需要直接 import 生成器包。
+业务开发者不需要直接 import 生成器包，也不需要手动逐个全局安装 `protoc-gen-*`。
 
 ---
 
@@ -36,17 +36,12 @@ make run
 
 ## 2. 工程实践：固定 Kernel 版本
 
-生产项目不要依赖隐式漂移的工具链。建议固定一个 Kernel release tag，并把 CLI、生成器、项目 Makefile、运行时 module 统一到同一版本。
+生产项目不要依赖隐式漂移的工具链。建议固定一个 Kernel release tag，但用户仍然只需要先全局安装一个 `kernel` CLI。
 
 ```bash
 KERNEL_VERSION=v0.1.16
 
 go install github.com/aisphereio/kernel/cmd/kernel@${KERNEL_VERSION}
-go install github.com/aisphereio/kernel/cmd/protoc-gen-go-http@${KERNEL_VERSION}
-go install github.com/aisphereio/kernel/cmd/protoc-gen-go-errors@${KERNEL_VERSION}
-go install github.com/aisphereio/kernel/cmd/protoc-gen-go-gateway@${KERNEL_VERSION}
-go install github.com/aisphereio/kernel/cmd/protoc-gen-go-kernel@${KERNEL_VERSION}
-go install github.com/aisphereio/kernel/cmd/buf-check-aisphere@${KERNEL_VERSION}
 ```
 
 创建项目时把版本写进生成项目：
@@ -57,7 +52,18 @@ kernel new todo-service \
   --kernel-version ${KERNEL_VERSION}
 ```
 
-这样生成项目里的 Makefile 会继续安装同一版本的 Kernel 工具链。
+进入项目后，让项目 Makefile 安装剩余工具链：
+
+```bash
+cd todo-service
+make tools
+make api
+make proto-check
+make verify
+make run
+```
+
+`make tools` 会根据生成项目里的 `KERNEL_VERSION` 安装 Kernel 生成器，并把工具放在当前项目 `.bin/` 目录中。这样不会污染全局 PATH，也避免每个开发者记一长串 `go install` 命令。
 
 ---
 
@@ -120,7 +126,7 @@ kernel new todo-service \
 
 ```bash
 cd todo-service
-make tools        # 安装项目需要的 protoc/buf/kernel 生成器
+make tools        # 安装项目需要的 protoc/buf/kernel 生成器到 .bin/
 make api          # 生成 proto / HTTP / gRPC / gateway 代码
 make proto-check  # buf lint/build 和 Kernel proto 检查
 make verify       # 项目测试、vet、生成校验
@@ -158,10 +164,11 @@ kernel new todo-service
 
 都要，但用途不同：
 
-- `go install github.com/aisphereio/kernel/cmd/kernel@<version>`：安装开发工具。
+- `go install github.com/aisphereio/kernel/cmd/kernel@<version>`：安装脚手架 CLI。
+- `make tools`：在生成项目中安装 protoc/buf/Kernel 生成器等项目本地工具。
 - `import github.com/aisphereio/kernel/...`：业务项目使用运行时库。
 - 不要在业务代码里 import `cmd/protoc-gen-*` 这类生成器包。
 
 ### 用 @latest 还是固定 tag？
 
-快速体验可以用 `@latest`。工程项目建议固定 tag，例如 `v0.1.16`，并在 CLI、生成器、生成项目 Makefile 和 `go.mod` 中保持一致。
+快速体验可以用 `@latest`。工程项目建议固定 tag，例如 `v0.1.16`，并通过 `kernel new --kernel-version` 写入生成项目；后续工具安装交给项目内 `make tools`。
