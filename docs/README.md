@@ -50,7 +50,13 @@ kernel new todo-service --mvp
 | 启动治理校验 | [contracts/boot-governance-validation.md](contracts/boot-governance-validation.md) |
 | 数据开发范式 | [contracts/dbx-data-development.md](contracts/dbx-data-development.md) |
 
-## 4. Design
+## 4. Guides：业务组件开发
+
+| 主题 | 文档 |
+|---|---|
+| IAM + Gateway 开发指南 | [guides/iam-gateway-development.md](guides/iam-gateway-development.md) |
+
+## 5. Design
 
 | 主题 | 文档 |
 |---|---|
@@ -58,13 +64,13 @@ kernel new todo-service --mvp
 | Kernel 边界与分层 | [architecture/kernel-boundary.md](architecture/kernel-boundary.md) |
 | AuthN/AuthZ/Audit 设计 | [design/security-authn-authz-auditx.md](design/security-authn-authz-auditx.md) |
 
-## 5. Validation 状态
+## 6. Validation 状态
 
 `validation/` 已从 runtime tree 移除。场景检查、generated-shape 实验、IAM/Gateway/SkillService 联调验证，不再放在 Kernel 主模块默认包图里。
 
 后续需要验证业务时，使用独立仓库、生成项目自己的 tests、显式 build tag 或 GitHub Actions 专用 job。
 
-## 6. AI / Agent 工作方式
+## 7. AI / Agent 工作方式
 
 | 主题 | 文档 |
 |---|---|
@@ -74,7 +80,7 @@ kernel new todo-service --mvp
 
 AI 写业务代码前必须先判断需求是否命中高级特性触发条件。命中后必须使用对应 Kernel 包，不允许手写临时基础设施实现。
 
-## 7. 文档维护规则
+## 8. 文档维护规则
 
 - 新业务开发只参考当前 README 链接出的文档。
 - 历史分析、对比、阶段性草稿放入 `docs/archive/legacy/`。
