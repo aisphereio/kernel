@@ -29,7 +29,7 @@ transportx/http transportx/grpc
 requestx accessx authn authz auditx
 gatewayx admissionx ratelimitx clientpolicyx
 dbx cachex objectstorex dtmx
-selectorx registryx encodingx
+selectorx registry encodingx
 ```
 
 工具包不是 runtime API，业务代码禁止 import：
@@ -68,6 +68,7 @@ grpcgatewayx
 | `clientpolicyx/` | 服务间调用策略 | 下游 timeout/retry/breaker 进入这里 |
 | `admissionx/` | 准入插件链 | 跨接口默认值和校验放这里 |
 | `gatewayx/` | Gateway runtime | route manifest、registry、matcher、dispatcher |
+| `registry/` | 服务注册发现 runtime API | 保持现有包名，不再在文档里写成不存在的 `registryx` |
 | `layout/` | 项目模板 | 体现推荐使用方式，不是 runtime API |
 | `docs/` | 中文规范文档 | 能力变化必须同步文档 |
 
