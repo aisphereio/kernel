@@ -18,6 +18,11 @@ import (
 	"github.com/aisphereio/kernel/cmd/kernel/internal/base"
 )
 
+const (
+	layoutProfileFull = "full"
+	layoutProfileMVP  = "mvp"
+)
+
 var projects = map[string]string{
 	"service": "https://github.com/aisphereio/kernel-layout.git",
 	"admin":   "https://github.com/aisphereio/kernel-admin.git",
@@ -37,6 +42,9 @@ var (
 	branch            string
 	timeout           = "60s"
 	features          string
+	disableFeatures   string
+	profile           string
+	mvp               bool
 	dbDriver          string
 	cacheDriver       string
 	objectStoreDriver string
@@ -51,7 +59,10 @@ func init() {
 	CmdNew.Flags().StringVarP(&branch, "branch", "b", branch, "repo branch")
 	CmdNew.Flags().StringVarP(&timeout, "timeout", "t", timeout, "time out")
 	CmdNew.Flags().BoolVarP(&nomod, "nomod", "", nomod, "retain go mod")
+	CmdNew.Flags().StringVar(&profile, "profile", defaults.Profile, "layout profile to apply after copy: full or mvp")
+	CmdNew.Flags().BoolVar(&mvp, "mvp", false, "shortcut for --profile mvp")
 	CmdNew.Flags().StringVar(&features, "features", strings.Join(defaults.Features, ","), "enabled scaffold features")
+	CmdNew.Flags().StringVar(&disableFeatures, "disable", "", "comma-separated features to disable after applying the layout, e.g. iam,gateway,dtmx")
 	CmdNew.Flags().StringVar(&dbDriver, "db-driver", defaults.DBDriver, "default dbx driver")
 	CmdNew.Flags().StringVar(&cacheDriver, "cache-driver", defaults.CacheDriver, "default cachex driver")
 	CmdNew.Flags().StringVar(&objectStoreDriver, "objectstore-driver", defaults.ObjectStoreDriver, "default objectstorex driver")
@@ -60,7 +71,7 @@ func init() {
 	CmdNew.Flags().StringVar(&kernelVersion, "kernel-version", defaults.KernelVersion, "kernel module/tool version for generated Makefile installs")
 }
 
-func run(_ *cobra.Command, args []string) {
+func run(cmd *cobra.Command, args []string) {
 	wd, err := os.Getwd()
 	if err != nil {
 		panic(err)
@@ -87,12 +98,12 @@ func run(_ *cobra.Command, args []string) {
 	projectName, workingDir := processProjectParams(name, wd)
 	p := &Project{Name: projectName}
 	done := make(chan error, 1)
+	opts := scaffoldOptionsFromFlags(cmd)
 	repoURL, err := resolveLayout(repo, wd)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\033[31mERROR: failed to resolve layout(%s)\033[m\n", err.Error())
 		return
 	}
-	opts := scaffoldOptionsFromFlags()
 	go func() {
 		if !nomod {
 			done <- p.New(ctx, workingDir, repoURL, branch, opts)
@@ -135,7 +146,9 @@ func run(_ *cobra.Command, args []string) {
 }
 
 type ScaffoldOptions struct {
+	Profile           string
 	Features          []string
+	DisabledFeatures  []string
 	DBDriver          string
 	CacheDriver       string
 	ObjectStoreDriver string
@@ -146,7 +159,8 @@ type ScaffoldOptions struct {
 
 func defaultScaffoldOptions() ScaffoldOptions {
 	return ScaffoldOptions{
-		Features:          []string{"dbx", "cachex", "objectstorex", "authn", "authz", "auditx", "metricsx", "logx", "configx"},
+		Profile:           layoutProfileFull,
+		Features:          []string{"configx", "logx", "errorx", "metricsx", "dbx", "cachex", "objectstorex", "dtmx", "auditx", "authn", "authz", "access", "gateway", "http", "grpc"},
 		DBDriver:          "postgres",
 		CacheDriver:       "redis",
 		ObjectStoreDriver: "minio",
@@ -156,20 +170,41 @@ func defaultScaffoldOptions() ScaffoldOptions {
 	}
 }
 
-func scaffoldOptionsFromFlags() ScaffoldOptions {
+func mvpScaffoldOptions() ScaffoldOptions {
+	defaults := defaultScaffoldOptions()
+	defaults.Profile = layoutProfileMVP
+	defaults.Features = []string{"configx", "logx", "errorx", "http", "grpc"}
+	defaults.DisabledFeatures = []string{"iam", "authn", "authz", "access", "gateway", "dbx", "cachex", "objectstorex", "dtmx", "auditx", "metricsx"}
+	return defaults
+}
+
+func scaffoldOptionsFromFlags(cmd *cobra.Command) ScaffoldOptions {
+	opts := defaultScaffoldOptions()
+	if mvp {
+		opts = mvpScaffoldOptions()
+	}
+	if strings.TrimSpace(profile) != "" {
+		opts.Profile = strings.ToLower(strings.TrimSpace(profile))
+	}
+	if mvp {
+		opts.Profile = layoutProfileMVP
+	}
+	if cmd != nil && cmd.Flags().Changed("features") {
+		opts.Features = splitCSV(features)
+	}
+	opts.DisabledFeatures = mergeDisabledFeatures(opts.DisabledFeatures, splitCSV(disableFeatures))
+	opts.Features = removeDisabledFromFeatures(opts.Features, opts.DisabledFeatures)
 	version := strings.TrimSpace(kernelVersion)
 	if version == "" {
 		version = defaultKernelVersion()
 	}
-	return ScaffoldOptions{
-		Features:          splitCSV(features),
-		DBDriver:          strings.TrimSpace(dbDriver),
-		CacheDriver:       strings.TrimSpace(cacheDriver),
-		ObjectStoreDriver: strings.TrimSpace(objectStoreDriver),
-		AuthnProvider:     strings.TrimSpace(authnProvider),
-		AuthzProvider:     strings.TrimSpace(authzProvider),
-		KernelVersion:     version,
-	}
+	opts.DBDriver = strings.TrimSpace(dbDriver)
+	opts.CacheDriver = strings.TrimSpace(cacheDriver)
+	opts.ObjectStoreDriver = strings.TrimSpace(objectStoreDriver)
+	opts.AuthnProvider = strings.TrimSpace(authnProvider)
+	opts.AuthzProvider = strings.TrimSpace(authzProvider)
+	opts.KernelVersion = version
+	return opts
 }
 
 func defaultKernelVersion() string {
@@ -212,6 +247,51 @@ func splitCSV(raw string) []string {
 	return out
 }
 
+func mergeDisabledFeatures(base []string, extra []string) []string {
+	out := make([]string, 0, len(base)+len(extra))
+	seen := map[string]struct{}{}
+	for _, feature := range append(base, extra...) {
+		feature = strings.ToLower(strings.TrimSpace(feature))
+		if feature == "" {
+			continue
+		}
+		if feature == "iam" {
+			for _, expanded := range []string{"iam", "authn", "authz", "access", "gateway"} {
+				if _, ok := seen[expanded]; !ok {
+					seen[expanded] = struct{}{}
+					out = append(out, expanded)
+				}
+			}
+			continue
+		}
+		if _, ok := seen[feature]; ok {
+			continue
+		}
+		seen[feature] = struct{}{}
+		out = append(out, feature)
+	}
+	return out
+}
+
+func removeDisabledFromFeatures(features []string, disabled []string) []string {
+	disabledSet := map[string]struct{}{}
+	for _, feature := range disabled {
+		disabledSet[strings.ToLower(strings.TrimSpace(feature))] = struct{}{}
+	}
+	out := make([]string, 0, len(features))
+	for _, feature := range features {
+		key := strings.ToLower(strings.TrimSpace(feature))
+		if key == "" {
+			continue
+		}
+		if _, ok := disabledSet[key]; ok {
+			continue
+		}
+		out = append(out, feature)
+	}
+	return out
+}
+
 func resolveLayout(repo string, wd string) (string, error) {
 	if strings.TrimSpace(repo) != "" {
 		return strings.TrimSpace(repo), nil
@@ -223,6 +303,9 @@ func resolveLayout(repo string, wd string) (string, error) {
 		if layout, ok := findLocalLayout(start); ok {
 			return layout, nil
 		}
+	}
+	if layout := strings.TrimSpace(projects["service"]); layout != "" {
+		return layout, nil
 	}
 	return "", fmt.Errorf("local layout not found; pass --repo or set KERNEL_LAYOUT")
 }
