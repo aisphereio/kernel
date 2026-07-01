@@ -1,5 +1,21 @@
 package main
 
-// release is the current protoc-gen-go-authz compatibility plugin version.
-// It generates authz rule tables, manifests, and secure client wrappers.
-const release = "v0.2.0"
+import (
+	"runtime/debug"
+	"strings"
+)
+
+// release is resolved from Go build metadata so `go install ...@vX.Y.Z`
+// reports the tag used to build protoc-gen-go-authz. Local source builds fall
+// back to dev.
+var release = detectRelease()
+
+func detectRelease() string {
+	info, ok := debug.ReadBuildInfo()
+	if ok {
+		if version := strings.TrimSpace(info.Main.Version); version != "" && version != "(devel)" {
+			return version
+		}
+	}
+	return "dev"
+}
