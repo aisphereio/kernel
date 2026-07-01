@@ -140,7 +140,7 @@ Provider 边界：
 
 ```text
 authn provider: Casdoor/JWT/OIDC 等
-uthz provider: SpiceDB/OpenFGA/Casbin/OPA 等
+authz provider: SpiceDB/OpenFGA/Casbin/OPA 等
 audit provider: PG/Kafka/ClickHouse/object storage 等
 ```
 
