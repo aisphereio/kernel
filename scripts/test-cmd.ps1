@@ -1,29 +1,32 @@
 # Run command package tests on Windows.
 $ErrorActionPreference = "Stop"
 
-function Invoke-Step {
-    param(
-        [Parameter(Mandatory = $true)][string]$Name,
-        [Parameter(Mandatory = $true)][scriptblock]$Command
-    )
-
-    Write-Host "==> $Name" -ForegroundColor Cyan
-    & $Command
-    if ($LASTEXITCODE -ne 0) {
-        throw "Step failed: $Name, exit code: $LASTEXITCODE"
-    }
-}
-
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $RepoRoot
 
-foreach ($dir in @("cmd/kernel", "cmd/protoc-gen-go-http", "cmd/protoc-gen-go-errors", "cmd/protoc-gen-go-authz")) {
-    if (Test-Path $dir) {
-        Invoke-Step "go test ./$dir" {
-            Push-Location $dir
-            try { go test ./... } finally { Pop-Location }
-        }
-    } else {
+$dirs = @(
+    "cmd/kernel",
+    "cmd/protoc-gen-go-http",
+    "cmd/protoc-gen-go-errors",
+    "cmd/protoc-gen-go-authz",
+    "cmd/protoc-gen-go-gateway",
+    "cmd/protoc-gen-go-kernel",
+    "cmd/buf-check-aisphere"
+)
+
+foreach ($dir in $dirs) {
+    if (-not (Test-Path $dir)) {
         Write-Host "skip ${dir}: not found" -ForegroundColor Yellow
+        continue
+    }
+    Write-Host "==> test $dir" -ForegroundColor Cyan
+    Push-Location $dir
+    try {
+        go test ./...
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+    } finally {
+        Pop-Location
     }
 }
