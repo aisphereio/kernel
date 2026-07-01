@@ -16,14 +16,18 @@
 ```bash
 go install github.com/aisphereio/kernel/cmd/kernel@latest
 kernel new todo-service --repo https://github.com/aisphereio/kernel-layout.git
+cd todo-service
+make tools
 ```
 
-工程项目建议固定版本：
+工程项目建议固定版本，但也只需要先全局安装 `kernel` CLI；剩余工具链交给生成项目里的 `make tools`：
 
 ```bash
 KERNEL_VERSION=v0.1.16
 go install github.com/aisphereio/kernel/cmd/kernel@${KERNEL_VERSION}
 kernel new todo-service --repo https://github.com/aisphereio/kernel-layout.git --kernel-version ${KERNEL_VERSION}
+cd todo-service
+make tools
 ```
 
 ## 2. Contract：写业务前必须对齐
