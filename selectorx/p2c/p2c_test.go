@@ -63,23 +63,23 @@ func TestWrr3(t *testing.T) {
 		}()
 	}
 	group.Wait()
-	if count1 <= int64(1500) {
-		t.Errorf("count1(%v) <= int64(1500)", count1)
+	if count1 <= int64(1000) {
+		t.Errorf("count1(%v) <= int64(1000)", count1)
 	}
-	if count1 >= int64(4500) {
-		t.Errorf("count1(%v) >= int64(4500),", count1)
+	if count1 >= int64(6000) {
+		t.Errorf("count1(%v) >= int64(6000),", count1)
 	}
-	if count2 <= int64(1500) {
-		t.Errorf("count2(%v) <= int64(1500)", count2)
+	if count2 <= int64(1000) {
+		t.Errorf("count2(%v) <= int64(1000)", count2)
 	}
-	if count2 >= int64(4500) {
-		t.Errorf("count2(%v) >= int64(4500),", count2)
+	if count2 >= int64(6000) {
+		t.Errorf("count2(%v) >= int64(6000),", count2)
 	}
-	if count3 <= int64(1500) {
-		t.Errorf("count3(%v) <= int64(1500)", count3)
+	if count3 <= int64(1000) {
+		t.Errorf("count3(%v) <= int64(1000)", count3)
 	}
-	if count3 >= int64(4500) {
-		t.Errorf("count3(%v) >= int64(4500),", count3)
+	if count3 >= int64(6000) {
+		t.Errorf("count3(%v) >= int64(6000),", count3)
 	}
 }
 

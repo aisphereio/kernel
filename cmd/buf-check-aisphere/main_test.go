@@ -10,29 +10,28 @@ import (
 	"github.com/aisphereio/kernel/internal/protooptions"
 )
 
-func TestAnalyzeRequiresAuthzForExternalHTTP(t *testing.T) {
+func TestAnalyzeRequiresAccessPolicyForExternalHTTP(t *testing.T) {
 	set := descriptorSet(methodWithUnknown("GetSkill", ".skill.v1.GetSkillRequest", appendOption(nil, protooptions.ExtGoogleHTTP, nil)))
 
 	diags := analyze(set, checkConfig{HighRiskActions: splitCSV("delete")})
 
-	assertDiagContains(t, diags, "external google.api.http method must declare aisphere.authz")
+	assertDiagContains(t, diags, "external google.api.http method must declare aisphere.access.v1.policy")
 }
 
 func TestAnalyzeValidatesAuthzAuditAndResourceTemplate(t *testing.T) {
 	unknown := appendOption(nil, protooptions.ExtGoogleHTTP, nil)
-	unknown = appendOption(unknown, protooptions.ExtAuthz, authzPayload("skill.delete", "skill:{missing_id}", "skill-service", 2))
+	unknown = appendOption(unknown, protooptions.ExtAccess, accessPayload(3, authzPayload("skill.delete", "skill:{missing_id}", "skill-service", 2), accessAuditPayload(true, "skill.delete", ""), nil))
 	set := descriptorSet(methodWithUnknown("DeleteSkill", ".skill.v1.GetSkillRequest", unknown))
 
 	diags := analyze(set, checkConfig{HighRiskActions: splitCSV("delete")})
 
-	assertDiagContains(t, diags, "high-risk authz action \"skill.delete\" must declare aisphere.audit")
+	assertDiagContains(t, diags, "high-risk AUTHORIZED action \"skill.delete\" should set access.audit.risk")
 	assertDiagContains(t, diags, "authz resource template references missing request field {missing_id}")
 }
 
 func TestAnalyzeAcceptsNestedResourceTemplateAndAudit(t *testing.T) {
 	unknown := appendOption(nil, protooptions.ExtGoogleHTTP, nil)
-	unknown = appendOption(unknown, protooptions.ExtAuthz, authzPayload("skill.download", "skill:{owner.id}:{skill_id}", "skill-service", 2))
-	unknown = appendOption(unknown, protooptions.ExtAudit, auditPayload("skill.download", "medium"))
+	unknown = appendOption(unknown, protooptions.ExtAccess, accessPayload(3, authzPayload("skill.download", "skill:{owner.id}:{skill_id}", "skill-service", 2), accessAuditPayload(true, "skill.download", "medium"), nil))
 	set := descriptorSet(methodWithUnknown("DownloadSkill", ".skill.v1.GetSkillRequest", unknown))
 
 	diags := analyze(set, checkConfig{HighRiskActions: splitCSV("delete")})
@@ -138,6 +137,40 @@ func auditPayload(event, risk string) []byte {
 	b = protowire.AppendTag(b, 1, protowire.BytesType)
 	b = protowire.AppendString(b, event)
 	b = protowire.AppendTag(b, 2, protowire.BytesType)
+	b = protowire.AppendString(b, risk)
+	return b
+}
+
+func accessPayload(exposure int32, authz []byte, audit []byte, rateLimit []byte) []byte {
+	var b []byte
+	b = protowire.AppendTag(b, 1, protowire.VarintType)
+	b = protowire.AppendVarint(b, uint64(exposure))
+	if authz != nil {
+		b = protowire.AppendTag(b, 2, protowire.BytesType)
+		b = protowire.AppendBytes(b, authz)
+	}
+	if audit != nil {
+		b = protowire.AppendTag(b, 3, protowire.BytesType)
+		b = protowire.AppendBytes(b, audit)
+	}
+	if rateLimit != nil {
+		b = protowire.AppendTag(b, 4, protowire.BytesType)
+		b = protowire.AppendBytes(b, rateLimit)
+	}
+	return b
+}
+
+func accessAuditPayload(enabled bool, event, risk string) []byte {
+	var b []byte
+	b = protowire.AppendTag(b, 1, protowire.VarintType)
+	if enabled {
+		b = protowire.AppendVarint(b, 1)
+	} else {
+		b = protowire.AppendVarint(b, 0)
+	}
+	b = protowire.AppendTag(b, 2, protowire.BytesType)
+	b = protowire.AppendString(b, event)
+	b = protowire.AppendTag(b, 3, protowire.BytesType)
 	b = protowire.AppendString(b, risk)
 	return b
 }

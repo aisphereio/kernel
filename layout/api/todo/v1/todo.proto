@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package todo.v1;
 
+import "api/aisphere/access/v1/access.proto";
 import "google/api/annotations.proto";
 import "google/api/field_behavior.proto";
 import "google/protobuf/empty.proto";
@@ -25,6 +26,27 @@ service TodoService {
       post: "/v1/todos/create"
       body: "todo"
     };
+    option (aisphere.access.v1.policy) = {
+      exposure: AUTHORIZED
+      authz: {
+        action: "create"
+        resource: "todo:collection"
+        audience: "todo-service"
+        mode: CHECK_ONLY
+      }
+      audit: {
+        enabled: true
+        event: "todo.access"
+        risk: "low"
+      }
+      rate_limit: {
+        enabled: true
+        key: "principal"
+        qps: 100
+        burst: 200
+        backend: MEMORY
+      }
+    };
   }
 
   // GetTodo returns a single todo item by its id.
@@ -32,6 +54,27 @@ service TodoService {
   rpc GetTodo (GetTodoRequest) returns (Todo) {
     option (google.api.http) = {
       get: "/v1/todos/{id}"
+    };
+    option (aisphere.access.v1.policy) = {
+      exposure: AUTHORIZED
+      authz: {
+        action: "read"
+        resource: "todo:{id}"
+        audience: "todo-service"
+        mode: CHECK_ONLY
+      }
+      audit: {
+        enabled: true
+        event: "todo.access"
+        risk: "low"
+      }
+      rate_limit: {
+        enabled: true
+        key: "principal"
+        qps: 100
+        burst: 200
+        backend: MEMORY
+      }
     };
   }
 
@@ -41,6 +84,27 @@ service TodoService {
   rpc ListTodos (ListTodosRequest) returns (TodoSet) {
     option (google.api.http) = {
       get: "/v1/todos/list"
+    };
+    option (aisphere.access.v1.policy) = {
+      exposure: AUTHORIZED
+      authz: {
+        action: "read"
+        resource: "todo:collection"
+        audience: "todo-service"
+        mode: CHECK_ONLY
+      }
+      audit: {
+        enabled: true
+        event: "todo.access"
+        risk: "low"
+      }
+      rate_limit: {
+        enabled: true
+        key: "principal"
+        qps: 100
+        burst: 200
+        backend: MEMORY
+      }
     };
   }
 
@@ -54,6 +118,27 @@ service TodoService {
       put: "/v1/todos/update"
       body: "todo"
     };
+    option (aisphere.access.v1.policy) = {
+      exposure: AUTHORIZED
+      authz: {
+        action: "update"
+        resource: "todo:{todo.id}"
+        audience: "todo-service"
+        mode: CHECK_ONLY
+      }
+      audit: {
+        enabled: true
+        event: "todo.access"
+        risk: "medium"
+      }
+      rate_limit: {
+        enabled: true
+        key: "principal"
+        qps: 50
+        burst: 100
+        backend: MEMORY
+      }
+    };
   }
 
   // DeleteTodo permanently removes a todo item by its id.
@@ -61,6 +146,27 @@ service TodoService {
   rpc DeleteTodo (DeleteTodoRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
       delete: "/v1/todos/{id}"
+    };
+    option (aisphere.access.v1.policy) = {
+      exposure: AUTHORIZED
+      authz: {
+        action: "delete"
+        resource: "todo:{id}"
+        audience: "todo-service"
+        mode: CHECK_ONLY
+      }
+      audit: {
+        enabled: true
+        event: "todo.access"
+        risk: "high"
+      }
+      rate_limit: {
+        enabled: true
+        key: "principal"
+        qps: 20
+        burst: 40
+        backend: MEMORY
+      }
     };
   }
 
@@ -70,6 +176,27 @@ service TodoService {
   rpc WatchTodos (WatchTodosRequest) returns (stream TodoEvent) {
     option (google.api.http) = {
       get: "/v1/todos/watch"
+    };
+    option (aisphere.access.v1.policy) = {
+      exposure: AUTHORIZED
+      authz: {
+        action: "watch"
+        resource: "todo:collection"
+        audience: "todo-service"
+        mode: CHECK_ONLY
+      }
+      audit: {
+        enabled: true
+        event: "todo.watch"
+        risk: "low"
+      }
+      rate_limit: {
+        enabled: true
+        key: "principal"
+        qps: 20
+        burst: 40
+        backend: MEMORY
+      }
     };
   }
 
@@ -81,6 +208,27 @@ service TodoService {
     option (google.api.http) = {
       post: "/v1/todos/sync"
       body: "*"
+    };
+    option (aisphere.access.v1.policy) = {
+      exposure: AUTHORIZED
+      authz: {
+        action: "sync"
+        resource: "todo:collection"
+        audience: "todo-service"
+        mode: CHECK_ONLY
+      }
+      audit: {
+        enabled: true
+        event: "todo.sync"
+        risk: "medium"
+      }
+      rate_limit: {
+        enabled: true
+        key: "principal"
+        qps: 20
+        burst: 40
+        backend: MEMORY
+      }
     };
   }
 }

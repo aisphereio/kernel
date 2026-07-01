@@ -1,0 +1,31 @@
+app:
+  name: gateway
+  version: dev
+
+deployment:
+  replicas: 1
+
+server:
+  http:
+    enabled: true
+    address: ":18080"
+    timeout: "5s"
+  grpc:
+    enabled: false
+
+system_routes:
+  enabled: true
+  healthz: true
+  readyz: true
+  version: true
+
+security:
+  authn:
+    provider: passive
+    required: false
+  authz:
+    provider: none
+    required: false
+  audit:
+    enabled: true
+    provider: memory

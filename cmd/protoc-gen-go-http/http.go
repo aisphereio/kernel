@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -86,8 +87,27 @@ func genService(_ *protogen.Plugin, file *protogen.File, g *protogen.GeneratedFi
 		}
 	}
 	if len(sd.Methods) != 0 {
+		sortHTTPMethods(sd.Methods)
 		g.P(sd.execute())
 	}
+}
+
+func sortHTTPMethods(methods []*methodDesc) {
+	sort.SliceStable(methods, func(i, j int) bool {
+		a, b := methods[i], methods[j]
+		if a.Method != b.Method {
+			return a.Method < b.Method
+		}
+		av, bv := strings.Count(a.Path, "{"), strings.Count(b.Path, "{")
+		if av != bv {
+			return av < bv
+		}
+		aseg, bseg := strings.Count(a.Path, "/"), strings.Count(b.Path, "/")
+		if aseg != bseg {
+			return aseg > bseg
+		}
+		return a.Path < b.Path
+	})
 }
 
 func hasHTTPRule(services []*protogen.Service) bool {

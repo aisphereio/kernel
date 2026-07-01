@@ -1,133 +1,84 @@
-# Aisphere Kernel Docs
+# Aisphere Kernel 文档中心
 
-Aisphere Kernel 文档导航。文档按"角色 × 场景"组织，按需查阅，无需通读。
+本目录只保留当前 Kernel 开发范式需要阅读的主线文档。过期、阶段性或历史对比材料已经移入 `docs/archive/legacy/`，不要作为新业务开发依据。
 
----
+## 1. 先读这三份
 
-## 文档地图
+1. [Kernel 边界与分层](architecture/kernel-boundary.md)
+2. [规范驱动开发范式](ai/kernel-development-paradigm.md)
+3. [Agent 开发规则](../AGENTS.md)
 
-### 快速上手（所有人先看）
+这三份文档定义了 Kernel 的核心原则：**业务只声明契约，框架负责检查、生成、装配、治理和验证**。
 
-| 文档 | 内容 | 何时看 |
+## 2. Contract：写业务前必须对齐
+
+| 主题 | 文档 | 作用 |
 |---|---|---|
-| `../README.md` | 项目总览 + 启动命令 | 第一次接触项目 |
-| `../AGENTS.md` | AI 工作规则 | AI 协作开发前 |
-| `../errorx/README.md` | errorx 单一入口指南 | 写任何业务代码前 |
-| `../logx/README.md` | logx 单一入口指南 | 写任何日志前 |
-| `../configx/README.md` | configx 单一入口指南 | 写任何配置前 |
+| Access Policy | [contracts/access-policy.md](contracts/access-policy.md) | 定义 PUBLIC / AUTHENTICATED / AUTHORIZED / INTERNAL / SYSTEM |
+| RequestInfo | [contracts/request-info.md](contracts/request-info.md) | 请求元信息中心，禁止业务解析 raw path/method |
+| 生成 RequestInfo | [contracts/generated-request-info.md](contracts/generated-request-info.md) | 由 proto option 生成 request resolver |
+| Admission | [contracts/admission.md](contracts/admission.md) | 跨接口默认值、准入校验、状态机规则 |
+| 服务间调用 | [contracts/downstream-policy.md](contracts/downstream-policy.md) | 下游调用 timeout/retry/breaker/service-auth |
+| 限流 | [contracts/rate-limit.md](contracts/rate-limit.md) | memory/redis/external、单副本/多副本语义 |
+| Serverx | [contracts/serverx.md](contracts/serverx.md) | 一键服务装配、系统路由、transport 生命周期 |
+| Gateway 路由 | [contracts/gateway-routing.md](contracts/gateway-routing.md) | Route Manifest、RouteRegistry、K8s Service upstream |
+| 启动治理校验 | [contracts/boot-governance-validation.md](contracts/boot-governance-validation.md) | 多副本、provider、authn/authz/audit 配置校验 |
+| 数据开发范式 | [contracts/dbx-data-development.md](contracts/dbx-data-development.md) | SQL migration、dbx、migrationx、dbrepo 的规范 |
 
-### 深度规范（架构师 / PR review / 设计新模块时看）
+## 3. Design：框架设计依据
 
-| 文档 | 内容 | 行数 |
-|---|---|---:|
-| `design/errorx.md` | errorx 完整设计规范（26 章） | ~1250 |
-| `design/logx.md` | logx 设计规范 | — |
-| `design/configx.md` | configx 设计规范 | — |
-| `design/kratos-v2.md` | Kratos v2 升级设计 | — |
-| `contracts/errorx.md` | errorx 不可破坏契约 + 验收命令 | ~140 |
-
-### AI 编码指南（AI 写业务代码时看）
-
-| 文档 | 内容 |
+| 主题 | 文档 |
 |---|---|
-| `ai/errorx.md` | errorx 完整 AI 指南：速查 + 食谱 + 禁用模式 + 完整 handler 示例 |
-| `ai/configx.md` | configx 完整 AI 指南：Source + Scan + Watch + 禁用模式 |
-| `ai/metricsx.md` | metricsx 与 kernel.PrometheusMetrics / kernel.Metrics 启动指南 |
-| `ai/dtmx.md` | dtmx 分布式事务抽象、DTM Saga、branch header 认证边界 |
-| `ai/proto-authz-generation.md` | proto authz 生成器与 secure client 说明 |
+| Kubernetes apiserver 可学习范式 | [design/k8s-apiserver-lessons.md](design/k8s-apiserver-lessons.md) |
+| Kernel 边界与分层 | [architecture/kernel-boundary.md](architecture/kernel-boundary.md) |
+| AuthN/AuthZ/Audit 设计 | [design/security-authn-authz-auditx.md](design/security-authn-authz-auditx.md) |
 
-> 该文档合并了原 `ai/00-quickstart.md` + `ai/recipes/errorx.md` + `ai/99-forbidden-patterns.md`，
-> AI 拿到这一个文件即可写对所有 errorx 场景。
+## 4. Validation：验证业务代码放这里
 
-### 验收与运维（CI/CD / 发版前看）
+验证代码不属于 Kernel 核心能力包，统一放在 `validation/`。
 
-| 文档 | 内容 |
+| 验证场景 | 文档 | 测试命令 |
+|---|---|---|
+| IAM + Gateway 治理链路 | [demos/iam-gateway-demo.md](demos/iam-gateway-demo.md) | `go test ./validation/iamgateway` |
+| 平台完整链路验证 | [demos/platform-gateway-iam-skill-flow.md](demos/platform-gateway-iam-skill-flow.md) | `go test ./validation/platformflow` |
+
+## 5. AI / Agent 工作方式
+
+| 主题 | 文档 |
 |---|---|
-| `process/errorx-acceptance-checklist.md` | errorx 静态/单元/集成验收清单 |
-| `process/configx-acceptance-checklist.md` | configx 静态/单元/集成验收清单 |
-| `process/errorx-test-report.md` | errorx 测试报告 |
-| `process/module-acceptance.md` | 通用模块验收流程 |
-| `../cmd/protoc-gen-go-authz/README.md` | authz 生成器用法与规则模式 |
-| `../cmd/buf-check-aisphere/README.md` | proto 安全契约检查器用法 |
-| `process/windows-script-policy.md` | Windows 脚本执行策略说明 |
+| 开发范式 | [ai/kernel-development-paradigm.md](ai/kernel-development-paradigm.md) |
+| GitHub Actions 委托构建 | [ai/github-actions-build-delegation.md](ai/github-actions-build-delegation.md) |
 
-### 迁移与历史（升级时看）
+## 6. 文档维护规则
 
-| 文档 | 内容 |
-|---|---|
-| `migration/v2-to-v3.md` | Kratos v2 → v3 迁移指南 |
-| `migration/v2-to-v3_zh.md` | 中文版 |
-| `migration/source-adoption-baseline.md` | 源码采纳基线 |
+- 新业务开发只参考当前 README 链接出的文档。
+- 历史分析、对比、阶段性草稿放入 `docs/archive/legacy/`。
+- 文档默认使用中文。
+- 代码能力变化时，必须同步更新对应 `docs/contracts/*.md` 和 `AGENTS.md`。
+- 如果文档与代码冲突，以代码和测试为准，并立即修正文档。
 
-### 上游参考（只读）
+## IAM 与 Casdoor 边界
 
-| 文档 | 内容 |
-|---|---|
-| `upstream/KRATOS_README.md` | Kratos 上游 README |
-| `upstream/KRATOS_README_zh.md` | 中文版 |
-| `upstream/KRATOS_Makefile` | Kratos 上游 Makefile 参考 |
+- `docs/architecture/iam-boundary.md`：Kernel IAM 与 Casdoor 的职责边界。
+- `docs/contracts/iam-domain.md`：用户、组织、多级组、membership 的 Kernel 领域模型规范。
+- `docs/reference/casdoor-study.md`：Casdoor 源码学习记录和采纳/不采纳决策。
 
----
+## 身份与权限边界
 
-## 推荐阅读路径
+- Authn/Authz Provider 边界：`docs/architecture/authn-authz-provider-boundary.md`
+- IAM/Casdoor 边界：`docs/architecture/iam-boundary.md`
+- IAM 领域视图规范：`docs/contracts/iam-domain.md`
 
-### 路径 A：新开发者（1 小时上手）
+## 验证业务与开发流程
 
-```text
-1. ../README.md                          ← 了解项目
-2. ../AGENTS.md                          ← 了解 AI 规则
-3. ../errorx/README.md                   ← 学会写错误
-4. ../logx/README.md                     ← 学会写日志
-5. ../configx/README.md                  ← 学会写配置
-6. docs/ai/metricsx.md                  ← 学会接入 metrics
-7. docs/ai/dtmx.md                      ← 需要分布式事务时阅读
-8. 跑通 examples/errorx-basic            ← 第一个示例
-9. 跑通 examples/errorx-http             ← HTTP 示例
-```
+- [IAM 微服务 Kernel 开发流程](demos/iam-service-kernel-flow.md)
 
-### 路径 B：AI 协作开发（30 分钟）
+## 新增服务治理文档
 
-```text
-1. ../AGENTS.md                          ← AI 规则
-2. ai/errorx.md                          ← errorx AI 指南（含 10 个食谱）
-3. ../errorx/example_test.go             ← Go 标准 Example
-4. 复制 examples/errorx-basic 改成业务代码
-```
+- [服务配置契约：HTTP / gRPC](contracts/service-config.md)
+- [Gateway 到服务真实 gRPC 验证链路](demos/platform-real-grpc-flow.md)
 
-### 路径 C：架构师 / PR review
+## 自动装载
 
-```text
-1. design/errorx.md                      ← 完整设计规范
-2. contracts/errorx.md                   ← 不可破坏契约
-3. process/errorx-acceptance-checklist.md ← 验收清单
-```
-
-### 路径 D：CI/CD 集成
-
-```text
-1. process/errorx-acceptance-checklist.md
-2. ../Makefile                           ← make verify-errorx / make test-errorx
-3. process/windows-script-policy.md      ← Windows 兼容
-```
-
----
-
-## 文档维护规则
-
-1. **单一入口原则**：每个模块只有一个 README 作为入口，其他文档从 README 链接出去
-2. **不重复**：同一信息只在一个地方定义，其他地方链接过去
-3. **分类清晰**：design（设计）/ contracts（契约）/ guides（指南）/ ai（AI）/ process（流程）/ migration（迁移）严格分类
-4. **AI 文档合并**：AI 速查、食谱、禁用模式合并为单一 `ai/<module>.md`，AI 拿一个文件即可
-5. **删除即合并**：如果两个文档 80% 重复，合并成一个，删除另一个
-
----
-
-## 当前状态
-
-```text
-✅ errorx 文档体系已完成单一入口重构
-✅ configx 文档体系已按 skill 建立
-⬜ logx 文档体系待按相同模式重构
-✅ metricsx / dtmx 已补 AI 指南和 layout 启动模板
-⬜ 后续模块（httpx / grpcx / dbx / ...）按相同模式建立文档
-```
+- [ServiceModule 自动装载契约](contracts/service-module-autoload.md)
+- [Gateway / IAM / SkillService 自动装载验证流](demos/platform-autoload-flow.md)

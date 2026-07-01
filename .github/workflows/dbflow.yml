@@ -1,0 +1,21 @@
+name: dbflow
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Download deps
+        run: go mod download
+      - name: Test data packages
+        run: go test ./migrationx ./dbrepo ./serverx -count=1

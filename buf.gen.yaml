@@ -32,6 +32,16 @@ plugins:
     opt:
       - paths=source_relative
 
+  - local: protoc-gen-go-gateway
+    out: .
+    opt:
+      - paths=source_relative
+
+  - local: protoc-gen-go-kernel
+    out: .
+    opt:
+      - paths=source_relative
+
   - local: protoc-gen-openapiv2
     out: docs/openapi
     strategy: all

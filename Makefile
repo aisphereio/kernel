@@ -110,6 +110,8 @@ else
 	@if [ -d cmd/protoc-gen-go-http ]; then cd cmd/protoc-gen-go-http && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
 	@if [ -d cmd/protoc-gen-go-errors ]; then cd cmd/protoc-gen-go-errors && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
 	@if [ -d cmd/protoc-gen-go-authz ]; then cd cmd/protoc-gen-go-authz && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
+	@if [ -d cmd/protoc-gen-go-gateway ]; then cd cmd/protoc-gen-go-gateway && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
+	@if [ -d cmd/protoc-gen-go-kernel ]; then cd cmd/protoc-gen-go-kernel && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
 	@GOBIN=$(LOCAL_BIN) $(GO) install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
 	@GOBIN=$(LOCAL_BIN) $(GO) install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
 	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.29.0
@@ -151,6 +153,8 @@ else
 	@if [ -d cmd/protoc-gen-go-http ]; then cd cmd/protoc-gen-go-http && $(GO) test ./...; fi
 	@if [ -d cmd/protoc-gen-go-errors ]; then cd cmd/protoc-gen-go-errors && $(GO) test ./...; fi
 	@if [ -d cmd/protoc-gen-go-authz ]; then cd cmd/protoc-gen-go-authz && $(GO) test ./...; fi
+	@if [ -d cmd/protoc-gen-go-gateway ]; then cd cmd/protoc-gen-go-gateway && $(GO) test ./...; fi
+	@if [ -d cmd/protoc-gen-go-kernel ]; then cd cmd/protoc-gen-go-kernel && $(GO) test ./...; fi
 endif
 
 test-race:

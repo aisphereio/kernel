@@ -1,0 +1,51 @@
+app:
+  name: iam-service
+  version: dev
+
+deployment:
+  replicas: 1
+
+server:
+  http:
+    enabled: true
+    address: ":18081"
+    timeout: "2s"
+  grpc:
+    enabled: true
+    address: ":19081"
+    timeout: "2s"
+
+system_routes:
+  enabled: true
+  healthz: true
+  readyz: true
+  version: true
+
+security:
+  authn:
+    provider: casdoor
+    required: true
+  authz:
+    provider: spicedb
+    required: true
+  audit:
+    enabled: true
+    provider: memory
+
+
+database:
+  enabled: false
+  driver: postgres
+  dsn: ${DATABASE_DSN}
+  auto_create_database: false
+  max_open_conns: 20
+  max_idle_conns: 10
+  query_timeout: "2s"
+  slow_query_threshold: "200ms"
+  migration:
+    enabled: true
+    engine: goose
+    dir: ./migrations
+    table: kernel_schema_migrations
+    mode: validate
+    fail_on_pending: true

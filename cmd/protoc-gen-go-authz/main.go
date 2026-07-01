@@ -65,7 +65,10 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
 	g.P()
 
 	authzPkg := protogen.GoImportPath("github.com/aisphereio/kernel/authz")
+	accessxPkg := protogen.GoImportPath("github.com/aisphereio/kernel/accessx")
 	contextxPkg := protogen.GoImportPath("github.com/aisphereio/kernel/contextx")
+	requestxPkg := protogen.GoImportPath("github.com/aisphereio/kernel/requestx")
+	accessv1Pkg := protogen.GoImportPath("github.com/aisphereio/kernel/api/aisphere/access/v1")
 	contextPkg := protogen.GoImportPath("context")
 	grpcPkg := protogen.GoImportPath("google.golang.org/grpc")
 	stringsPkg := protogen.GoImportPath("strings")
@@ -80,6 +83,8 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
 		}
 		genRules(g, authzPkg, svc, mrs)
 		genManifest(g, svc, mrs)
+		genRequestInfoResolver(g, requestxPkg, accessv1Pkg, contextPkg, svc, mrs)
+		genAccessResolver(g, authzPkg, accessxPkg, contextxPkg, contextPkg, svc, mrs)
 		genSecureClient(g, authzPkg, contextxPkg, contextPkg, grpcPkg, stringsPkg, svc, mrs)
 	}
 }
@@ -103,11 +108,32 @@ func parseMethodRule(svc *protogen.Service, m *protogen.Method) (rule, bool) {
 		return rule{}, false
 	}
 	unknown := opts.ProtoReflect().GetUnknown()
-	authzPayload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtAuthz)
-	if !ok {
-		return rule{}, false
+	var a protooptions.AuthzRule
+	var auditEvent, auditRisk string
+
+	if accessPayload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtAccess); ok {
+		access := protooptions.ParseAccessPolicy(accessPayload)
+		// Only AUTHORIZED access policies produce authz resolvers. PUBLIC,
+		// AUTHENTICATED, INTERNAL, and SYSTEM remain explicit access contracts
+		// but do not require resource authorization glue code.
+		if access.Exposure != 3 {
+			return rule{}, false
+		}
+		a = access.Authz
+		auditEvent = access.Audit.Event
+		auditRisk = access.Audit.Risk
+	} else {
+		authzPayload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtAuthz)
+		if !ok {
+			return rule{}, false
+		}
+		a = protooptions.ParseAuthz(authzPayload)
+		if payload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtAudit); ok {
+			audit := protooptions.ParseAudit(payload)
+			auditEvent = audit.Event
+			auditRisk = audit.Risk
+		}
 	}
-	a := protooptions.ParseAuthz(authzPayload)
 	if a.Action == "" && a.Resource == "" && a.Audience == "" {
 		return rule{}, false
 	}
@@ -119,14 +145,11 @@ func parseMethodRule(svc *protogen.Service, m *protogen.Method) (rule, bool) {
 		Resource:   a.Resource,
 		Audience:   a.Audience,
 		Mode:       modeName(int(a.Mode)),
+		AuditEvent: auditEvent,
+		AuditRisk:  auditRisk,
 	}
 	if r.Mode == "" {
 		r.Mode = "CHECK_ONLY"
-	}
-	if payload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtAudit); ok {
-		audit := protooptions.ParseAudit(payload)
-		r.AuditEvent = audit.Event
-		r.AuditRisk = audit.Risk
 	}
 	if payload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtCapability); ok {
 		cap := protooptions.ParseCapability(payload)
@@ -174,6 +197,81 @@ func genManifest(g *protogen.GeneratedFile, svc *protogen.Service, mrs []methodR
 	b, _ := json.MarshalIndent(map[string]any{"service": string(svc.Desc.FullName()), "methods": list}, "", "  ")
 	g.P("const ", svc.GoName, "AuthzManifestJSON = `", string(b), "`")
 	g.P()
+}
+
+func genRequestInfoResolver(g *protogen.GeneratedFile, requestxPkg, accessv1Pkg, contextPkg protogen.GoImportPath, svc *protogen.Service, mrs []methodRule) {
+	resolverName := svc.GoName + "RequestInfoResolver"
+	g.P("// ", resolverName, " maps generated proto access policy into requestx.Info.")
+	g.P("// It should be passed to autowire.WithRequestInfoResolver / WithClientRequestInfoResolver.")
+	g.P("func ", resolverName, "(ctx ", contextPkg.Ident("Context"), ", operation string, req any) (", requestxPkg.Ident("Info"), ", bool, error) {")
+	g.P("_ = ctx")
+	g.P("_ = req")
+	g.P("rule, ok := ", svc.GoName, "AuthzRules[operation]")
+	g.P("if !ok && operation != \"\" {")
+	g.P("rule, ok = ", svc.GoName, "AuthzRules[", normalizeOperationName(svc), "(operation)]")
+	g.P("}")
+	g.P("if !ok {")
+	g.P("return ", requestxPkg.Ident("Info"), "{}, false, nil")
+	g.P("}")
+	g.P("info := ", requestxPkg.Ident("Info"), "{")
+	g.P("Service: rule.Service,")
+	g.P("Method: rule.Method,")
+	g.P("Operation: rule.FullMethod,")
+	g.P("Exposure: ", accessv1Pkg.Ident("Exposure_AUTHORIZED"), ",")
+	g.P("Action: rule.Action,")
+	g.P("Resource: rule.Resource,")
+	g.P("TargetService: rule.Audience,")
+	g.P("Labels: map[string]string{\"authz_mode\": string(rule.Mode)},")
+	g.P("}")
+	g.P("if rule.AuditEvent != \"\" { info.Labels[\"audit_event\"] = rule.AuditEvent }")
+	g.P("if rule.AuditRisk != \"\" { info.Labels[\"audit_risk\"] = rule.AuditRisk }")
+	g.P("if rule.Capability != \"\" { info.Labels[\"capability\"] = rule.Capability }")
+	g.P("return info.Normalize(), true, nil")
+	g.P("}")
+	g.P()
+}
+
+func genAccessResolver(g *protogen.GeneratedFile, authzPkg, accessxPkg, contextxPkg, contextPkg protogen.GoImportPath, svc *protogen.Service, mrs []methodRule) {
+	resolverName := svc.GoName + "AccessResolver"
+	g.P("// ", resolverName, " maps generated proto authz rules into accessx.Check.")
+	g.P("// It matches middleware/access.Resolver, so services can pass it directly to autowire.WithAccess.")
+	g.P("func ", resolverName, "(ctx ", contextPkg.Ident("Context"), ", operation string, req any) (", accessxPkg.Ident("Check"), ", bool, error) {")
+	g.P("rule, ok := ", svc.GoName, "AuthzRules[operation]")
+	g.P("if !ok && operation != \"\" {")
+	g.P("rule, ok = ", svc.GoName, "AuthzRules[", normalizeOperationName(svc), "(operation)]")
+	g.P("}")
+	g.P("if !ok || rule.Action == \"\" {")
+	g.P("return ", accessxPkg.Ident("Check"), "{}, false, nil")
+	g.P("}")
+	g.P("resource, err := (", authzPkg.Ident("RuleResolver"), "{}).ResolveResource(rule, req)")
+	g.P("if err != nil { return ", accessxPkg.Ident("Check"), "{}, true, err }")
+	g.P("_ = ctx")
+	g.P("check := ", accessxPkg.Ident("Check"), "{")
+	g.P("Permission: rule.Action,")
+	g.P("Resource: resource,")
+	g.P("AuditAction: rule.AuditEvent,")
+	g.P("Metadata: map[string]any{\"authz_rule\": rule.FullMethod, \"authz_mode\": string(rule.Mode)},")
+	g.P("}")
+	g.P("if check.AuditAction == \"\" { check.AuditAction = rule.Action }")
+	g.P("return check, true, nil")
+	g.P("}")
+	g.P()
+	g.P("func ", normalizeOperationName(svc), "(operation string) string {")
+	g.P("switch operation {")
+	for _, mr := range mrs {
+		r := mr.rule
+		g.P("case ", fmt.Sprintf("%q", r.Method), ", ", fmt.Sprintf("%q", strings.TrimPrefix(r.FullMethod, "/")), ":")
+		g.P("return ", fmt.Sprintf("%q", r.FullMethod))
+	}
+	g.P("default:")
+	g.P("return operation")
+	g.P("}")
+	g.P("}")
+	g.P()
+}
+
+func normalizeOperationName(svc *protogen.Service) string {
+	return "_" + svc.GoName + "NormalizeOperation"
 }
 
 func genSecureClient(g *protogen.GeneratedFile, authzPkg, contextxPkg, contextPkg, grpcPkg, stringsPkg protogen.GoImportPath, svc *protogen.Service, mrs []methodRule) {

@@ -1,0 +1,52 @@
+name: governance-demo
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'serverx/**'
+      - 'validation/iamgateway/**'
+      - 'validation/platformflow/**'
+      - 'gatewayx/**'
+      - 'cmd/protoc-gen-go-gateway/**'
+      - 'cmd/protoc-gen-go-kernel/**'
+      - 'bootx/**'
+      - 'requestx/**'
+      - 'admissionx/**'
+      - 'middleware/**'
+      - 'ratelimitx/**'
+      - 'clientpolicyx/**'
+      - 'docs/**'
+      - 'AGENTS.md'
+      - '.github/workflows/governance-demo.yml'
+
+jobs:
+  targeted-governance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Targeted governance tests
+        run: |
+          set -euxo pipefail
+          go test ./cmd/protoc-gen-go-gateway ./cmd/protoc-gen-go-kernel ./gatewayx ./serverx ./validation/iamgateway ./validation/platformflow ./bootx ./requestx ./admissionx ./middleware/autowire ./ratelimitx ./clientpolicyx ./middleware/retry ./middleware/timeout | tee governance-targeted-tests.log
+      - name: Optional fullflow compile smoke
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+          (cd layout && go test ./api/todo/v1 -run TestNonExistent -count=0) | tee governance-layout-api.log
+          (cd layout && go test ./cmd/fullflow-smoke -run TestNonExistent -count=0) | tee governance-fullflow-compile.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: governance-demo-logs
+          path: |
+            governance-targeted-tests.log
+            governance-layout-api.log
+            governance-fullflow-compile.log
+          if-no-files-found: ignore
+          retention-days: 7

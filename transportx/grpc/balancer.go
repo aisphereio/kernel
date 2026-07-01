@@ -7,6 +7,7 @@ import (
 
 	"github.com/aisphereio/kernel/registry"
 	selector "github.com/aisphereio/kernel/selectorx"
+	"github.com/aisphereio/kernel/selectorx/wrr"
 	transport "github.com/aisphereio/kernel/transportx"
 )
 
@@ -20,6 +21,9 @@ var (
 )
 
 func init() {
+	if selector.GlobalSelector() == nil {
+		selector.SetGlobalSelector(wrr.NewBuilder())
+	}
 	b := base.NewBalancerBuilder(
 		balancerName,
 		&balancerBuilder{
@@ -36,6 +40,12 @@ type balancerBuilder struct {
 
 // Build creates a grpc Picker.
 func (b *balancerBuilder) Build(info base.PickerBuildInfo) balancer.Picker {
+	if b.builder == nil {
+		b.builder = selector.GlobalSelector()
+		if b.builder == nil {
+			b.builder = wrr.NewBuilder()
+		}
+	}
 	if len(info.ReadySCs) == 0 {
 		// Block the RPC until a new picker is available via UpdateState().
 		return base.NewErrPicker(balancer.ErrNoSubConnAvailable)

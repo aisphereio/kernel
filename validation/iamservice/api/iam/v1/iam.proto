@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package aisphere.iam.v1;
+
+option go_package = "iam-service/api/iam/v1;v1";
+
+import "google/api/annotations.proto";
+import "aisphere/access/v1/access.proto";
+
+service IAMService {
+  rpc Login(LoginRequest) returns (LoginReply) {
+    option (google.api.http) = { post: "/v1/iam/login" body: "*" };
+    option (aisphere.access.v1.policy) = {
+      exposure: PUBLIC
+      audit: { enabled: true event: "iam.login" risk: "medium" }
+      rate_limit: { enabled: true key: "ip" qps: 5 burst: 10 backend: MEMORY scope: LOCAL_INSTANCE }
+    };
+  }
+
+  rpc GetUser(GetUserRequest) returns (User) {
+    option (google.api.http) = { get: "/v1/iam/users/{id}" };
+    option (aisphere.access.v1.policy) = {
+      exposure: AUTHORIZED
+      authz: { action: "iam.user.get" resource: "iam:user:{id}" audience: "iam-service" mode: CHECK_ONLY }
+      audit: { enabled: true event: "iam.user.get" risk: "low" }
+    };
+  }
+}
+
+message LoginRequest { string username = 1; string password = 2; }
+message LoginReply { string access_token = 1; }
+message GetUserRequest { string id = 1; }
+message User { string id = 1; string display_name = 2; string org_id = 3; }

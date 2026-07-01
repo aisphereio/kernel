@@ -113,38 +113,114 @@ func (a *analyzer) checkMethod(fileName, pkg string, svc *descriptorpb.ServiceDe
 	unknown := protooptions.MethodUnknown(method)
 
 	hasHTTP := protooptions.HasExtension(unknown, protooptions.ExtGoogleHTTP)
+	accessPayloads := protooptions.FindExtensionPayloads(unknown, protooptions.ExtAccess)
 	authzPayloads := protooptions.FindExtensionPayloads(unknown, protooptions.ExtAuthz)
 	auditPayloads := protooptions.FindExtensionPayloads(unknown, protooptions.ExtAudit)
+	hasAccess := len(accessPayloads) > 0
 	hasAuthz := len(authzPayloads) > 0
 	hasAudit := len(auditPayloads) > 0
 
 	var diags []string
-	if hasHTTP && !hasAuthz {
-		diags = append(diags, methodRef+": external google.api.http method must declare aisphere.authz")
+	if hasHTTP && !hasAccess {
+		diags = append(diags, methodRef+": external google.api.http method must declare aisphere.access.v1.policy; use exposure=PUBLIC/AUTHENTICATED/AUTHORIZED/INTERNAL/SYSTEM instead of silent bypass")
 		return diags
 	}
+	if hasAccess {
+		access := protooptions.ParseAccessPolicy(accessPayloads[len(accessPayloads)-1])
+		diags = append(diags, a.checkAccessPolicy(methodRef, method, access)...)
+		return diags
+	}
+
+	// Legacy non-HTTP gRPC methods may still use the older authz/audit options.
 	if !hasAuthz {
 		return diags
 	}
 
 	authz := protooptions.ParseAuthz(authzPayloads[len(authzPayloads)-1])
-	if authz.Action == "" {
-		diags = append(diags, methodRef+": aisphere.authz.action must not be empty")
-	}
-	if authz.Resource == "" {
-		diags = append(diags, methodRef+": aisphere.authz.resource must not be empty")
-	}
-	if authz.Audience == "" {
-		diags = append(diags, methodRef+": aisphere.authz.audience must not be empty")
-	}
-	if authz.Mode == 0 {
-		diags = append(diags, methodRef+": aisphere.authz.mode must not be AUTHZ_MODE_UNSPECIFIED")
+	diags = append(diags, a.checkAuthzRule(methodRef, method, authz, hasAudit, auditPayloads)...)
+	return diags
+}
+
+func (a *analyzer) checkAccessPolicy(methodRef string, method *descriptorpb.MethodDescriptorProto, access protooptions.AccessPolicy) []string {
+	var diags []string
+	if access.Exposure == 0 {
+		diags = append(diags, methodRef+": aisphere.access.v1.policy.exposure must not be EXPOSURE_UNSPECIFIED")
+		return diags
 	}
 
-	if isHighRiskAction(authz.Action, a.config.HighRiskActions) && !hasAudit {
-		diags = append(diags, methodRef+": high-risk authz action "+quote(authz.Action)+" must declare aisphere.audit")
+	if access.RateLimit.Enabled {
+		if access.RateLimit.Key == "" {
+			diags = append(diags, methodRef+": access.rate_limit.key must not be empty when rate_limit.enabled=true")
+		}
+		if access.RateLimit.QPS <= 0 {
+			diags = append(diags, methodRef+": access.rate_limit.qps must be > 0 when rate_limit.enabled=true")
+		}
+		if access.RateLimit.Burst <= 0 {
+			diags = append(diags, methodRef+": access.rate_limit.burst must be > 0 when rate_limit.enabled=true")
+		}
+		if access.RateLimit.Backend == 0 {
+			diags = append(diags, methodRef+": access.rate_limit.backend must be MEMORY/REDIS/EXTERNAL when rate_limit.enabled=true")
+		}
 	}
-	if hasAudit {
+
+	switch access.Exposure {
+	case 1: // PUBLIC
+		if isPublicSensitive(methodRef) && !access.RateLimit.Enabled {
+			diags = append(diags, methodRef+": PUBLIC login/register/token endpoint must declare access.rate_limit")
+		}
+		if access.Audit.Enabled && access.Audit.Event == "" {
+			diags = append(diags, methodRef+": access.audit.event must not be empty when audit.enabled=true")
+		}
+	case 2: // AUTHENTICATED
+		if access.Audit.Enabled && access.Audit.Event == "" {
+			diags = append(diags, methodRef+": access.audit.event must not be empty when audit.enabled=true")
+		}
+	case 3: // AUTHORIZED
+		diags = append(diags, a.checkAuthzRule(methodRef, method, access.Authz, access.Audit.Enabled, nil)...)
+		if access.Audit.Enabled && access.Audit.Event == "" {
+			diags = append(diags, methodRef+": access.audit.event must not be empty for AUTHORIZED endpoint")
+		}
+		if isHighRiskAction(access.Authz.Action, a.config.HighRiskActions) {
+			if !access.Audit.Enabled {
+				diags = append(diags, methodRef+": high-risk AUTHORIZED action "+quote(access.Authz.Action)+" must enable access.audit")
+			} else if access.Audit.Risk == "" {
+				diags = append(diags, methodRef+": high-risk AUTHORIZED action "+quote(access.Authz.Action)+" should set access.audit.risk")
+			}
+		}
+	case 4: // INTERNAL
+		if access.Reason == "" {
+			diags = append(diags, methodRef+": INTERNAL endpoint should set access.reason explaining the service boundary")
+		}
+	case 5: // SYSTEM
+		// SYSTEM endpoints are owned by bootx/serverx or explicit framework APIs.
+		// They do not require authz, but they should not accidentally enable empty audit metadata.
+		if access.Audit.Enabled && access.Audit.Event == "" {
+			diags = append(diags, methodRef+": SYSTEM endpoint audit.enabled=true requires access.audit.event")
+		}
+	default:
+		diags = append(diags, methodRef+": access.exposure has unknown value")
+	}
+	return diags
+}
+
+func (a *analyzer) checkAuthzRule(methodRef string, method *descriptorpb.MethodDescriptorProto, authz protooptions.AuthzRule, hasAudit bool, auditPayloads [][]byte) []string {
+	var diags []string
+	if authz.Action == "" {
+		diags = append(diags, methodRef+": authz.action must not be empty")
+	}
+	if authz.Resource == "" {
+		diags = append(diags, methodRef+": authz.resource must not be empty")
+	}
+	if authz.Audience == "" {
+		diags = append(diags, methodRef+": authz.audience must not be empty")
+	}
+	if authz.Mode == 0 {
+		diags = append(diags, methodRef+": authz.mode must not be AUTHZ_MODE_UNSPECIFIED")
+	}
+	if isHighRiskAction(authz.Action, a.config.HighRiskActions) && !hasAudit {
+		diags = append(diags, methodRef+": high-risk authz action "+quote(authz.Action)+" must declare audit")
+	}
+	if hasAudit && len(auditPayloads) > 0 {
 		audit := protooptions.ParseAudit(auditPayloads[len(auditPayloads)-1])
 		if audit.Event == "" {
 			diags = append(diags, methodRef+": aisphere.audit.event must not be empty")
@@ -153,7 +229,6 @@ func (a *analyzer) checkMethod(fileName, pkg string, svc *descriptorpb.ServiceDe
 			diags = append(diags, methodRef+": high-risk authz action "+quote(authz.Action)+" should set aisphere.audit.risk")
 		}
 	}
-
 	if authz.Resource != "" {
 		input := strings.TrimPrefix(method.GetInputType(), ".")
 		msg := a.messages[input]
@@ -166,13 +241,19 @@ func (a *analyzer) checkMethod(fileName, pkg string, svc *descriptorpb.ServiceDe
 	return diags
 }
 
+func isPublicSensitive(methodRef string) bool {
+	v := strings.ToLower(methodRef)
+	return strings.Contains(v, "login") || strings.Contains(v, "register") || strings.Contains(v, "token") || strings.Contains(v, "oauth")
+}
+
 func skipFile(name string) bool {
 	return strings.HasPrefix(name, "third_party/") ||
 		strings.HasPrefix(name, "vendor/") ||
 		strings.Contains(name, "/internal/testdata/") ||
 		strings.HasPrefix(name, "internal/testdata/") ||
 		strings.Contains(name, "/testdata/") ||
-		strings.HasSuffix(name, "aisphere/options/v1/authz.proto")
+		strings.HasSuffix(name, "aisphere/options/v1/authz.proto") ||
+		strings.HasSuffix(name, "aisphere/access/v1/access.proto")
 }
 
 func indexMessage(out map[string]*descriptorpb.DescriptorProto, pkg, prefix string, m *descriptorpb.DescriptorProto) {
