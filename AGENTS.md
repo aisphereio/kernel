@@ -19,6 +19,8 @@ proto contract
 
 如果 Kernel 当前表达不了需求，必须先修 Kernel，再写业务代码。
 
+AI 写业务代码前必须先阅读并应用 `docs/ai/advanced-feature-playbook.md`。只要需求命中其中的触发条件，就必须使用对应 Kernel 高级能力，不允许手写临时基础设施实现。
+
 ## 2. Runtime API 边界
 
 业务代码和生成代码可以 import 的主线 runtime 包：
@@ -72,7 +74,7 @@ grpcgatewayx
 | `layout/` | 项目模板 | 体现推荐使用方式，不是 runtime API |
 | `docs/` | 中文规范文档 | 能力变化必须同步文档 |
 
-更多说明参考：`docs/contracts/runtime-api-boundary.md` 和 `docs/contracts/package-status.md`。
+更多说明参考：`docs/contracts/runtime-api-boundary.md`、`docs/contracts/package-status.md` 和 `docs/ai/advanced-feature-playbook.md`。
 
 ## 4. 业务开发硬规则
 
@@ -131,6 +133,7 @@ go test ./serverx ./bootx ./requestx ./admissionx ./middleware/autowire ./rateli
 ## 6. 文档要求
 
 - 新能力必须同步 `docs/contracts/*.md`。
+- AI 高级能力触发条件变化必须同步 `docs/ai/advanced-feature-playbook.md`。
 - 设计变化必须同步 `docs/architecture/*.md` 或 `docs/design/*.md`。
 - Agent 规则变化必须同步本文件。
 - 文档默认使用中文。
