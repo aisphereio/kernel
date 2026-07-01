@@ -22,9 +22,9 @@ type Project struct {
 func (p *Project) New(ctx context.Context, dir string, layout string, branch string, opts ScaffoldOptions) error {
 	to := filepath.Join(dir, p.Name)
 	if _, err := os.Stat(to); !os.IsNotExist(err) {
-		fmt.Printf("🚫 %s already exists\n", p.Name)
+		fmt.Printf("%s already exists\n", p.Name)
 		prompt := &survey.Confirm{
-			Message: "📂 Do you want to override the folder ?",
+			Message: "Do you want to override the folder ?",
 			Help:    "Delete the existing folder and create the project.",
 		}
 		var override bool
@@ -37,7 +37,7 @@ func (p *Project) New(ctx context.Context, dir string, layout string, branch str
 		}
 		os.RemoveAll(to)
 	}
-	fmt.Printf("🚀 Creating service %s, layout is %s, please wait a moment.\n\n", p.Name, layout)
+	fmt.Printf("Creating service %s, layout is %s.\n\n", p.Name, layout)
 	repo := base.NewRepo(layout, branch)
 	if err := repo.CopyTo(ctx, to, p.Name, []string{".git", ".github"}); err != nil {
 		return err
@@ -56,14 +56,16 @@ func (p *Project) New(ctx context.Context, dir string, layout string, branch str
 	}
 	base.Tree(to, dir)
 
-	fmt.Printf("\n🍺 Project creation succeeded %s\n", color.GreenString(p.Name))
-	fmt.Print("💻 Use the following command to start the project 👇:\n\n")
+	fmt.Printf("\nProject creation succeeded %s\n", color.GreenString(p.Name))
+	fmt.Print("Use the following commands to verify and run the service:\n\n")
 
 	fmt.Println(color.WhiteString("$ cd %s", p.Name))
-	fmt.Println(color.WhiteString("$ go generate ./..."))
-	fmt.Println(color.WhiteString("$ go build -o ./bin/ ./... "))
-	fmt.Println(color.WhiteString("$ ./bin/%s -conf ./configs\n", p.Name))
-	fmt.Println("			🤝 Thanks for using Aisphere Kernel")
-	fmt.Println("	📚 Tutorial: https://kernel.aisphere.io/docs/getting-started/start")
+	fmt.Println(color.WhiteString("$ make tools"))
+	fmt.Println(color.WhiteString("$ make api"))
+	fmt.Println(color.WhiteString("$ make proto-check"))
+	fmt.Println(color.WhiteString("$ make verify"))
+	fmt.Println(color.WhiteString("$ make run"))
+	fmt.Println("\nThanks for using Aisphere Kernel")
+	fmt.Println("Docs: https://github.com/aisphereio/kernel/tree/master/docs")
 	return nil
 }
