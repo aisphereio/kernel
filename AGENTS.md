@@ -138,3 +138,15 @@ go test ./serverx ./bootx ./requestx ./admissionx ./middleware/autowire ./rateli
 - Agent 规则变化必须同步本文件。
 - 文档默认使用中文。
 - 过期文档移动到 `docs/archive/legacy/`，不要继续作为新开发依据。
+
+## 7. Generator 互相依赖约束
+
+`cmd/protoc-gen-go-kernel` 生成的 `_kernel.pb.go` 必须自洽：如果它在 `serverx.ServiceModule` 中引用 resolver，那么 resolver 必须由同一个 generator 生成，或引用 Kernel runtime 中稳定存在的 symbol。
+
+禁止让 `protoc-gen-go-kernel` 直接依赖 `protoc-gen-go-authz` 是否生成某个 `XxxRequestInfoResolver` / `XxxAccessResolver`。否则 PUBLIC、AUTHENTICATED、INTERNAL、SYSTEM-only service 会再次出现 undefined symbol。
+
+新增 proto generator 能力时，必须同步：
+
+```bash
+go test ./cmd/protoc-gen-go-kernel ./cmd/protoc-gen-go-authz ./serverx ./requestx ./accessx
+```

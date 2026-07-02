@@ -46,3 +46,13 @@ downstream policy proto option: planned
 ```
 
 规则：full profile 应展示完整 contract；MVP profile 只用于最小运行验证。生成器缺口优先在 Kernel 修复，不在业务项目长期手写 glue。
+
+## Generator ownership rule
+
+`protoc-gen-go-kernel` owns the `serverx.ServiceModule` shape. It must not emit references to helper symbols that are only produced by another generator unless the same generator also has a safe fallback.
+
+Current rule:
+
+- `protoc-gen-go-kernel` always generates module-scoped `KernelRequestInfoResolver` and `KernelAccessResolver` functions.
+- `protoc-gen-go-authz` can still generate richer client/server authz helpers, but `serverx.ServiceModule` no longer depends on those helper names to compile.
+- Business repositories must not add long-term hand-written resolver files just to make `_kernel.pb.go` compile. If a generator shape is missing, fix Kernel generator first.

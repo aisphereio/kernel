@@ -7,6 +7,8 @@ import (
 
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/types/pluginpb"
+
+	"github.com/aisphereio/kernel/internal/protooptions"
 )
 
 var showVersion = flag.Bool("version", false, "print version and exit")
@@ -28,6 +30,19 @@ func main() {
 	})
 }
 
+type kernelContract struct {
+	Method     string
+	FullMethod string
+	Exposure   int32
+	Action     string
+	Resource   string
+	Audience   string
+	Mode       string
+	AuditEvent string
+	AuditRisk  string
+	Capability string
+}
+
 func generateFile(gen *protogen.Plugin, file *protogen.File) {
 	if len(file.Services) == 0 {
 		return
@@ -41,10 +56,89 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
 	g.P()
 	g.P("package ", file.GoPackageName)
 	g.P()
+
 	serverxPkg := protogen.GoImportPath("github.com/aisphereio/kernel/serverx")
+	requestxPkg := protogen.GoImportPath("github.com/aisphereio/kernel/requestx")
+	accessxPkg := protogen.GoImportPath("github.com/aisphereio/kernel/accessx")
+	authzPkg := protogen.GoImportPath("github.com/aisphereio/kernel/authz")
+	accessv1Pkg := protogen.GoImportPath("github.com/aisphereio/kernel/api/aisphere/access/v1")
+	contextPkg := protogen.GoImportPath("context")
 	for _, svc := range file.Services {
+		contracts := collectKernelContracts(svc)
 		genServiceKernelModule(g, serverxPkg, svc)
+		genKernelRules(g, authzPkg, svc, contracts)
+		genKernelRequestInfoResolver(g, contextPkg, requestxPkg, accessv1Pkg, svc, contracts)
+		genKernelAccessResolver(g, contextPkg, accessxPkg, authzPkg, svc)
 	}
+}
+
+func collectKernelContracts(svc *protogen.Service) []kernelContract {
+	contracts := make([]kernelContract, 0, len(svc.Methods))
+	for _, m := range svc.Methods {
+		if c, ok := parseKernelContract(svc, m); ok {
+			contracts = append(contracts, c)
+		}
+	}
+	return contracts
+}
+
+func parseKernelContract(svc *protogen.Service, m *protogen.Method) (kernelContract, bool) {
+	opts := m.Desc.Options()
+	if opts == nil {
+		return kernelContract{}, false
+	}
+	unknown := opts.ProtoReflect().GetUnknown()
+	c := kernelContract{
+		Method:     string(m.Desc.Name()),
+		FullMethod: "/" + string(svc.Desc.FullName()) + "/" + string(m.Desc.Name()),
+	}
+	var hasPolicy bool
+	if accessPayload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtAccess); ok {
+		access := protooptions.ParseAccessPolicy(accessPayload)
+		c.Exposure = access.Exposure
+		c.Action = access.Authz.Action
+		c.Resource = access.Authz.Resource
+		c.Audience = access.Authz.Audience
+		c.Mode = modeName(int(access.Authz.Mode))
+		c.AuditEvent = access.Audit.Event
+		c.AuditRisk = access.Audit.Risk
+		hasPolicy = true
+	} else if authzPayload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtAuthz); ok {
+		a := protooptions.ParseAuthz(authzPayload)
+		c.Exposure = 3 // aisphere.access.v1.AUTHORIZED
+		c.Action = a.Action
+		c.Resource = a.Resource
+		c.Audience = a.Audience
+		c.Mode = modeName(int(a.Mode))
+		if payload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtAudit); ok {
+			audit := protooptions.ParseAudit(payload)
+			c.AuditEvent = audit.Event
+			c.AuditRisk = audit.Risk
+		}
+		hasPolicy = true
+	}
+	if !hasPolicy {
+		return kernelContract{}, false
+	}
+	if c.Exposure == 0 {
+		c.Exposure = 2 // default to AUTHENTICATED when a policy exists but exposure is omitted.
+	}
+	if c.Mode == "" && c.hasAuthz() {
+		c.Mode = "CHECK_ONLY"
+	}
+	if payload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtCapability); ok {
+		cap := protooptions.ParseCapability(payload)
+		if cap.Group != "" && cap.Name != "" {
+			c.Capability = cap.Group + "." + cap.Name
+		} else {
+			c.Capability = firstNonEmpty(cap.Name, cap.Group)
+		}
+	}
+	return c, true
+}
+
+func (c kernelContract) hasAuthz() bool {
+	return strings.TrimSpace(c.Action) != "" || strings.TrimSpace(c.Resource) != "" || strings.TrimSpace(c.Audience) != ""
 }
 
 func genServiceKernelModule(g *protogen.GeneratedFile, serverxPkg protogen.GoImportPath, svc *protogen.Service) {
@@ -54,11 +148,148 @@ func genServiceKernelModule(g *protogen.GeneratedFile, serverxPkg protogen.GoImp
 	g.P("return ", serverxPkg.Ident("ServiceModule"), "{")
 	g.P("Name: ", fmt.Sprintf("%q", defaultServiceName(string(svc.Desc.FullName()))), ",")
 	g.P("GatewayManifest: ", svc.GoName, "GatewayManifest(),")
-	g.P("RequestInfoResolver: ", svc.GoName, "RequestInfoResolver,")
-	g.P("AccessResolver: ", svc.GoName, "AccessResolver,")
+	g.P("RequestInfoResolver: ", svc.GoName, "KernelRequestInfoResolver,")
+	g.P("AccessResolver: ", svc.GoName, "KernelAccessResolver,")
 	g.P("}")
 	g.P("}")
 	g.P()
+}
+
+func genKernelRules(g *protogen.GeneratedFile, authzPkg protogen.GoImportPath, svc *protogen.Service, contracts []kernelContract) {
+	g.P("var ", svc.GoName, "KernelAuthzRules = ", authzPkg.Ident("Rules"), "{")
+	for _, c := range contracts {
+		if !c.hasAuthz() {
+			continue
+		}
+		g.P(fmt.Sprintf("%q", c.FullMethod), ": {")
+		g.P("Service: ", fmt.Sprintf("%q", string(svc.Desc.FullName())), ",")
+		g.P("Method: ", fmt.Sprintf("%q", c.Method), ",")
+		g.P("FullMethod: ", fmt.Sprintf("%q", c.FullMethod), ",")
+		g.P("Action: ", fmt.Sprintf("%q", c.Action), ",")
+		g.P("Resource: ", fmt.Sprintf("%q", c.Resource), ",")
+		g.P("Audience: ", fmt.Sprintf("%q", c.Audience), ",")
+		g.P("Mode: ", authzPkg.Ident("RuleMode"), "(", fmt.Sprintf("%q", c.Mode), "),")
+		if c.AuditEvent != "" {
+			g.P("AuditEvent: ", fmt.Sprintf("%q", c.AuditEvent), ",")
+		}
+		if c.AuditRisk != "" {
+			g.P("AuditRisk: ", fmt.Sprintf("%q", c.AuditRisk), ",")
+		}
+		if c.Capability != "" {
+			g.P("Capability: ", fmt.Sprintf("%q", c.Capability), ",")
+		}
+		g.P("},")
+	}
+	g.P("}")
+	g.P()
+}
+
+func genKernelRequestInfoResolver(g *protogen.GeneratedFile, contextPkg, requestxPkg, accessv1Pkg protogen.GoImportPath, svc *protogen.Service, contracts []kernelContract) {
+	name := svc.GoName + "KernelRequestInfoResolver"
+	g.P("// ", name, " maps proto access policy into requestx.Info for serverx modules.")
+	g.P("func ", name, "(ctx ", contextPkg.Ident("Context"), ", operation string, req any) (", requestxPkg.Ident("Info"), ", bool, error) {")
+	g.P("_ = ctx")
+	g.P("_ = req")
+	if len(contracts) == 0 {
+		g.P("return ", requestxPkg.Ident("Info"), "{}, false, nil")
+		g.P("}")
+		g.P()
+		return
+	}
+	g.P("switch ", kernelNormalizeOperationName(svc), "(operation) {")
+	for _, c := range contracts {
+		g.P("case ", fmt.Sprintf("%q", c.FullMethod), ":")
+		g.P("info := ", requestxPkg.Ident("Info"), "{")
+		g.P("Service: ", fmt.Sprintf("%q", string(svc.Desc.FullName())), ",")
+		g.P("Method: ", fmt.Sprintf("%q", c.Method), ",")
+		g.P("Operation: ", fmt.Sprintf("%q", c.FullMethod), ",")
+		g.P("Exposure: ", exposureIdent(accessv1Pkg, c.Exposure), ",")
+		if c.Action != "" {
+			g.P("Action: ", fmt.Sprintf("%q", c.Action), ",")
+		}
+		if c.Resource != "" {
+			g.P("Resource: ", fmt.Sprintf("%q", c.Resource), ",")
+		}
+		if c.Audience != "" {
+			g.P("TargetService: ", fmt.Sprintf("%q", c.Audience), ",")
+		}
+		g.P("Labels: map[string]string{},")
+		g.P("}")
+		if c.Mode != "" {
+			g.P("info.Labels[\"authz_mode\"] = ", fmt.Sprintf("%q", c.Mode))
+		}
+		if c.AuditEvent != "" {
+			g.P("info.Labels[\"audit_event\"] = ", fmt.Sprintf("%q", c.AuditEvent))
+		}
+		if c.AuditRisk != "" {
+			g.P("info.Labels[\"audit_risk\"] = ", fmt.Sprintf("%q", c.AuditRisk))
+		}
+		if c.Capability != "" {
+			g.P("info.Labels[\"capability\"] = ", fmt.Sprintf("%q", c.Capability))
+		}
+		g.P("return info.Normalize(), true, nil")
+	}
+	g.P("default:")
+	g.P("return ", requestxPkg.Ident("Info"), "{}, false, nil")
+	g.P("}")
+	g.P("}")
+	g.P()
+}
+
+func genKernelAccessResolver(g *protogen.GeneratedFile, contextPkg, accessxPkg, authzPkg protogen.GoImportPath, svc *protogen.Service) {
+	name := svc.GoName + "KernelAccessResolver"
+	g.P("// ", name, " maps proto authz policy into accessx.Check for serverx modules.")
+	g.P("func ", name, "(ctx ", contextPkg.Ident("Context"), ", operation string, req any) (", accessxPkg.Ident("Check"), ", bool, error) {")
+	g.P("rule, ok := ", svc.GoName, "KernelAuthzRules[", kernelNormalizeOperationName(svc), "(operation)]")
+	g.P("if !ok || rule.Action == \"\" {")
+	g.P("return ", accessxPkg.Ident("Check"), "{}, false, nil")
+	g.P("}")
+	g.P("resource, err := (", authzPkg.Ident("RuleResolver"), "{}).ResolveResource(rule, req)")
+	g.P("if err != nil { return ", accessxPkg.Ident("Check"), "{}, true, err }")
+	g.P("_ = ctx")
+	g.P("check := ", accessxPkg.Ident("Check"), "{")
+	g.P("Permission: rule.Action,")
+	g.P("Resource: resource,")
+	g.P("AuditAction: rule.AuditEvent,")
+	g.P("Metadata: map[string]any{\"authz_rule\": rule.FullMethod, \"authz_mode\": string(rule.Mode)},")
+	g.P("}")
+	g.P("if check.AuditAction == \"\" { check.AuditAction = rule.Action }")
+	g.P("return check, true, nil")
+	g.P("}")
+	g.P()
+	g.P("func ", kernelNormalizeOperationName(svc), "(operation string) string {")
+	g.P("switch operation {")
+	for _, m := range svc.Methods {
+		full := "/" + string(svc.Desc.FullName()) + "/" + string(m.Desc.Name())
+		g.P("case ", fmt.Sprintf("%q", string(m.Desc.Name())), ", ", fmt.Sprintf("%q", strings.TrimPrefix(full, "/")), ":")
+		g.P("return ", fmt.Sprintf("%q", full))
+	}
+	g.P("default:")
+	g.P("return operation")
+	g.P("}")
+	g.P("}")
+	g.P()
+}
+
+func exposureIdent(pkg protogen.GoImportPath, exposure int32) protogen.GoIdent {
+	switch exposure {
+	case 1:
+		return pkg.Ident("Exposure_PUBLIC")
+	case 2:
+		return pkg.Ident("Exposure_AUTHENTICATED")
+	case 3:
+		return pkg.Ident("Exposure_AUTHORIZED")
+	case 4:
+		return pkg.Ident("Exposure_INTERNAL")
+	case 5:
+		return pkg.Ident("Exposure_SYSTEM")
+	default:
+		return pkg.Ident("Exposure_EXPOSURE_UNSPECIFIED")
+	}
+}
+
+func kernelNormalizeOperationName(svc *protogen.Service) string {
+	return "_" + svc.GoName + "KernelNormalizeOperation"
 }
 
 func defaultServiceName(full string) string {
@@ -92,4 +323,26 @@ func kebab(s string) string {
 		b.WriteRune(r)
 	}
 	return strings.ReplaceAll(strings.Trim(b.String(), "."), "..", ".")
+}
+
+func modeName(v int) string {
+	switch v {
+	case 1:
+		return "CHECK_ONLY"
+	case 2:
+		return "SCOPED_TOKEN"
+	case 3:
+		return "SELF_CHECK"
+	default:
+		return "UNSPECIFIED"
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }
