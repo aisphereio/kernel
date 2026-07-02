@@ -44,6 +44,8 @@ type routeSpec struct {
 	Exposure        int32
 	Audience        string
 	Protocol        string
+	Profiles        []string
+	Tags            []string
 	PathVars        []pathVar
 }
 
@@ -87,6 +89,9 @@ func collectGatewayRoutes(file *protogen.File) map[string][]routeSpec {
 				continue
 			}
 			access := accessPolicy(m)
+			if access.Gateway.Publish == protooptions.GatewayPublishDisabled {
+				continue
+			}
 			all := append([]*annotations.HttpRule{}, rule.AdditionalBindings...)
 			all = append(all, rule)
 			for _, r := range all {
@@ -106,6 +111,8 @@ func collectGatewayRoutes(file *protogen.File) map[string][]routeSpec {
 					Exposure:        access.Exposure,
 					Audience:        strings.TrimSpace(access.Authz.Audience),
 					Protocol:        "grpc",
+					Profiles:        cleanStrings(access.Gateway.Profiles),
+					Tags:            cleanStrings(access.Gateway.Tags),
 					PathVars:        resolvePathVars(path, m.Input),
 				}
 				if spec.Exposure == 0 {
@@ -163,7 +170,7 @@ func genServiceManifest(g *protogen.GeneratedFile, gatewayxPkg, accessv1Pkg prot
 		g.P("Method: ", fmt.Sprintf("%q", rt.HTTPMethod), ",")
 		g.P("Path: ", fmt.Sprintf("%q", rt.Path), ",")
 		g.P("Upstream: ", gatewayxPkg.Ident("UpstreamRef"), "{Service: ", fmt.Sprintf("%q", svcName), ", Namespace: ", fmt.Sprintf("%q", "aisphere"), ", Protocol: ", fmt.Sprintf("%q", rt.Protocol), ", Operation: ", fmt.Sprintf("%q", rt.FullMethod), "},")
-		g.P("Gateway: ", gatewayxPkg.Ident("GatewayPolicy"), "{Exposure: ", accessv1Pkg.Ident(exposureIdent(rt.Exposure)), ", AuthnMode: ", gatewayxPkg.Ident(authnModeIdent(rt.Exposure)), ", ForwardAuthorization: ", forwardAuth(rt.Exposure), "},")
+		g.P("Gateway: ", gatewayxPkg.Ident("GatewayPolicy"), "{Exposure: ", accessv1Pkg.Ident(exposureIdent(rt.Exposure)), ", AuthnMode: ", gatewayxPkg.Ident(authnModeIdent(rt.Exposure)), ", ForwardAuthorization: ", forwardAuth(rt.Exposure), ", Profiles: ", formatStringSlice(rt.Profiles), ", Tags: ", formatStringSlice(rt.Tags), "},")
 		g.P("},")
 	}
 	g.P("},")
@@ -194,12 +201,8 @@ func genServiceBindings(g *protogen.GeneratedFile, gatewayxPkg protogen.GoImport
 	clientType := svc.GoName + "Client"
 	g.P("// ", regName, " registers generated Gateway -> gRPC operation invokers for ", svc.Desc.FullName(), ".")
 	g.P("func ", regName, "(registry *", gatewayxPkg.Ident("InvokerRegistry"), ", client ", clientType, ") error {")
-	for i, rt := range routes {
-		prefix := "if err := "
-		if i > 0 {
-			prefix = "if err := "
-		}
-		g.P(prefix, "registry.Register(", fmt.Sprintf("%q", rt.FullMethod), ", ", gatewayxPkg.Ident("GRPCUnaryInvoker"), "(", svc.GoName, "GatewayBind", rt.MethodGoName, ", client.", rt.MethodGoName, ")); err != nil { return err }")
+	for _, rt := range routes {
+		g.P("if err := registry.Register(", fmt.Sprintf("%q", rt.FullMethod), ", ", gatewayxPkg.Ident("GRPCUnaryInvoker"), "(", svc.GoName, "GatewayBind", rt.MethodGoName, ", client.", rt.MethodGoName, ")); err != nil { return err }")
 	}
 	g.P("return nil")
 	g.P("}")
@@ -312,3 +315,28 @@ func authnModeIdent(exposure int32) string {
 }
 
 func forwardAuth(exposure int32) bool { return exposure == 2 || exposure == 3 || exposure == 4 }
+
+func cleanStrings(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := map[string]bool{}
+	for _, v := range in {
+		v = strings.TrimSpace(v)
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
+}
+
+func formatStringSlice(values []string) string {
+	if len(values) == 0 {
+		return "nil"
+	}
+	parts := make([]string, 0, len(values))
+	for _, v := range values {
+		parts = append(parts, fmt.Sprintf("%q", v))
+	}
+	return "[]string{" + strings.Join(parts, ", ") + "}"
+}
