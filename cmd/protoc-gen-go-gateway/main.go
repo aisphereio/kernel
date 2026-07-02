@@ -88,7 +88,10 @@ func collectGatewayRoutes(file *protogen.File) map[string][]routeSpec {
 			if !ok || rule == nil {
 				continue
 			}
-			access := accessPolicy(m)
+			access, ok := accessPolicy(m)
+			if !ok {
+				continue
+			}
 			if access.Gateway.Publish == protooptions.GatewayPublishDisabled {
 				continue
 			}
@@ -117,7 +120,7 @@ func collectGatewayRoutes(file *protogen.File) map[string][]routeSpec {
 				}
 				if spec.Exposure == 0 {
 					spec.Exposure = 3
-				} // default to AUTHORIZED if buf-check is bypassed
+				}
 				out[svc.GoName] = append(out[svc.GoName], spec)
 			}
 		}
@@ -125,12 +128,12 @@ func collectGatewayRoutes(file *protogen.File) map[string][]routeSpec {
 	return out
 }
 
-func accessPolicy(m *protogen.Method) protooptions.AccessPolicy {
+func accessPolicy(m *protogen.Method) (protooptions.AccessPolicy, bool) {
 	unknown := m.Desc.Options().ProtoReflect().GetUnknown()
 	if payload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtAccess); ok {
-		return protooptions.ParseAccessPolicy(payload)
+		return protooptions.ParseAccessPolicy(payload), true
 	}
-	return protooptions.AccessPolicy{}
+	return protooptions.AccessPolicy{}, false
 }
 
 func httpBinding(rule *annotations.HttpRule) (string, string) {
@@ -233,18 +236,12 @@ func extractPathVars(path string) []string {
 	var out []string
 	for {
 		start := strings.Index(path, "{")
-		if start < 0 {
-			break
-		}
+		if start < 0 { break }
 		path = path[start+1:]
 		end := strings.Index(path, "}")
-		if end < 0 {
-			break
-		}
+		if end < 0 { break }
 		name := strings.TrimSpace(path[:end])
-		if name != "" {
-			out = append(out, name)
-		}
+		if name != "" { out = append(out, name) }
 		path = path[end+1:]
 	}
 	return out
@@ -252,15 +249,11 @@ func extractPathVars(path string) []string {
 
 func defaultServiceName(full string) string {
 	full = strings.TrimSpace(full)
-	if full == "" {
-		return "service"
-	}
+	if full == "" { return "service" }
 	parts := strings.Split(full, ".")
 	name := parts[len(parts)-1]
 	name = strings.TrimSuffix(name, "Service")
-	if name == "" {
-		name = parts[len(parts)-1]
-	}
+	if name == "" { name = parts[len(parts)-1] }
 	return strings.ToLower(kebab(name)) + "-service"
 }
 
@@ -272,14 +265,9 @@ func defaultRouteID(rt routeSpec) string {
 func kebab(s string) string {
 	var b strings.Builder
 	for i, r := range s {
-		if r == '.' || r == '_' || r == ' ' {
-			b.WriteByte('.')
-			continue
-		}
+		if r == '.' || r == '_' || r == ' ' { b.WriteByte('.'); continue }
 		if r >= 'A' && r <= 'Z' {
-			if i > 0 {
-				b.WriteByte('.')
-			}
+			if i > 0 { b.WriteByte('.') }
 			b.WriteRune(r + ('a' - 'A'))
 			continue
 		}
@@ -321,9 +309,7 @@ func cleanStrings(in []string) []string {
 	seen := map[string]bool{}
 	for _, v := range in {
 		v = strings.TrimSpace(v)
-		if v == "" || seen[v] {
-			continue
-		}
+		if v == "" || seen[v] { continue }
 		seen[v] = true
 		out = append(out, v)
 	}
@@ -331,12 +317,8 @@ func cleanStrings(in []string) []string {
 }
 
 func formatStringSlice(values []string) string {
-	if len(values) == 0 {
-		return "nil"
-	}
+	if len(values) == 0 { return "nil" }
 	parts := make([]string, 0, len(values))
-	for _, v := range values {
-		parts = append(parts, fmt.Sprintf("%q", v))
-	}
+	for _, v := range values { parts = append(parts, fmt.Sprintf("%q", v)) }
 	return "[]string{" + strings.Join(parts, ", ") + "}"
 }
