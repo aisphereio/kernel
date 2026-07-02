@@ -28,6 +28,13 @@ type GatewayPolicy struct {
 	AuthnMode            AuthnMode
 	ForwardAuthorization bool
 	Timeout              time.Duration
+
+	// Profiles is an optional publication profile list such as public, internal,
+	// or ops. Empty means deployment-time filters derive behavior from Exposure.
+	Profiles []string
+
+	// Tags are optional governance labels such as skill, admin, debug, dtm.
+	Tags []string
 }
 
 // EffectiveAuthnMode returns the explicit mode or derives a safe default from
