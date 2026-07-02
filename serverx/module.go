@@ -74,6 +74,43 @@ func (m ServiceModule) ModuleName() string {
 	return m.GatewayManifest.Service
 }
 
+// RegisterServiceGatewayRoutes registers generated module manifests into the
+// route registry without filtering. Prefer RegisterServiceGatewayRoutesWithFilter
+// for public/internal/ops gateway profiles so internal routes do not leak into
+// the wrong registry.
+func RegisterServiceGatewayRoutes(ctx context.Context, registry gatewayx.RouteRegistry, modules ...ServiceModule) error {
+	return RegisterServiceGatewayRoutesWithFilter(ctx, registry, gatewayx.RouteFilter{}, modules...)
+}
+
+// RegisterServiceGatewayRoutesWithFilter registers generated module manifests
+// after applying a profile-aware route filter. This is the recommended path for
+// production gateways: public gateways should use gatewayx.PublicRouteFilter(),
+// internal gateways should use gatewayx.InternalRouteFilter(), and ops gateways
+// should use an explicit allowlist.
+func RegisterServiceGatewayRoutesWithFilter(ctx context.Context, registry gatewayx.RouteRegistry, filter gatewayx.RouteFilter, modules ...ServiceModule) error {
+	_ = ctx
+	if registry == nil {
+		return fmt.Errorf("serverx: gateway route registry is nil")
+	}
+	for _, module := range modules {
+		manifest := module.GatewayManifest
+		if manifest.Service == "" && len(manifest.Routes) == 0 {
+			continue
+		}
+		manifest = gatewayx.FilterManifest(manifest, filter)
+		if manifest.Service == "" && len(manifest.Routes) == 0 {
+			continue
+		}
+		if len(manifest.Routes) == 0 {
+			continue
+		}
+		if err := registry.RegisterManifest(manifest); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ProviderFactory creates provider-neutral Kernel providers from Config. Concrete
 // factories may live in contrib/authn/casdoor, contrib/authz/spicedb, or platform
 // boot packages. Business services should not instantiate provider SDKs directly.
@@ -118,163 +155,4 @@ func WithCredentialExtractor(e authnmw.CredentialExtractor) BuildOption {
 }
 func WithAllowAnonymous(allow bool) BuildOption {
 	return func(o *buildOptions) { o.allowAnonymous = allow }
-}
-func WithRuntime(p RuntimeProviders) BuildOption { return func(o *buildOptions) { o.runtime = p } }
-func WithServerOptions(opts ...Option) BuildOption {
-	return func(o *buildOptions) { o.serverOptions = append(o.serverOptions, opts...) }
-}
-
-// BuildService is the backwards-compatible generated-service boot path for
-// callers that already have a concrete implementation. Prefer
-// BuildServiceFromFactory for new services so Kernel-managed Data/DB/providers
-// are injected after config, migration, and provider loading.
-func BuildService(ctx context.Context, cfg Config, module ServiceModule, impl any, opts ...BuildOption) (*App, error) {
-	return buildService(ctx, cfg, module, func(context.Context, ServiceDeps) (any, error) { return impl, nil }, opts...)
-}
-
-// BuildServiceFromFactory is the preferred autoload path:
-// config + generated module + provider factory + business factory.
-// It assembles Kernel middleware automatically, opens DB, runs/validates SQL
-// migrations, constructs generated repositories, creates the concrete service
-// implementation, and registers generated HTTP/gRPC routes.
-func BuildServiceFromFactory(ctx context.Context, cfg Config, module ServiceModule, factory ServiceFactory, opts ...BuildOption) (*App, error) {
-	if factory == nil {
-		return nil, fmt.Errorf("serverx: service factory is required")
-	}
-	return buildService(ctx, cfg, module, factory, opts...)
-}
-
-func buildService(ctx context.Context, cfg Config, module ServiceModule, factory ServiceFactory, opts ...BuildOption) (*App, error) {
-	if err := module.Validate(); err != nil {
-		return nil, err
-	}
-	if cfg.Name == "" {
-		cfg.Name = module.ModuleName()
-	}
-
-	bo := &buildOptions{}
-	for _, opt := range opts {
-		opt(bo)
-	}
-
-	var managedDB dbx.DB
-	var data any
-	if cfg.Database.Enabled {
-		if err := validateMigrationRuntime(cfg); err != nil {
-			return nil, err
-		}
-		db, err := dbx.New(cfg.Database.DBX)
-		if err != nil {
-			return nil, err
-		}
-		managedDB = db
-		if err := migrationx.Apply(ctx, managedDB, cfg.Database.Migration); err != nil {
-			_ = managedDB.Close()
-			return nil, err
-		}
-		if module.RegisterData != nil {
-			registered, err := module.RegisterData(managedDB)
-			if err != nil {
-				_ = managedDB.Close()
-				return nil, err
-			}
-			data = registered
-		}
-	}
-
-	providers := bo.providers
-	if isZeroProviders(providers) && bo.providerFactory != nil {
-		p, err := bo.providerFactory.BuildAccessProviders(ctx, cfg)
-		if err != nil {
-			if managedDB != nil {
-				_ = managedDB.Close()
-			}
-			return nil, err
-		}
-		providers = p
-	}
-
-	impl, err := factory(ctx, ServiceDeps{Config: cfg, DB: managedDB, Data: data, Providers: providers})
-	if err != nil {
-		if managedDB != nil {
-			_ = managedDB.Close()
-		}
-		return nil, err
-	}
-	if impl == nil {
-		if managedDB != nil {
-			_ = managedDB.Close()
-		}
-		return nil, fmt.Errorf("serverx: service factory returned nil implementation")
-	}
-
-	runtime := bo.runtime
-	if isZeroProviders(runtime.Access) {
-		runtime.Access = providers
-	}
-	if runtime.RequestInfoResolver == nil {
-		runtime.RequestInfoResolver = module.RequestInfoResolver
-	}
-	if runtime.AccessResolver == nil {
-		runtime.AccessResolver = module.AccessResolver
-	}
-	if runtime.CredentialExtractor == nil {
-		runtime.CredentialExtractor = bo.credentialExtractor
-	}
-	if runtime.CredentialExtractor == nil {
-		runtime.CredentialExtractor = authnmw.BearerExtractor
-	}
-	runtime.AllowAnonymous = runtime.AllowAnonymous || bo.allowAnonymous
-
-	sxOpts := []Option{WithRuntimeProviders(runtime)}
-	if managedDB != nil {
-		sxOpts = append(sxOpts, WithKernelOptions(kernel.AfterStop(func(context.Context) error { return managedDB.Close() })))
-	}
-	sxOpts = append(sxOpts, bo.serverOptions...)
-	app, err := New(ctx, cfg, sxOpts...)
-	if err != nil {
-		if managedDB != nil {
-			_ = managedDB.Close()
-		}
-		return nil, err
-	}
-	app.db = managedDB
-	app.data = data
-	if cfg.GRPC.Enabled && module.RegisterGRPC != nil {
-		if err := module.RegisterGRPC(app.GRPC(), impl); err != nil {
-			return nil, err
-		}
-	}
-	if cfg.HTTP.Enabled && module.RegisterHTTP != nil {
-		if err := module.RegisterHTTP(app.HTTP(), impl); err != nil {
-			return nil, err
-		}
-	}
-	return app, nil
-}
-
-func validateMigrationRuntime(cfg Config) error {
-	mig := cfg.Database.Migration.Normalize()
-	if cfg.Deployment.Replicas > 1 && (mig.Mode == migrationx.ModeApply || mig.Mode == migrationx.ModeDevApply) && !mig.AllowConcurrent {
-		return fmt.Errorf("serverx: database migration mode %s requires single replica or migration.allow_concurrent=true", mig.Mode)
-	}
-	return nil
-}
-
-func isZeroProviders(p accessx.Providers) bool {
-	return p.Authn.Authenticator() == nil && p.Authz.Authorizer() == nil && p.Audit == nil
-}
-
-// RegisterServiceGatewayRoutes registers a generated module's manifest into the
-// route registry. CI/CD or service startup can call this; business code should
-// not handcraft routes.
-func RegisterServiceGatewayRoutes(ctx context.Context, registry gatewayx.RouteRegistry, modules ...ServiceModule) error {
-	manifests := make([]gatewayx.Manifest, 0, len(modules))
-	for _, m := range modules {
-		if m.GatewayManifest.Service == "" && len(m.GatewayManifest.Routes) == 0 {
-			continue
-		}
-		manifests = append(manifests, m.GatewayManifest)
-	}
-	return RegisterGatewayRoutes(ctx, registry, manifests...)
 }
