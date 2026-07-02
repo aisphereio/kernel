@@ -26,6 +26,12 @@ const (
 	ExtAccess protowire.Number = 51010
 )
 
+const (
+	GatewayPublishUnspecified int32 = 0
+	GatewayPublishEnabled     int32 = 1
+	GatewayPublishDisabled    int32 = 2
+)
+
 type AuthzRule struct {
 	Action   string
 	Resource string
@@ -52,6 +58,7 @@ type AccessPolicy struct {
 	RateLimit AccessRateLimit
 	Breaker   AccessBreaker
 	Reason    string
+	Gateway   AccessGateway
 }
 
 type AccessAudit struct {
@@ -66,11 +73,18 @@ type AccessRateLimit struct {
 	QPS     float64
 	Burst   int32
 	Backend int32
+	Scope   int32
 }
 
 type AccessBreaker struct {
 	Enabled bool
 	Name    string
+}
+
+type AccessGateway struct {
+	Publish  int32
+	Profiles []string
+	Tags     []string
 }
 
 func MethodUnknown(m *descriptorpb.MethodDescriptorProto) []byte {
@@ -130,44 +144,26 @@ func ParseAuthz(b []byte) AuthzRule {
 		case 1:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Action = v
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Action = v; b = b[n:]; continue }
 			}
 		case 2:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Resource = v
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Resource = v; b = b[n:]; continue }
 			}
 		case 3:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Audience = v
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Audience = v; b = b[n:]; continue }
 			}
 		case 4:
 			if typ == protowire.VarintType {
 				v, n := protowire.ConsumeVarint(b)
-				if n >= 0 {
-					o.Mode = int32(v)
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Mode = int32(v); b = b[n:]; continue }
 			}
 		}
 		n = protowire.ConsumeFieldValue(num, typ, b)
-		if n < 0 {
-			return o
-		}
+		if n < 0 { return o }
 		b = b[n:]
 	}
 	return o
@@ -177,34 +173,22 @@ func ParseAudit(b []byte) AuditRule {
 	var o AuditRule
 	for len(b) > 0 {
 		num, typ, n := protowire.ConsumeTag(b)
-		if n < 0 {
-			return o
-		}
+		if n < 0 { return o }
 		b = b[n:]
 		switch num {
 		case 1:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Event = v
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Event = v; b = b[n:]; continue }
 			}
 		case 2:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Risk = v
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Risk = v; b = b[n:]; continue }
 			}
 		}
 		n = protowire.ConsumeFieldValue(num, typ, b)
-		if n < 0 {
-			return o
-		}
+		if n < 0 { return o }
 		b = b[n:]
 	}
 	return o
@@ -214,34 +198,22 @@ func ParseCapability(b []byte) CapabilityRule {
 	var o CapabilityRule
 	for len(b) > 0 {
 		num, typ, n := protowire.ConsumeTag(b)
-		if n < 0 {
-			return o
-		}
+		if n < 0 { return o }
 		b = b[n:]
 		switch num {
 		case 1:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Name = v
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Name = v; b = b[n:]; continue }
 			}
 		case 2:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Group = v
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Group = v; b = b[n:]; continue }
 			}
 		}
 		n = protowire.ConsumeFieldValue(num, typ, b)
-		if n < 0 {
-			return o
-		}
+		if n < 0 { return o }
 		b = b[n:]
 	}
 	return o
@@ -251,120 +223,79 @@ func ParseAccessPolicy(b []byte) AccessPolicy {
 	var o AccessPolicy
 	for len(b) > 0 {
 		num, typ, n := protowire.ConsumeTag(b)
-		if n < 0 {
-			return o
-		}
+		if n < 0 { return o }
 		b = b[n:]
 		switch num {
 		case 1:
 			if typ == protowire.VarintType {
 				v, n := protowire.ConsumeVarint(b)
-				if n >= 0 {
-					o.Exposure = int32(v)
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Exposure = int32(v); b = b[n:]; continue }
 			}
 		case 2:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeBytes(b)
-				if n >= 0 {
-					o.Authz = ParseAccessAuthz(v)
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Authz = ParseAccessAuthz(v); b = b[n:]; continue }
 			}
 		case 3:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeBytes(b)
-				if n >= 0 {
-					o.Audit = ParseAccessAudit(v)
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Audit = ParseAccessAudit(v); b = b[n:]; continue }
 			}
 		case 4:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeBytes(b)
-				if n >= 0 {
-					o.RateLimit = ParseAccessRateLimit(v)
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.RateLimit = ParseAccessRateLimit(v); b = b[n:]; continue }
 			}
 		case 5:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeBytes(b)
-				if n >= 0 {
-					o.Breaker = ParseAccessBreaker(v)
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Breaker = ParseAccessBreaker(v); b = b[n:]; continue }
 			}
 		case 6:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Reason = v
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Reason = v; b = b[n:]; continue }
+			}
+		case 7:
+			if typ == protowire.BytesType {
+				v, n := protowire.ConsumeBytes(b)
+				if n >= 0 { o.Gateway = ParseAccessGateway(v); b = b[n:]; continue }
 			}
 		}
 		n = protowire.ConsumeFieldValue(num, typ, b)
-		if n < 0 {
-			return o
-		}
+		if n < 0 { return o }
 		b = b[n:]
 	}
 	return o
 }
 
-func ParseAccessAuthz(b []byte) AuthzRule {
-	return ParseAuthz(b)
-}
+func ParseAccessAuthz(b []byte) AuthzRule { return ParseAuthz(b) }
 
 func ParseAccessAudit(b []byte) AccessAudit {
 	var o AccessAudit
 	for len(b) > 0 {
 		num, typ, n := protowire.ConsumeTag(b)
-		if n < 0 {
-			return o
-		}
+		if n < 0 { return o }
 		b = b[n:]
 		switch num {
 		case 1:
 			if typ == protowire.VarintType {
 				v, n := protowire.ConsumeVarint(b)
-				if n >= 0 {
-					o.Enabled = v != 0
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Enabled = v != 0; b = b[n:]; continue }
 			}
 		case 2:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Event = v
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Event = v; b = b[n:]; continue }
 			}
 		case 3:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Risk = v
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Risk = v; b = b[n:]; continue }
 			}
 		}
 		n = protowire.ConsumeFieldValue(num, typ, b)
-		if n < 0 {
-			return o
-		}
+		if n < 0 { return o }
 		b = b[n:]
 	}
 	return o
@@ -374,61 +305,42 @@ func ParseAccessRateLimit(b []byte) AccessRateLimit {
 	var o AccessRateLimit
 	for len(b) > 0 {
 		num, typ, n := protowire.ConsumeTag(b)
-		if n < 0 {
-			return o
-		}
+		if n < 0 { return o }
 		b = b[n:]
 		switch num {
 		case 1:
 			if typ == protowire.VarintType {
 				v, n := protowire.ConsumeVarint(b)
-				if n >= 0 {
-					o.Enabled = v != 0
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Enabled = v != 0; b = b[n:]; continue }
 			}
 		case 2:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Key = v
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Key = v; b = b[n:]; continue }
 			}
 		case 3:
 			if typ == protowire.Fixed64Type {
 				v, n := protowire.ConsumeFixed64(b)
-				if n >= 0 {
-					o.QPS = math.Float64frombits(v)
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.QPS = math.Float64frombits(v); b = b[n:]; continue }
 			}
 		case 4:
 			if typ == protowire.VarintType {
 				v, n := protowire.ConsumeVarint(b)
-				if n >= 0 {
-					o.Burst = int32(v)
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Burst = int32(v); b = b[n:]; continue }
 			}
 		case 5:
 			if typ == protowire.VarintType {
 				v, n := protowire.ConsumeVarint(b)
-				if n >= 0 {
-					o.Backend = int32(v)
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Backend = int32(v); b = b[n:]; continue }
+			}
+		case 6:
+			if typ == protowire.VarintType {
+				v, n := protowire.ConsumeVarint(b)
+				if n >= 0 { o.Scope = int32(v); b = b[n:]; continue }
 			}
 		}
 		n = protowire.ConsumeFieldValue(num, typ, b)
-		if n < 0 {
-			return o
-		}
+		if n < 0 { return o }
 		b = b[n:]
 	}
 	return o
@@ -438,34 +350,52 @@ func ParseAccessBreaker(b []byte) AccessBreaker {
 	var o AccessBreaker
 	for len(b) > 0 {
 		num, typ, n := protowire.ConsumeTag(b)
-		if n < 0 {
-			return o
-		}
+		if n < 0 { return o }
 		b = b[n:]
 		switch num {
 		case 1:
 			if typ == protowire.VarintType {
 				v, n := protowire.ConsumeVarint(b)
-				if n >= 0 {
-					o.Enabled = v != 0
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Enabled = v != 0; b = b[n:]; continue }
 			}
 		case 2:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Name = v
-					b = b[n:]
-					continue
-				}
+				if n >= 0 { o.Name = v; b = b[n:]; continue }
 			}
 		}
 		n = protowire.ConsumeFieldValue(num, typ, b)
-		if n < 0 {
-			return o
+		if n < 0 { return o }
+		b = b[n:]
+	}
+	return o
+}
+
+func ParseAccessGateway(b []byte) AccessGateway {
+	var o AccessGateway
+	for len(b) > 0 {
+		num, typ, n := protowire.ConsumeTag(b)
+		if n < 0 { return o }
+		b = b[n:]
+		switch num {
+		case 1:
+			if typ == protowire.VarintType {
+				v, n := protowire.ConsumeVarint(b)
+				if n >= 0 { o.Publish = int32(v); b = b[n:]; continue }
+			}
+		case 2:
+			if typ == protowire.BytesType {
+				v, n := protowire.ConsumeString(b)
+				if n >= 0 { o.Profiles = append(o.Profiles, v); b = b[n:]; continue }
+			}
+		case 3:
+			if typ == protowire.BytesType {
+				v, n := protowire.ConsumeString(b)
+				if n >= 0 { o.Tags = append(o.Tags, v); b = b[n:]; continue }
+			}
 		}
+		n = protowire.ConsumeFieldValue(num, typ, b)
+		if n < 0 { return o }
 		b = b[n:]
 	}
 	return o
