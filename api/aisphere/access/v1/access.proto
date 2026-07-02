@@ -18,6 +18,7 @@ message AccessPolicy {
   RateLimit rate_limit = 4;
   Breaker breaker = 5;
   string reason = 6;
+  Gateway gateway = 7;
 }
 
 enum Exposure {
@@ -27,6 +28,26 @@ enum Exposure {
   AUTHORIZED = 3;
   INTERNAL = 4;
   SYSTEM = 5;
+}
+
+// Gateway controls whether and where an RPC is published into generated
+// gateway route manifests. It is intentionally separate from exposure:
+// exposure describes security semantics, while gateway.publish/profiles
+// describe publication to public/internal/ops gateway profiles.
+message Gateway {
+  GatewayPublish publish = 1;
+  repeated string profiles = 2;
+  repeated string tags = 3;
+}
+
+// GatewayPublish is tri-state so omitted policy fields can keep safe defaults.
+// UNSPECIFIED means generators include the route and deployment-time filters
+// decide which gateway profile publishes it. DISABLED means the route is never
+// generated into GatewayManifest even when google.api.http is present.
+enum GatewayPublish {
+  GATEWAY_PUBLISH_UNSPECIFIED = 0;
+  ENABLED = 1;
+  DISABLED = 2;
 }
 
 message Authz {
