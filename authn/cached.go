@@ -47,23 +47,26 @@ import (
 	"github.com/aisphereio/kernel/cachex"
 )
 
-// CachedClient wraps an Authenticator + TokenService with a shared cache.
+// CachedClient wraps an Authenticator + TokenService + LogoutService with a
+// shared cache.
 //
 // Construction:
 //
-//	client := casdoor.New(cfg)              // implements both interfaces
-//	cached := authn.NewCachedClient(client, client, cache,
+//	client := casdoor.New(cfg)              // implements all three interfaces
+//	cached := authn.NewCachedClient(client, client, client, cache,
 //	    authn.WithCachedTTL(5*time.Minute))
 //	_ = authn.Authenticator(cached)         // usable as Authenticator
 //	_ = authn.TokenService(cached)          // usable as TokenService
+//	_ = authn.LogoutService(cached)         // usable as LogoutService
 //
-// Both `auth` and `tokens` may point to the same object (typical for the
-// casdoor Client which implements both). They are accepted separately so
-// callers can mix providers (e.g. JWT verifier for Authenticate, introspection
-// endpoint for TokenService) if needed.
+// All three of `auth`, `tokens` and `logout` may point to the same object
+// (typical for the casdoor Client which implements all three). They are
+// accepted separately so callers can mix providers (e.g. JWT verifier for
+// Authenticate, introspection endpoint for TokenService) if needed.
 type CachedClient struct {
 	auth   Authenticator
 	tokens TokenService
+	logout LogoutService
 	cache  cachex.Cache
 	ttl    time.Duration
 }
@@ -78,15 +81,21 @@ func WithCachedTTL(ttl time.Duration) CachedOption {
 	return func(c *CachedClient) { c.ttl = ttl }
 }
 
-// NewCachedClient wraps an Authenticator + TokenService with a cache.
+// NewCachedClient wraps an Authenticator + TokenService + LogoutService with
+// a cache.
 //
 // If cache is nil, the returned CachedClient delegates every call to the
 // inner providers without any caching. This lets callers always go through
 // CachedClient (no nil checks) even when caching is disabled.
-func NewCachedClient(auth Authenticator, tokens TokenService, cache cachex.Cache, opts ...CachedOption) *CachedClient {
+//
+// The `logout` parameter is accepted separately from `auth` and `tokens` so
+// callers can mix providers. For the typical casdoor Client which implements
+// all three, pass the same client for all three parameters.
+func NewCachedClient(auth Authenticator, tokens TokenService, logout LogoutService, cache cachex.Cache, opts ...CachedOption) *CachedClient {
 	c := &CachedClient{
 		auth:   auth,
 		tokens: tokens,
+		logout: logout,
 		cache:  cache,
 		ttl:    5 * time.Minute,
 	}
@@ -158,6 +167,15 @@ func (c *CachedClient) RevokeToken(ctx context.Context, req RevokeTokenRequest) 
 		_ = c.Invalidate(ctx, req.Token)
 	}
 	return err
+}
+
+// --- LogoutService ---
+
+// BuildLogoutURL delegates to the inner LogoutService without caching.
+// Logout URLs are one-shot redirect targets that include per-request state
+// and should not be cached.
+func (c *CachedClient) BuildLogoutURL(ctx context.Context, req LogoutURLRequest) (LogoutURL, error) {
+	return c.logout.BuildLogoutURL(ctx, req)
 }
 
 // --- cache management ---

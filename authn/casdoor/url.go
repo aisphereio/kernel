@@ -9,6 +9,7 @@ import (
 )
 
 var _ authn.LoginService = (*Client)(nil)
+var _ authn.LogoutService = (*Client)(nil)
 
 // BuildLoginURL returns a Casdoor hosted login URL through Kernel's provider-
 // neutral LoginService contract. Callers should not import or call the Casdoor
@@ -63,6 +64,42 @@ func (c *Client) HandleCallback(ctx context.Context, req authn.CallbackRequest) 
 		Principal: principal,
 		State:     req.State,
 		Provider:  ProviderName,
+	}, nil
+}
+
+// BuildLogoutURL returns a Casdoor hosted logout (end-session) URL through
+// Kernel's provider-neutral LogoutService contract.
+//
+// The URL is built against the Casdoor /api/logout endpoint with OIDC
+// RP-Initiated Logout parameters (client_id, post_logout_redirect_uri,
+// id_token_hint, state). We construct the URL manually rather than calling
+// the Casdoor SDK's GetSignoutUrl() because that SDK method returns the
+// internal /login/oauth/logout path, while external OAuth applications
+// should use /api/logout per the OIDC end-session endpoint convention.
+func (c *Client) BuildLogoutURL(ctx context.Context, req authn.LogoutURLRequest) (authn.LogoutURL, error) {
+	_ = ctx
+	endpoint := strings.TrimRight(strings.TrimSpace(c.cfg.Endpoint), "/")
+	if endpoint == "" {
+		return authn.LogoutURL{}, authn.ErrInvalidTokenRequest("casdoor endpoint is not configured")
+	}
+	q := url.Values{}
+	q.Set("client_id", c.cfg.ClientID)
+	if req.PostLogoutRedirectURI != "" {
+		q.Set("post_logout_redirect_uri", req.PostLogoutRedirectURI)
+	}
+	if req.IDTokenHint != "" {
+		q.Set("id_token_hint", req.IDTokenHint)
+	}
+	if req.State != "" {
+		q.Set("state", req.State)
+	}
+	return authn.LogoutURL{
+		URL:                   endpoint + "/api/logout?" + q.Encode(),
+		PostLogoutRedirectURI: req.PostLogoutRedirectURI,
+		State:                 req.State,
+		Provider:              ProviderName,
+		OrgID:                 req.OrgID,
+		AppID:                 req.AppID,
 	}, nil
 }
 

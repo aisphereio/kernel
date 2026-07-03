@@ -63,5 +63,15 @@ type IdentityAdmin interface {
 	GroupAdmin
 }
 
+// LogoutService builds identity-provider hosted logout (end-session) URLs.
+//
+// Implementations construct the provider-specific end-session endpoint URL
+// with the required OIDC RP-Initiated Logout parameters (id_token_hint,
+// post_logout_redirect_uri, state, client_id). The returned LogoutURL.URL
+// is the full redirect target for a 302 response.
+type LogoutService interface {
+	BuildLogoutURL(ctx context.Context, req LogoutURLRequest) (LogoutURL, error)
+}
+
 // TokenVerifier adapts JWT/OIDC libraries into Authenticator.
 type TokenVerifier func(ctx context.Context, req VerifyTokenRequest) (Principal, error)

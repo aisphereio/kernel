@@ -20,6 +20,9 @@ func (noopAdmin) VerifyToken(context.Context, VerifyTokenRequest) (Principal, er
 func (noopAdmin) RevokeToken(context.Context, RevokeTokenRequest) error {
 	return ErrIdentityBackendFailed("authn token revoke is disabled", nil)
 }
+func (noopAdmin) BuildLogoutURL(context.Context, LogoutURLRequest) (LogoutURL, error) {
+	return LogoutURL{}, ErrIdentityBackendFailed("authn logout is disabled", nil)
+}
 func (noopAdmin) GetUser(context.Context, string, string) (User, error) {
 	return User{}, ErrIdentityBackendFailed("authn user directory is disabled", nil)
 }

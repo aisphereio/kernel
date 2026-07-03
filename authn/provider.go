@@ -9,6 +9,7 @@ type Provider interface {
 	Authenticator
 	TokenService
 	LoginService
+	LogoutService
 }
 
 // ManagementProvider extends Provider with user/organization/application/group
@@ -50,6 +51,16 @@ func (p ProviderSet) Tokens() TokenService {
 }
 
 func (p ProviderSet) Login() LoginService {
+	if p.Runtime != nil {
+		return p.Runtime
+	}
+	if p.Management != nil {
+		return p.Management
+	}
+	return nil
+}
+
+func (p ProviderSet) Logout() LogoutService {
 	if p.Runtime != nil {
 		return p.Runtime
 	}

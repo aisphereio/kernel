@@ -13,7 +13,8 @@ Kernel 的正式边界是：
 ```text
 authn: Casdoor
   - OAuth/OIDC 登录
-  - token 签发、刷新、校验
+  - OIDC RP-Initiated Logout（登出）
+  - token 签发、刷新、校验、吊销
   - 用户、组织、组、角色管理后台
 
 authz: SpiceDB 优先，Casdoor/Casbin 可作为过渡实现
@@ -50,6 +51,7 @@ authn 只回答：
 
 ```text
 这个 token/session/API key/service credential 是谁？是否有效？
+如何构建 IdP 登录/登出 URL？
 ```
 
 Kernel 接口：
@@ -71,10 +73,15 @@ type LoginService interface {
     HandleCallback(...)
 }
 
+type LogoutService interface {
+    BuildLogoutURL(...)
+}
+
 type Provider interface {
     Authenticator
     TokenService
     LoginService
+    LogoutService
 }
 ```
 
