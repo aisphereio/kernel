@@ -7,12 +7,16 @@ import (
 	"time"
 
 	"github.com/aisphereio/kernel/authn"
+	"github.com/aisphereio/kernel/logx"
 	casdoorsdk "github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/oauth2"
 )
 
 var _ authn.Authenticator = (*Client)(nil)
 var _ authn.TokenService = (*Client)(nil)
+
+const defaultTokenLeeway = 2 * time.Minute
 
 func (c *Client) Authenticate(ctx context.Context, credential authn.Credential) (authn.Principal, error) {
 	switch strings.ToLower(strings.TrimSpace(credential.Scheme)) {
@@ -30,15 +34,40 @@ func (c *Client) ExchangeCode(ctx context.Context, req authn.AuthCodeExchangeReq
 	if strings.TrimSpace(req.Code) == "" {
 		return authn.TokenSet{}, authn.Principal{}, authn.ErrInvalidTokenRequest("authorization code is required")
 	}
-	token, err := c.loginSDK(req.OrgID, req.AppID).GetOAuthToken(req.Code, req.State)
+	token, err := c.exchangeOAuthToken(ctx, req)
 	if err != nil {
 		return authn.TokenSet{}, authn.Principal{}, wrapBackend("casdoor code exchange failed", err)
 	}
-	principal, err := c.principalFromAccessToken(ctx, token.AccessToken, req.OrgID, req.AppID)
+	principal, err := c.principalFromAccessToken(ctx, token.AccessToken, req.OrgID, req.AppID, defaultTokenLeeway)
 	if err != nil {
 		return authn.TokenSet{}, authn.Principal{}, err
 	}
 	return tokenSetFromOAuth(token), principal, nil
+}
+
+func (c *Client) exchangeOAuthToken(ctx context.Context, req authn.AuthCodeExchangeRequest) (*oauth2.Token, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	endpoint := strings.TrimRight(strings.TrimSpace(c.cfg.Endpoint), "/")
+	config := oauth2.Config{
+		ClientID:     c.cfg.ClientID,
+		ClientSecret: c.cfg.ClientSecret,
+		RedirectURL:  strings.TrimSpace(req.RedirectURI),
+		Endpoint: oauth2.Endpoint{
+			AuthURL:   endpoint + "/api/login/oauth/authorize",
+			TokenURL:  endpoint + "/api/login/oauth/access_token",
+			AuthStyle: oauth2.AuthStyleInParams,
+		},
+	}
+	if c.cfg.HTTPClient != nil {
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, c.cfg.HTTPClient)
+	}
+	opts := make([]oauth2.AuthCodeOption, 0, 1)
+	if verifier := strings.TrimSpace(req.CodeVerifier); verifier != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("code_verifier", verifier))
+	}
+	return config.Exchange(ctx, req.Code, opts...)
 }
 
 func (c *Client) RefreshToken(ctx context.Context, req authn.RefreshTokenRequest) (authn.TokenSet, error) {
@@ -56,7 +85,7 @@ func (c *Client) VerifyToken(ctx context.Context, req authn.VerifyTokenRequest) 
 	if strings.TrimSpace(req.Token) == "" {
 		return authn.Principal{}, authn.ErrMissingCredential("token is required")
 	}
-	return c.principalFromAccessToken(ctx, req.Token, req.OrgID, req.AppID)
+	return c.principalFromAccessToken(ctx, req.Token, req.OrgID, req.AppID, tokenLeeway(req.Leeway))
 }
 
 func (c *Client) RevokeToken(ctx context.Context, req authn.RevokeTokenRequest) error {
@@ -66,10 +95,15 @@ func (c *Client) RevokeToken(ctx context.Context, req authn.RevokeTokenRequest) 
 	return authn.ErrIdentityBackendFailed("casdoor sdk does not expose token revocation", nil)
 }
 
-func (c *Client) principalFromAccessToken(ctx context.Context, token string, orgID, appID string) (authn.Principal, error) {
+func (c *Client) principalFromAccessToken(ctx context.Context, token string, orgID, appID string, leeway time.Duration) (authn.Principal, error) {
 	_ = ctx
-	claims, err := c.loginSDK(orgID, appID).ParseJwtToken(token)
+	claims, err := c.parseJWTToken(token, orgID, appID, leeway)
 	if err != nil {
+		logger := c.logger
+		if logger == nil {
+			logger = casdoorLogger(c.cfg)
+		}
+		logger.Warn("casdoor jwt parse failed", logx.Err(err), logx.Duration("leeway", leeway))
 		return authn.Principal{}, authn.ErrInvalidCredential("invalid casdoor token")
 	}
 	principal := principalFromClaims(claims, token, orgID, appID)
@@ -77,6 +111,75 @@ func (c *Client) principalFromAccessToken(ctx context.Context, token string, org
 		return authn.Principal{}, authn.ErrUnauthenticated("casdoor token has no authenticated subject")
 	}
 	return principal, nil
+}
+
+func tokenLeeway(leeway time.Duration) time.Duration {
+	if leeway > 0 {
+		return leeway
+	}
+	return defaultTokenLeeway
+}
+
+func (c *Client) parseJWTToken(token string, orgID, appID string, leeway time.Duration) (*casdoorsdk.Claims, error) {
+	claims := &claimsWithLeeway{leeway: tokenLeeway(leeway)}
+	t, err := jwt.ParseWithClaims(token, claims, c.jwtKeyFunc(orgID, appID))
+	if t != nil {
+		if parsed, ok := t.Claims.(*claimsWithLeeway); ok && t.Valid {
+			return &parsed.Claims, nil
+		}
+	}
+	return nil, err
+}
+
+func (c *Client) jwtKeyFunc(orgID, appID string) jwt.Keyfunc {
+	client := c.loginSDK(orgID, appID)
+	return func(token *jwt.Token) (any, error) {
+		switch token.Method.Alg() {
+		case jwt.SigningMethodES256.Alg():
+			return jwt.ParseECPublicKeyFromPEM([]byte(client.Certificate))
+		case jwt.SigningMethodES512.Alg():
+			return jwt.ParseECPublicKeyFromPEM([]byte(client.Certificate))
+		case jwt.SigningMethodRS256.Alg():
+			return jwt.ParseRSAPublicKeyFromPEM([]byte(client.Certificate))
+		case jwt.SigningMethodRS512.Alg():
+			return jwt.ParseRSAPublicKeyFromPEM([]byte(client.Certificate))
+		default:
+			return nil, fmt.Errorf("unsupported signing method: %v", token.Header["alg"])
+		}
+	}
+}
+
+type claimsWithLeeway struct {
+	casdoorsdk.Claims
+	leeway time.Duration
+}
+
+func (c *claimsWithLeeway) Valid() error {
+	if c == nil {
+		return nil
+	}
+	vErr := new(jwt.ValidationError)
+	now := jwt.TimeFunc()
+	leeway := c.leeway
+	if leeway < 0 {
+		leeway = 0
+	}
+	if !c.VerifyExpiresAt(now.Add(-leeway), false) {
+		vErr.Inner = fmt.Errorf("%s by %s", jwt.ErrTokenExpired, now.Sub(c.ExpiresAt.Time))
+		vErr.Errors |= jwt.ValidationErrorExpired
+	}
+	if !c.VerifyIssuedAt(now.Add(leeway), false) {
+		vErr.Inner = jwt.ErrTokenUsedBeforeIssued
+		vErr.Errors |= jwt.ValidationErrorIssuedAt
+	}
+	if !c.VerifyNotBefore(now.Add(leeway), false) {
+		vErr.Inner = jwt.ErrTokenNotValidYet
+		vErr.Errors |= jwt.ValidationErrorNotValidYet
+	}
+	if vErr.Errors == 0 {
+		return nil
+	}
+	return vErr
 }
 
 func principalFromClaims(claims *casdoorsdk.Claims, accessToken string, orgID, appID string) authn.Principal {

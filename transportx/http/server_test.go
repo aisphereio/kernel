@@ -339,6 +339,43 @@ func TestErrorEncoder(t *testing.T) {
 	}
 }
 
+func TestFilterAppendsAfterCORS(t *testing.T) {
+	authnCalled := false
+	authnFilter := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authnCalled = true
+			next.ServeHTTP(w, r)
+		})
+	}
+	srv := NewServer(
+		CORS(CORSConfig{
+			Enabled:        true,
+			AllowedOrigins: []string{"http://localhost:3000"},
+			AllowedMethods: []string{http.MethodPost, http.MethodOptions},
+			AllowedHeaders: []string{"Content-Type"},
+		}),
+		Filter(authnFilter),
+	)
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/authn/exchange", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	req.Header.Set("Access-Control-Request-Headers", "content-type")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusNoContent)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:3000" {
+		t.Fatalf("Access-Control-Allow-Origin = %q", got)
+	}
+	if authnCalled {
+		t.Fatal("authn filter should not run for handled CORS preflight")
+	}
+}
+
 func TestTLSConfig(t *testing.T) {
 	o := &Server{}
 	v := &tls.Config{}
