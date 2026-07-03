@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	kernel "github.com/aisphereio/kernel"
 	"github.com/aisphereio/kernel/dbx"
 	"github.com/aisphereio/kernel/migrationx"
 
@@ -155,4 +154,118 @@ func WithCredentialExtractor(e authnmw.CredentialExtractor) BuildOption {
 }
 func WithAllowAnonymous(allow bool) BuildOption {
 	return func(o *buildOptions) { o.allowAnonymous = allow }
+}
+
+// BuildService assembles a generated service module with a concrete service
+// implementation and Kernel-managed transports/middleware.
+func BuildService(ctx context.Context, cfg Config, module ServiceModule, svc any, opts ...BuildOption) (*App, error) {
+	return BuildServiceFromFactory(ctx, cfg, module, func(context.Context, ServiceDeps) (any, error) {
+		return svc, nil
+	}, opts...)
+}
+
+// BuildServiceFromFactory assembles a generated service module after loading
+// Kernel-managed dependencies. Provider SDKs and database construction stay in
+// boot/provider layers; generated service handlers receive only ServiceDeps.
+func BuildServiceFromFactory(ctx context.Context, cfg Config, module ServiceModule, factory ServiceFactory, opts ...BuildOption) (*App, error) {
+	if err := module.Validate(); err != nil {
+		return nil, err
+	}
+	if factory == nil {
+		return nil, fmt.Errorf("serverx: service factory is nil")
+	}
+
+	bo := &buildOptions{}
+	for _, opt := range opts {
+		opt(bo)
+	}
+
+	if err := validateMigrationConcurrency(cfg); err != nil {
+		return nil, err
+	}
+
+	providers := bo.providers
+	if bo.providerFactory != nil {
+		built, err := bo.providerFactory.BuildAccessProviders(ctx, cfg)
+		if err != nil {
+			return nil, err
+		}
+		providers = built
+	}
+
+	runtime := bo.runtime
+	runtime.Access = providers
+	runtime.RequestInfoResolver = module.RequestInfoResolver
+	runtime.AccessResolver = module.AccessResolver
+	runtime.CredentialExtractor = bo.credentialExtractor
+	runtime.AllowAnonymous = bo.allowAnonymous
+
+	serverOpts := append([]Option{WithRuntimeProviders(runtime)}, bo.serverOptions...)
+	app, err := New(ctx, cfg, serverOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	if cfg.Database.Enabled {
+		db, err := dbx.New(cfg.Database.DBX)
+		if err != nil {
+			return nil, err
+		}
+		app.db = db
+		if cfg.Database.Migration.Enabled {
+			if err := migrationx.Apply(ctx, db, cfg.Database.Migration); err != nil {
+				_ = db.Close()
+				return nil, err
+			}
+		}
+		if module.RegisterData != nil {
+			data, err := module.RegisterData(db)
+			if err != nil {
+				_ = db.Close()
+				return nil, err
+			}
+			app.data = data
+		}
+	}
+
+	svc, err := factory(ctx, ServiceDeps{
+		Config:    cfg,
+		DB:        app.db,
+		Data:      app.data,
+		Providers: providers,
+	})
+	if err != nil {
+		if app.db != nil {
+			_ = app.db.Close()
+		}
+		return nil, err
+	}
+
+	if app.GRPC() != nil && module.RegisterGRPC != nil {
+		if err := module.RegisterGRPC(app.GRPC(), svc); err != nil {
+			return nil, err
+		}
+	}
+	if app.HTTP() != nil && module.RegisterHTTP != nil {
+		if err := module.RegisterHTTP(app.HTTP(), svc); err != nil {
+			return nil, err
+		}
+	}
+	return app, nil
+}
+
+func validateMigrationConcurrency(cfg Config) error {
+	migration := cfg.Database.Migration.Normalize()
+	if !cfg.Database.Enabled || !cfg.Database.Migration.Enabled {
+		return nil
+	}
+	switch migration.Mode {
+	case migrationx.ModeApply, migrationx.ModeDevApply:
+	default:
+		return nil
+	}
+	if cfg.Deployment.Replicas > 1 && !migration.AllowConcurrent {
+		return fmt.Errorf("serverx: migration apply requires a single replica or migration.allow_concurrent=true")
+	}
+	return nil
 }

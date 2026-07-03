@@ -10,6 +10,7 @@ import (
 	"google.golang.org/genproto/googleapis/api/annotations"
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/pluginpb"
 )
 
@@ -50,8 +51,11 @@ type routeSpec struct {
 }
 
 type pathVar struct {
-	Name        string
-	FieldGoName string
+	Name         string
+	FieldGoName  string
+	Kind         protoreflect.Kind
+	EnumGoIdent  protogen.GoIdent
+	MessageField bool
 }
 
 func generateFile(gen *protogen.Plugin, file *protogen.File) {
@@ -84,6 +88,9 @@ func collectGatewayRoutes(file *protogen.File) map[string][]routeSpec {
 	out := map[string][]routeSpec{}
 	for _, svc := range file.Services {
 		for _, m := range svc.Methods {
+			if m.Desc.IsStreamingClient() || m.Desc.IsStreamingServer() {
+				continue
+			}
 			rule, ok := proto.GetExtension(m.Desc.Options(), annotations.E_Http).(*annotations.HttpRule)
 			if !ok || rule == nil {
 				continue
@@ -186,6 +193,7 @@ func genServiceBindings(g *protogen.GeneratedFile, gatewayxPkg protogen.GoImport
 	if len(routes) == 0 {
 		return
 	}
+	strconvPkg := protogen.GoImportPath("strconv")
 	for _, rt := range routes {
 		bindName := svc.GoName + "GatewayBind" + rt.MethodGoName
 		g.P("// ", bindName, " binds the matched HTTP Gateway request to the gRPC request for ", rt.FullMethod, ".")
@@ -194,7 +202,7 @@ func genServiceBindings(g *protogen.GeneratedFile, gatewayxPkg protogen.GoImport
 		g.P("if v, ok := req.Body.(*", rt.InputGoIdent, "); ok && v != nil { out = v }")
 		g.P("if v, ok := req.Body.(", rt.InputGoIdent, "); ok { out = &v }")
 		for _, pv := range rt.PathVars {
-			g.P("if v := match.Params[", fmt.Sprintf("%q", pv.Name), "]; v != \"\" { out.", pv.FieldGoName, " = v }")
+			genPathVarAssignment(g, strconvPkg, pv)
 		}
 		g.P("return out, nil")
 		g.P("}")
@@ -217,31 +225,68 @@ func resolvePathVars(path string, input *protogen.Message) []pathVar {
 	if len(names) == 0 || input == nil {
 		return nil
 	}
-	fields := map[string]string{}
+	fields := map[string]*protogen.Field{}
 	for _, f := range input.Fields {
-		fields[string(f.Desc.Name())] = f.GoName
-		fields[f.Desc.JSONName()] = f.GoName
+		fields[string(f.Desc.Name())] = f
+		fields[f.Desc.JSONName()] = f
 	}
 	out := make([]pathVar, 0, len(names))
 	for _, name := range names {
 		field := strings.Split(name, "=")[0]
-		if goName := fields[field]; goName != "" {
-			out = append(out, pathVar{Name: field, FieldGoName: goName})
+		if f := fields[field]; f != nil {
+			pv := pathVar{Name: field, FieldGoName: f.GoName, Kind: f.Desc.Kind(), MessageField: f.Message != nil}
+			if f.Enum != nil {
+				pv.EnumGoIdent = f.Enum.GoIdent
+			}
+			out = append(out, pv)
 		}
 	}
 	return out
+}
+
+func genPathVarAssignment(g *protogen.GeneratedFile, strconvPkg protogen.GoImportPath, pv pathVar) {
+	param := fmt.Sprintf("%q", pv.Name)
+	field := "out." + pv.FieldGoName
+	switch pv.Kind {
+	case protoreflect.StringKind:
+		g.P("if v := match.Params[", param, "]; v != \"\" { ", field, " = v }")
+	case protoreflect.BoolKind:
+		g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseBool"), "(v); if err != nil { return nil, err }; ", field, " = parsed }")
+	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
+		g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseInt"), "(v, 10, 32); if err != nil { return nil, err }; ", field, " = int32(parsed) }")
+	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
+		g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseInt"), "(v, 10, 64); if err != nil { return nil, err }; ", field, " = parsed }")
+	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
+		g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseUint"), "(v, 10, 32); if err != nil { return nil, err }; ", field, " = uint32(parsed) }")
+	case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
+		g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseUint"), "(v, 10, 64); if err != nil { return nil, err }; ", field, " = parsed }")
+	case protoreflect.FloatKind:
+		g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseFloat"), "(v, 32); if err != nil { return nil, err }; ", field, " = float32(parsed) }")
+	case protoreflect.DoubleKind:
+		g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseFloat"), "(v, 64); if err != nil { return nil, err }; ", field, " = parsed }")
+	case protoreflect.EnumKind:
+		if pv.EnumGoIdent.GoName != "" {
+			g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseInt"), "(v, 10, 32); if err != nil { return nil, err }; ", field, " = ", pv.EnumGoIdent, "(parsed) }")
+		}
+	}
 }
 
 func extractPathVars(path string) []string {
 	var out []string
 	for {
 		start := strings.Index(path, "{")
-		if start < 0 { break }
+		if start < 0 {
+			break
+		}
 		path = path[start+1:]
 		end := strings.Index(path, "}")
-		if end < 0 { break }
+		if end < 0 {
+			break
+		}
 		name := strings.TrimSpace(path[:end])
-		if name != "" { out = append(out, name) }
+		if name != "" {
+			out = append(out, name)
+		}
 		path = path[end+1:]
 	}
 	return out
@@ -249,11 +294,15 @@ func extractPathVars(path string) []string {
 
 func defaultServiceName(full string) string {
 	full = strings.TrimSpace(full)
-	if full == "" { return "service" }
+	if full == "" {
+		return "service"
+	}
 	parts := strings.Split(full, ".")
 	name := parts[len(parts)-1]
 	name = strings.TrimSuffix(name, "Service")
-	if name == "" { name = parts[len(parts)-1] }
+	if name == "" {
+		name = parts[len(parts)-1]
+	}
 	return strings.ToLower(kebab(name)) + "-service"
 }
 
@@ -265,9 +314,14 @@ func defaultRouteID(rt routeSpec) string {
 func kebab(s string) string {
 	var b strings.Builder
 	for i, r := range s {
-		if r == '.' || r == '_' || r == ' ' { b.WriteByte('.'); continue }
+		if r == '.' || r == '_' || r == ' ' {
+			b.WriteByte('.')
+			continue
+		}
 		if r >= 'A' && r <= 'Z' {
-			if i > 0 { b.WriteByte('.') }
+			if i > 0 {
+				b.WriteByte('.')
+			}
 			b.WriteRune(r + ('a' - 'A'))
 			continue
 		}
@@ -309,7 +363,9 @@ func cleanStrings(in []string) []string {
 	seen := map[string]bool{}
 	for _, v := range in {
 		v = strings.TrimSpace(v)
-		if v == "" || seen[v] { continue }
+		if v == "" || seen[v] {
+			continue
+		}
 		seen[v] = true
 		out = append(out, v)
 	}
@@ -317,8 +373,12 @@ func cleanStrings(in []string) []string {
 }
 
 func formatStringSlice(values []string) string {
-	if len(values) == 0 { return "nil" }
+	if len(values) == 0 {
+		return "nil"
+	}
 	parts := make([]string, 0, len(values))
-	for _, v := range values { parts = append(parts, fmt.Sprintf("%q", v)) }
+	for _, v := range values {
+		parts = append(parts, fmt.Sprintf("%q", v))
+	}
 	return "[]string{" + strings.Join(parts, ", ") + "}"
 }

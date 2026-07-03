@@ -27,11 +27,11 @@ func (platformJSONCodec) Name() string                    { return platformJSONC
 func init() { encoding.RegisterCodec(platformJSONCodec{}) }
 
 type IAMServiceClient interface {
-	Login(ctx context.Context, in LoginRequest, opts ...grpc.CallOption) (LoginReply, error)
+	Login(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (LoginReply, error)
 }
 
 type SkillServiceClient interface {
-	GetSkill(ctx context.Context, in GetSkillRequest, opts ...grpc.CallOption) (Skill, error)
+	GetSkill(ctx context.Context, in *GetSkillRequest, opts ...grpc.CallOption) (Skill, error)
 }
 
 type iamServiceClient struct{ cc grpc.ClientConnInterface }
@@ -39,7 +39,7 @@ type iamServiceClient struct{ cc grpc.ClientConnInterface }
 func NewIAMServiceClient(cc grpc.ClientConnInterface) IAMServiceClient {
 	return iamServiceClient{cc: cc}
 }
-func (c iamServiceClient) Login(ctx context.Context, in LoginRequest, opts ...grpc.CallOption) (LoginReply, error) {
+func (c iamServiceClient) Login(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (LoginReply, error) {
 	var out LoginReply
 	err := c.cc.Invoke(ctx, "/aisphere.iam.v1.IAMService/Login", in, &out, opts...)
 	return out, err
@@ -50,7 +50,7 @@ type skillServiceClient struct{ cc grpc.ClientConnInterface }
 func NewSkillServiceClient(cc grpc.ClientConnInterface) SkillServiceClient {
 	return skillServiceClient{cc: cc}
 }
-func (c skillServiceClient) GetSkill(ctx context.Context, in GetSkillRequest, opts ...grpc.CallOption) (Skill, error) {
+func (c skillServiceClient) GetSkill(ctx context.Context, in *GetSkillRequest, opts ...grpc.CallOption) (Skill, error) {
 	var out Skill
 	err := c.cc.Invoke(ctx, "/aisphere.skill.v1.SkillService/GetSkill", in, &out, opts...)
 	return out, err

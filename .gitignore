@@ -19,6 +19,7 @@ coverage
 *.a
 *.so
 *.zip
+*.exe
 
 # Go workspace and dependency caches
 vendor/

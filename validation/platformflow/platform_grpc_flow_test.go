@@ -1,3 +1,6 @@
+//go:build platformflow_validation
+// +build platformflow_validation
+
 package platformflow
 
 import (

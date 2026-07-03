@@ -16,9 +16,9 @@ import (
 	"github.com/aisphereio/kernel/errorx"
 	internalbreaker "github.com/aisphereio/kernel/internal/circuitbreaker"
 	"github.com/aisphereio/kernel/internal/group"
-	internalratelimit "github.com/aisphereio/kernel/internal/ratelimit"
 	"github.com/aisphereio/kernel/logx"
 	"github.com/aisphereio/kernel/metricsx"
+	"github.com/aisphereio/kernel/ratelimitx"
 	"github.com/aisphereio/kernel/servicecontextx"
 	httpx "github.com/aisphereio/kernel/transportx/http"
 	"github.com/google/uuid"
@@ -152,10 +152,10 @@ func Recover() httpx.FilterFunc {
 			defer func() {
 				if rec := recover(); rec != nil {
 					logger.Error("panic recovered",
-					logx.Any("panic", rec),
-					logx.String("path", r.URL.Path),
-					logx.String("stack", string(debug.Stack())),
-				)
+						logx.Any("panic", rec),
+						logx.String("path", r.URL.Path),
+						logx.String("stack", string(debug.Stack())),
+					)
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
 			}()
@@ -237,19 +237,50 @@ func Breaker() httpx.FilterFunc {
 	}
 }
 
-// Shedding applies Kernel's adaptive BBR limiter as an HTTP filter.
-func Shedding(opts ...internalratelimit.Option) httpx.FilterFunc {
-	limiter := internalratelimit.NewLimiter(opts...)
+// Shedding applies Kernel's public rate-limit provider contract as an HTTP
+// self-protection filter.
+func Shedding(policies ...ratelimitx.Policy) httpx.FilterFunc {
+	var policy ratelimitx.Policy
+	if len(policies) > 0 {
+		policy = policies[0]
+	}
+	return SheddingWithProvider(policy, nil)
+}
+
+// SheddingWithProvider applies a caller-supplied rate-limit provider. A nil
+// provider uses the in-memory provider for local self-protection.
+func SheddingWithProvider(policy ratelimitx.Policy, provider ratelimitx.Provider) httpx.FilterFunc {
+	if !policy.Enabled {
+		policy = ratelimitx.Policy{
+			Enabled: true,
+			Name:    "restx.shedding",
+			Backend: ratelimitx.BackendMemory,
+			Scope:   ratelimitx.ScopeLocalInstance,
+			Key:     ratelimitx.KeyOperation,
+			QPS:     1000,
+			Burst:   1000,
+		}
+	}
+	if provider == nil {
+		provider = ratelimitx.NewMemoryProvider()
+	}
+	limiter, limiterErr := provider.NewLimiter(policy)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			done, err := limiter.Allow()
-			if err != nil {
+			if limiterErr != nil {
+				http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+				return
+			}
+			key := r.Method + " " + r.URL.Path
+			decision, err := limiter.Allow(r.Context(), key, 1)
+			if err != nil || !decision.Allowed {
+				if decision.RetryAfter > 0 {
+					w.Header().Set("Retry-After", strconv.Itoa(int(decision.RetryAfter.Seconds())))
+				}
 				http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
 				return
 			}
-			rw := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-			next.ServeHTTP(rw, r)
-			done(internalratelimit.DoneInfo{Err: statusAsError(rw.status)})
+			next.ServeHTTP(w, r)
 		})
 	}
 }
