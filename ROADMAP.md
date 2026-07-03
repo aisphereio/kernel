@@ -43,15 +43,15 @@ This document defines the roadmap for Aisphere Kernel development.
         - [x] TLS
         - [x] Unary Handler
         - [x] Streaming Handler
-- [ ] Cache
-    - [ ] go-redis
+- [x] Cache
+    - [x] go-redis
 - [x] Event
     - [x] Pub/Sub
     - [x] Kafka
     - [ ] Nats
 - [x] Database
     - [x] Ent
-    - [ ] Gorm
+    - [x] Gorm
 
 ## Platform
 - [ ] Aisphere Kernel API

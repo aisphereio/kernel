@@ -17,25 +17,53 @@ transport context
 ## 2. 关键字段
 
 ```go
+type Protocol string
+
+const (
+    ProtocolUnknown Protocol = "unknown"
+    ProtocolHTTP    Protocol = "http"
+    ProtocolGRPC    Protocol = "grpc"
+)
+
+type Direction string
+
+const (
+    DirectionUnknown Direction = "unknown"
+    DirectionServer  Direction = "server"
+    DirectionClient  Direction = "client"
+)
+
 type Info struct {
-    Direction string // server/client
-    Protocol  string // http/grpc
+    Direction Direction          // server/client
+    Protocol  Protocol           // http/grpc
     Service   string
     Method    string
     Operation string
-    Exposure  accessv1.Exposure
+    Endpoint  string             // 原始请求路径
+
+    Exposure  accessv1.Exposure  // PUBLIC / INTERNAL / SYSTEM
     Action    string
     Resource  string
+
     TenantID  string
     RequestID string
     TraceID   string
     UserID    string
+
     CallerService string
     TargetService string
-    IsSystem bool
-    IsInternal bool
+
+    IsSystem      bool
+    IsInternal    bool
+    IsLongRunning bool             // 长连接/流式请求
+
+    Labels map[string]string       // 扩展标签
 }
 ```
+
+> `Direction` 和 `Protocol` 现在是强类型常量（`ProtocolHTTP` / `ProtocolGRPC` / `DirectionServer` / `DirectionClient`），不再是原始字符串。
+>
+> 相比早期版本新增了 `Endpoint`、`IsLongRunning`、`Labels` 三个字段。
 
 ## 3. 生成规则
 
