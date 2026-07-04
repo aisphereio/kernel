@@ -39,6 +39,18 @@ security:
       timeout: 5000000000
       fully_consistent: true
 
+  # Access policy controls per-operation skip behavior.
+  # Operations listed in skip_operations skip SpiceDB authorization
+  # but still require authentication and record audit.
+  # Operations listed in public_operations skip both authn and authz.
+  access:
+    skip_operations:
+      - GetMe
+      - CreateOrganization
+    # public_operations:
+    #   - Login
+    #   - Exchange
+
   audit:
     enabled: true
     backend: postgres

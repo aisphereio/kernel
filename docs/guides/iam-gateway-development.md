@@ -881,7 +881,266 @@ AI 开发 IAM/Gateway 时必须遵守：
 13. 场景验证不放回 Kernel runtime tree，放 generated project tests 或专用 GitHub Actions job。
 ```
 
-## 10. 验收清单
+## 10. 常见陷阱与实战经验
+
+本章记录在 IAM 服务开发过程中遇到的实际问题和解决方案，帮助后续开发者避免重复踩坑。
+
+### 10.1 Casdoor OAuth Code Exchange 失败（500 AUTHN_IDENTITY_BACKEND_FAILED）
+
+**现象**：前端回调 Casdoor 拿到 `code` 后，调用 `POST /v1/iam/auth/exchange` 返回 500，错误码 `AUTHN_IDENTITY_BACKEND_FAILED`，消息 `"casdoor code exchange failed"`。
+
+**根因**：Kernel 的 `casdoor.Client` 默认使用 Casdoor SDK 的 `GetOAuthToken(code, state)` 方法交换 code。但 Casdoor SDK 的 `GetOAuthToken` 在构造 `oauth2.Config` 时**没有设置 `RedirectURL`**（SDK 源码中该行被注释掉了）。Casdoor 的 token endpoint 要求 `redirect_uri` 参数与授权请求中的 `redirect_uri` 匹配，缺少该参数导致 Casdoor 拒绝交换。
+
+**解决方案**：在 IAM 中创建 `casdoorClockSkewProvider` 包装器，重写 `ExchangeCode` 方法，使用标准 `golang.org/x/oauth2` 库手动构造 `oauth2.Config` 并设置 `RedirectURL`：
+
+```go
+config := oauth2.Config{
+    ClientID:     p.cfg.ClientID,
+    ClientSecret: p.cfg.ClientSecret,
+    RedirectURL:  strings.TrimSpace(req.RedirectURI),  // 关键：必须设置
+    Endpoint: oauth2.Endpoint{
+        AuthURL:   endpoint + "/api/login/oauth/authorize",
+        TokenURL:  endpoint + "/api/login/oauth/access_token",
+        AuthStyle: oauth2.AuthStyleInParams,
+    },
+}
+token, err := config.Exchange(ctx, req.Code, opts...)
+```
+
+**对比 Hub 实现**：Hub 的 `data/authn.go` 直接调用 `svc.ExchangeCode(ctx, authn.AuthCodeExchangeRequest{...})`，使用的是 Kernel 的 `casdoor.Client`（即 `authn/casdoor/token.go` 中的 `exchangeOAuthToken`）。Kernel 的 `exchangeOAuthToken` **已经正确设置了 `RedirectURL`**。而 IAM 使用了 `casdoorClockSkewProvider` 包装，该包装的原始实现调用了 `p.sdk.GetOAuthToken(req.Code, req.State)`（SDK 方法，缺少 `RedirectURL`），导致失败。
+
+**教训**：包装 Kernel provider 时，必须检查被包装方法是否完整实现了所有参数传递。Casdoor SDK 的 `GetOAuthToken` 和 Kernel 的 `exchangeOAuthToken` 行为不一致。
+
+### 10.2 Casdoor JWT 时钟偏差（Clock Skew）
+
+**现象**：Casdoor 签发的 JWT 在 IAM 服务端验证时偶尔失败，提示 token 过期或未生效。
+
+**根因**：Casdoor 服务器和 IAM 服务之间的系统时间可能存在偏差（尤其是在 Docker 或跨主机部署时）。JWT 的 `iat`（签发时间）和 `exp`（过期时间）校验是严格的，默认不允许时钟偏差。
+
+**解决方案**：在 `casdoorClockSkewProvider` 中，重写 `VerifyToken` 和 `principalFromAccessToken` 方法，在解析 JWT 时设置 60 秒的时钟偏差：
+
+```go
+const casdoorTokenClockLeeway = 60 * time.Second
+
+func (p *casdoorClockSkewProvider) parseJwtTokenWithLeeway(token string) (*casdoorsdk.Claims, error) {
+    jwtTimeFuncMu.Lock()
+    defer jwtTimeFuncMu.Unlock()
+    previous := jwt.TimeFunc
+    jwt.TimeFunc = func() time.Time { return time.Now().Add(casdoorTokenClockLeeway) }
+    defer func() { jwt.TimeFunc = previous }()
+    return p.sdk.ParseJwtToken(token)
+}
+```
+
+**注意**：`jwt.TimeFunc` 是全局变量，修改时需要加锁保护，避免并发竞争。
+
+### 10.3 GetMe 端点 AUTHZ_PERMISSION_DENIED（SpiceDB 权限拒绝）
+
+**现象**：登录成功后，前端调用 `GET /v1/iam/me` 返回 403，错误码 `AUTHZ_PERMISSION_DENIED`，消息 `"spicedb permission did not matched"`。
+
+**根因**：生成的 `IAMAuthServiceKernelAccessResolver` 为 `GetMe` 方法生成了 SpiceDB 权限检查规则：
+
+```go
+"/iam.v1.IAMAuthService/GetMe": {
+    Action:   "read",
+    Resource: "iam:self",    // 这个资源类型在 SpiceDB schema 中不存在
+    Mode:     "SELF_CHECK",
+}
+```
+
+SpiceDB schema 中 `iam` 类型只有 `admin` 关系，没有 `self` 资源类型。所以 SpiceDB 返回 permission denied。
+
+**对比 Hub 实现**：Hub 的 `/v1/authn/me` 端点**没有 SpiceDB 权限检查**。Hub 的 authn middleware 只做 token 验证（`Authenticate`），不做资源级授权。`GetMe` 是获取当前用户自身信息的端点，只需要认证，不需要授权。
+
+**推荐方案**：使用 `SkipPolicy` 配置驱动，在 `security.access.skip_operations` 中列出 `GetMe`：
+
+```yaml
+security:
+  access:
+    skip_operations:
+      - GetMe
+      - CreateOrganization
+```
+
+然后在 `iamAccessResolver` 中使用 `accessx.NewSkipPolicyResolver` 统一处理：
+
+```go
+func newIAMAccessResolver(security conf.SecurityConfig) mwaccess.Resolver {
+    skipResolver := accessx.NewSkipPolicyResolver(accessx.AccessConfig{
+        SkipOperations: security.Access.SkipOperations,
+    })
+    return func(ctx context.Context, operation string, req any) (accessx.Check, bool, error) {
+        if policy := skipResolver(operation); policy != accessx.SkipDefault {
+            return accessx.Check{SkipPolicy: policy, AuditAction: resolveAuditAction(operation)}, true, nil
+        }
+        // ... 其他操作走正常 resolver 链
+    }
+}
+```
+
+**旧方案（Deprecated）**：直接在 resolver 中返回 `accessx.Check{}, false, nil` 跳过授权检查：
+
+```go
+func iamAccessResolver(ctx context.Context, operation string, req any) (accessx.Check, bool, error) {
+    if isGetMeOperation(operation) {
+        return accessx.Check{}, false, nil  // 跳过授权检查
+    }
+    // ... 其他操作走正常 resolver 链
+}
+```
+
+**设计原则**：`AUTHENTICATED` 级别的端点（如 `GetMe`、`RefreshToken`）只需要认证，不需要资源级授权。`AUTHORIZED` 级别的端点才需要 SpiceDB 检查。新代码应使用 `SkipPolicy` 替代硬编码跳过逻辑。
+
+### 10.4 生成代码 vs 手写代码的 Access Resolver 冲突
+
+**现象**：`iamAccessResolver` 中使用了生成的 `IAMAuthServiceKernelAccessResolver`，但手写的 `IAMAuthServiceAccessResolver`（在 `iam_auth_resolver.go` 中）没有被使用。
+
+**根因**：`internal/server/access.go` 中的 `iamAccessResolver` 函数按顺序尝试多个 resolver：
+
+```go
+resolvers := []mwaccess.Resolver{
+    v1.IAMAuthServiceKernelAccessResolver,   // 生成的 resolver
+    v1.IAMDirectoryServiceKernelAccessResolver,
+    // ...
+}
+```
+
+而手写的 `v1.IAMAuthServiceAccessResolver`（在 `api/iam/v1/iam_auth_resolver.go` 中）**没有被包含在这个列表中**。生成的 resolver 对 `GetMe` 使用 `SELF_CHECK` 模式，而手写的 resolver 使用 `CHECK_ONLY` 模式。
+
+**解决方案**：确保 `iamAccessResolver` 中使用的 resolver 列表与期望的行为一致。如果手写 resolver 有特殊逻辑，需要将其加入列表，或者像 `GetMe` 那样在 `iamAccessResolver` 中提前处理。
+
+### 10.5 配置文件加载顺序与环境变量
+
+**现象**：IAM 启动时使用默认配置（`configs/config.yaml`），但该文件中的 `client_secret` 是 `${CASDOOR_CLIENT_SECRET}` 环境变量引用，而环境变量未设置，导致 Casdoor 连接失败。
+
+**根因**：Kernel 的 `configx` 支持环境变量展开（`${VAR_NAME}` 语法）。`configs/config.yaml` 是默认配置，使用环境变量引用；`configs/config.local.yaml` 是本地开发配置，使用硬编码值。
+
+**解决方案**：启动时必须指定本地配置：
+
+```bash
+go run ./cmd/aisphere-iam -conf ./configs/config.local.yaml
+```
+
+**关键区别**：
+- `configs/config.yaml`：`client_secret: "${CASDOOR_CLIENT_SECRET}"`，`application_name: "aisphere"`
+- `configs/config.local.yaml`：`client_secret: "6d37fc7a95c21c45e543207704345b2ac80586d2"`，`application_name: "aisphere-iam"`
+
+**注意**：两个配置文件的 `application_name` 也不同。`config.yaml` 使用 `aisphere`（Hub 的 app），`config.local.yaml` 使用 `aisphere-iam`（IAM 自己的 app）。Casdoor 中的 app 配置必须与之一致。
+
+### 10.6 数据库连接凭据
+
+**现象**：IAM 启动时数据库连接失败。
+
+**根因**：PostgreSQL 连接字符串中的用户名、密码或数据库名不正确。
+
+**正确凭据**：
+- 用户：`postgres`（不是 `aisphere`）
+- 密码：`ChangeMe_PostgreSQL_123`（不是 `ChangeMe_PostgreSQL_123root`）
+- 数据库：`aisphere_iam`
+- 连接字符串：`postgres://postgres:ChangeMe_PostgreSQL_123@36.137.200.194:30080/aisphere_iam?sslmode=disable`
+
+**SpiceDB 凭据**：
+- Preshared Key：`keykeykey`（不是 `aisphere`）
+- 端点：`36.137.200.194:30084`
+
+### 10.7 前端 `state` 参数传递
+
+**现象**：IAM 前端回调页面调用 `exchangeCode(code, redirectUri)` 时没有传递 `state` 参数，但 IAM 后端期望 `state` 在请求体中。
+
+**根因**：`aisphere-iam-front/src/lib/api/index.ts` 中的 `exchangeCode` 方法最初只接受两个参数（`code`, `redirectUri`），但后端 `ExchangeCode` handler 期望 `state` 字段。
+
+**解决方案**：
+1. 修改 `exchangeCode` 方法，接受可选的 `state` 参数（第三个参数，默认为 `''`）
+2. 在请求体中包含 `state` 字段
+3. 在回调页面中从 URL 查询参数提取 `state` 并传递给 `exchangeCode`
+
+```typescript
+// API 层
+exchangeCode: async (code: string, redirectUri: string, state = '') => {
+    const raw = await iamRequest<{...}>('/v1/iam/auth/exchange', {
+        method: 'POST',
+        body: JSON.stringify({ code, redirect_uri: redirectUri, state }),
+    });
+    // ...
+}
+
+// 回调页面
+const state = queryParams.get('state') || '';
+const tokens = await iamAuthApi.exchangeCode(code, redirectUri, state);
+```
+
+### 10.8 前端响应结构嵌套
+
+**现象**：IAM 后端返回的 `ExchangeCode` 响应是嵌套结构 `{ tokens: {...}, principal: {...} }`，但前端期望扁平结构 `{ accessToken: "...", refreshToken: "..." }`。
+
+**根因**：IAM 的 `ExchangeCode` handler 返回 `ExchangeCodeReply`，其中 `tokens` 字段是 `TokenSet` 类型（嵌套），而 Hub 的 `Exchange` handler 返回扁平结构。
+
+**解决方案**：前端 `exchangeCode` 方法需要同时处理两种结构：
+
+```typescript
+const t = raw.tokens || raw;
+return {
+    accessToken: t.accessToken || t.access_token || '',
+    refreshToken: t.refreshToken || t.refresh_token || '',
+    // ...
+};
+```
+
+### 10.9 gorilla/mux 路由模式
+
+**现象**：`DELETE /v1/users/{username}` 路由返回 404。
+
+**根因**：Kernel 的 HTTP server 底层使用 `gorilla/mux`。路由模式必须使用 `{username}` 语法（不是 `:username` 或手动路径解析），并且需要使用 `mux.Vars(r)` 提取路径变量。
+
+**解决方案**：
+```go
+srv.HandleFunc("/v1/users/{username}", localUserHandler.DeleteUser)
+
+// 在 handler 中：
+vars := mux.Vars(r)
+username := vars["username"]
+```
+
+### 10.10 本地用户管理 API（/v1/users）
+
+**背景**：IAM 前端有一个"本地用户"（Local Users）标签页，用于管理 Hub 自有数据库中的用户（非 Casdoor 用户）。该功能调用 `GET /v1/users`、`POST /v1/users`、`DELETE /v1/users/{username}` 接口。
+
+**实现**：这些端点不是通过 protobuf/gRPC 定义的，而是作为普通 HTTP handler 注册在 `internal/server/http.go` 中：
+
+```go
+localUserHandler := service.NewLocalUserHandler(resources.LocalUsers)
+srv.HandleFunc("/v1/users", func(w http.ResponseWriter, r *http.Request) {
+    switch r.Method {
+    case http.MethodGet:
+        localUserHandler.ListUsers(w, r)
+    case http.MethodPost:
+        localUserHandler.SaveUser(w, r)
+    default:
+        writeJSON(w, http.StatusMethodNotAllowed, ...)
+    }
+})
+srv.HandleFunc("/v1/users/{username}", localUserHandler.DeleteUser)
+```
+
+**数据模型**：使用 `iam_local_users` 表（通过 migration `000002_iam_local_users.sql` 创建），包含 `username`、`subject_id`、`display_name`、`email`、`roles_json`、`permissions_json`、`namespaces_json`、`password_hash` 等字段。
+
+**密码存储**：使用 SHA-256 哈希（非生产级安全，仅用于本地开发）。
+
+### 10.11 Hub vs IAM 登录路径对比
+
+开发 IAM 登录功能时，最有效的方法是**对比 Hub 和 IAM 的登录路径实现差异**。以下是关键差异点：
+
+| 环节 | Hub 实现 | IAM 实现 | 差异影响 |
+|------|---------|---------|---------|
+| **OAuth code exchange** | 使用 Kernel 的 `casdoor.Client.ExchangeCode`（内部调用 `exchangeOAuthToken`，设置 `RedirectURL`） | 使用 `wrapperProvider.ExchangeCode`（最初调用 `sdk.GetOAuthToken`，未设置 `RedirectURL`） | 导致 500 错误 |
+| **/me 端点授权** | 无 SpiceDB 检查，只做 token 验证 | 生成的 `AccessResolver` 要求 SpiceDB 检查 `iam:self` | 导致 403 错误 |
+| **响应结构** | 扁平结构 `{ accessToken, refreshToken, ... }` | 嵌套结构 `{ tokens: {...}, principal: {...} }` | 前端需要兼容处理 |
+| **路由注册** | 使用 `gorilla/mux` 的 `HandleFunc` | 使用 Kernel 的 `RegisterIAMAuthServiceHTTPServer`（也是 gorilla/mux） | 路由模式一致 |
+| **配置加载** | 使用 `config.yaml`（环境变量） | 使用 `config.local.yaml`（硬编码值） | 启动参数不同 |
+
+**方法论**：当 IAM 的某个功能出现问题时，先看 Hub 的对应实现。如果 Hub 能正常工作而 IAM 不能，说明 IAM 的实现与 Hub 有差异。逐层对比（proto → service → data → provider）可以快速定位问题。
+
+## 11. 验收清单
 
 IAM 验收：
 

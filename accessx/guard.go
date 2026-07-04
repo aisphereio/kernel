@@ -8,12 +8,76 @@ import (
 	"github.com/aisphereio/kernel/authz"
 )
 
+// AuthzMode controls whether the Guard performs a SpiceDB/ReBAC authorization
+// check or skips it. Operations that bootstrap a new resource (which cannot
+// exist in SpiceDB yet) should use AuthzModeNone.
+//
+// Deprecated: Use SkipPolicy instead. AuthzMode is kept for backward
+// compatibility and will be removed in a future version.
+type AuthzMode string
+
+const (
+	// AuthzModeDefault performs the standard SpiceDB authorization check.
+	AuthzModeDefault AuthzMode = ""
+	// AuthzModeNone skips the SpiceDB authorization check entirely. The request
+	// still goes through authentication, platform policy, and audit.
+	//
+	// Deprecated: Use SkipPolicy=SkipAuthz instead.
+	AuthzModeNone AuthzMode = "None"
+)
+
+// SkipPolicy controls whether the Guard performs authentication and/or
+// authorization checks. It replaces the previous AllowAll + AuthzMode
+// combination with a single, clearer policy.
+type SkipPolicy string
+
+const (
+	// SkipDefault performs the standard authentication + authorization check.
+	SkipDefault SkipPolicy = ""
+	// SkipAuthz skips the SpiceDB authorization check but still requires
+	// authentication and records audit. Use for operations like GetMe
+	// where the resource is the caller's own identity, or CreateOrganization
+	// where the target resource does not yet exist in the authorization graph.
+	SkipAuthz SkipPolicy = "skip_authz"
+	// SkipAll skips both authentication AND authorization. The request passes
+	// through without any principal. Use for public endpoints like health
+	// checks, login, token exchange, etc.
+	// WARNING: No authenticated principal will be available in the handler.
+	SkipAll SkipPolicy = "skip_all"
+)
+
 type Check struct {
 	Credential authn.Credential
 	Principal  authn.Principal
 
 	Permission string
 	Resource   authz.ObjectRef
+
+	// SkipPolicy controls whether authorization (and optionally authentication)
+	// is skipped. The default (SkipDefault) performs the full authn+authz check.
+	// When set to SkipAuthz, the Guard skips the SpiceDB check but still
+	// authenticates and records audit. When set to SkipAll, both authentication
+	// and authorization are skipped.
+	//
+	// If SkipPolicy is SkipDefault, the deprecated AuthzMode and AllowAll fields
+	// are checked for backward compatibility.
+	SkipPolicy SkipPolicy
+
+	// AuthzMode controls whether SpiceDB authorization is required.
+	// Use AuthzModeNone for operations like CreateOrganization where the
+	// target resource does not yet exist in the authorization graph.
+	//
+	// Deprecated: Use SkipPolicy=SkipAuthz instead.
+	AuthzMode AuthzMode
+
+	// AllowAll grants access to every authenticated principal when true.
+	// This is useful for self-service operations (e.g. CreateOrganization,
+	// CreateProject) where any authenticated user should be allowed.
+	// When AllowAll is true, AuthzMode is implicitly AuthzModeNone.
+	// This can be made configurable per deployment via platform policy.
+	//
+	// Deprecated: Use SkipPolicy=SkipAuthz instead.
+	AllowAll bool
 
 	TenantID  string
 	OrgID     string
@@ -51,11 +115,29 @@ func AllowAllForDevOnly() Guard {
 }
 
 func (g Guard) Require(ctx context.Context, check Check) (authn.Principal, error) {
+	// SkipAll skips both authentication and authorization entirely.
+	// Use for public endpoints (health checks, login, etc.) where no
+	// principal is expected.
+	if check.SkipPolicy == SkipAll {
+		g.record(ctx, check, authn.Principal{}, auditx.ResultSuccess, nil)
+		return authn.Anonymous(), nil
+	}
+
 	principal, err := g.Authenticate(ctx, check)
 	if err != nil {
 		g.record(ctx, check, principal, auditx.ResultFailure, err)
 		return principal, err
 	}
+
+	// Check skip conditions in priority order:
+	// 1. SkipPolicy (new) — SkipAuthz skips SpiceDB but keeps authn + audit
+	// 2. AllowAll (deprecated) — grants access to every authenticated principal
+	// 3. AuthzModeNone (deprecated) — skips SpiceDB check
+	if check.SkipPolicy == SkipAuthz || check.AllowAll || check.AuthzMode == AuthzModeNone {
+		g.record(ctx, check, principal, auditx.ResultSuccess, nil)
+		return principal, nil
+	}
+
 	decision, err := g.Authorize(ctx, principal, check)
 	if err != nil {
 		g.record(ctx, check, principal, auditx.ResultFailure, err)
@@ -71,9 +153,17 @@ func (g Guard) Require(ctx context.Context, check Check) (authn.Principal, error
 }
 
 func (g Guard) Can(ctx context.Context, check Check) (bool, error) {
+	// SkipAll skips both authentication and authorization.
+	if check.SkipPolicy == SkipAll {
+		return true, nil
+	}
 	principal, err := g.Authenticate(ctx, check)
 	if err != nil {
 		return false, err
+	}
+	// SkipAuthz or deprecated AllowAll/AuthzModeNone — skip SpiceDB check.
+	if check.SkipPolicy == SkipAuthz || check.AllowAll || check.AuthzMode == AuthzModeNone {
+		return true, nil
 	}
 	decision, err := g.Authorize(ctx, principal, check)
 	if err != nil {

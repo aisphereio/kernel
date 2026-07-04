@@ -56,11 +56,12 @@ type serverOptions struct {
 	rateLimitProvider ratelimitx.Provider
 	rateLimitKey      RateLimitKeyFunc
 
-	accessEnabled bool
-	guard         accessx.Guard
-	resolver      accessmw.Resolver
+accessEnabled bool
+		guard         accessx.Guard
+		resolver      accessmw.Resolver
+		skipResolver  accessmw.SkipPolicyResolver
 
-	admission admissionx.Chain
+		admission admissionx.Chain
 }
 
 // WithBefore prepends middleware before Kernel's default chain. Use sparingly;
@@ -132,8 +133,18 @@ func WithRateLimitPolicy(policy ratelimitx.Policy, provider ratelimitx.Provider,
 }
 
 // WithAccess enables authorization and audit middleware.
-func WithAccess(guard accessx.Guard, resolver accessmw.Resolver) ServerOption {
-	return func(o *serverOptions) { o.accessEnabled = true; o.guard = guard; o.resolver = resolver }
+// An optional SkipPolicyResolver can be provided to configure skip policies
+// (public endpoints, authz-skip operations) without each service needing to
+// implement the logic in its own Resolver.
+func WithAccess(guard accessx.Guard, resolver accessmw.Resolver, skipResolver ...accessmw.SkipPolicyResolver) ServerOption {
+	return func(o *serverOptions) {
+		o.accessEnabled = true
+		o.guard = guard
+		o.resolver = resolver
+		if len(skipResolver) > 0 && skipResolver[0] != nil {
+			o.skipResolver = skipResolver[0]
+		}
+	}
 }
 
 // WithAdmission enables Kubernetes-style mutating/validating admission before business logic.
@@ -170,9 +181,13 @@ func Server(opts ...ServerOption) []middleware.Middleware {
 	if o.rateLimitEnabled {
 		chain = append(chain, rateLimitMiddleware(o.rateLimitPolicy, o.rateLimitProvider, o.rateLimitKey))
 	}
-	if o.accessEnabled {
-		chain = append(chain, accessmw.Server(o.guard, accessmw.WithResolver(o.resolver)))
-	}
+if o.accessEnabled {
+			accessOpts := []accessmw.Option{accessmw.WithResolver(o.resolver)}
+			if o.skipResolver != nil {
+				accessOpts = append(accessOpts, accessmw.WithSkipPolicyResolver(o.skipResolver))
+			}
+			chain = append(chain, accessmw.Server(o.guard, accessOpts...))
+		}
 	if !o.admission.Empty() {
 		chain = append(chain, admissionx.Middleware(o.admission))
 	}

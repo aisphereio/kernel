@@ -14,14 +14,23 @@ import (
 
 // RuntimeProviders is the provider-neutral server wiring contract used by
 // Kernel services. Concrete engines such as Casdoor and SpiceDB must be adapted
-// into accessx.Providers before they enter serverx. Business services should
-// not import provider SDKs directly.
+// into accessx.Providers before they enter serverx. Business services should not
+// import provider SDKs directly.
 type RuntimeProviders struct {
 	Access accessx.Providers
 
 	// AccessResolver is normally generated from proto access policy. It maps a
 	// request operation to an accessx.Check consumed by accessx.Guard.
 	AccessResolver accessmw.Resolver
+
+	// SkipPolicyResolver is an optional config-driven skip policy resolver.
+	// When set, it is checked before the AccessResolver — operations matching
+	// public or skip policies are short-circuited without calling the resolver
+	// or Guard.Require.
+	//
+	// This is typically created from accessx.NewSkipPolicyResolver(cfg) using
+	// the service's security.access configuration.
+	SkipPolicyResolver accessmw.SkipPolicyResolver
 
 	// RequestInfoResolver is normally generated from proto metadata. It fills
 	// requestx.Info before authn/authz/audit/metrics run.
@@ -31,7 +40,7 @@ type RuntimeProviders struct {
 	Admission admissionx.Chain
 
 	// CredentialExtractor allows gateways and services to choose bearer,
-	// internal delegation token, API key, or other extraction strategies.
+	// token, API key, or other extraction strategies.
 	CredentialExtractor authnmw.CredentialExtractor
 	AllowAnonymous      bool
 }
@@ -49,9 +58,9 @@ func (p RuntimeProviders) ServerMiddleware() []middleware.Middleware {
 			opts = append(opts, autowire.WithCredentialExtractor(p.CredentialExtractor))
 		}
 	}
-	if p.AccessResolver != nil {
-		opts = append(opts, autowire.WithAccess(p.Access.Guard(), p.AccessResolver))
-	}
+if p.AccessResolver != nil {
+			opts = append(opts, autowire.WithAccess(p.Access.Guard(), p.AccessResolver, p.SkipPolicyResolver))
+		}
 	if !p.Admission.Empty() {
 		opts = append(opts, autowire.WithAdmission(p.Admission))
 	}

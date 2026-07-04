@@ -42,7 +42,8 @@
 | 启动服务 | `serverx` | `serverx.Config`、generated `KernelModule()`、业务 factory | 业务自己 new HTTP/gRPC server |
 | 请求上下文 | `requestx` | generated resolver、middleware 注入 | 解析 raw path、raw method、operation string |
 | 登录认证 | `authn` | provider 配置、credential extractor | 业务直接调用 Casdoor SDK |
-| 授权审计 | `authz`、`accessx`、`auditx` | access resolver、authorizer、audit recorder | 业务绕过 guard 自己判权限 |
+| 授权审计 | `authz`、`accessx`、`auditx` | access resolver、authorizer、audit recorder、SkipPolicyResolver | 业务绕过 guard 自己判权限 |
+| 跳过授权/认证 | `accessx.SkipPolicy`、`accessx.AccessConfig` | `security.access.skip_operations`、`security.access.public_operations` | 在 resolver 中硬编码 `AuthzModeNone` 或 `AllowAll`（应使用 `SkipPolicy`） |
 | Gateway 路由 | `gatewayx` | Route Manifest、InvokerRegistry、route registry | 手写 Gateway 业务路由表 |
 | 边界准入 | `admissionx` | mutating/validating plugin | 把通用默认值/状态校验写散 |
 | 服务间调用 | `clientpolicyx`、`serverx.ClientMiddlewareForDownstream` | downstream policy、timeout/retry/breaker/limiter | 裸 `grpc.Dial`、裸 `http.Client`、手写 retry loop |

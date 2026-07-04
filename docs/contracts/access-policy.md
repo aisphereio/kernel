@@ -133,10 +133,11 @@ greater than one.
 
 | Layer | Tool/package | Responsibility |
 |---|---|---|
-| Contract lint | `buf-check-aisphere` | Require access policy and validate required fields |
+| Contract lint | `buf-check-aisphere` | Auto access policy and validate required fields |
 | Codegen | `protoc-gen-go-authz` | Convert AUTHORIZED policy into access resolver |
 | Runtime | `middleware/autowire` | Fixed ctx/authn/ratelimit/authz/audit chain |
-| Boot | `bootx/serverx` | Select providers and reject invalid deployment policies |
+| Runtime | `accessx.SkipPolicyResolver` | Config-driven skip policies (SkipAuthz/SkipAll) checked before resolver |
+| Boot | `bootx/serverx` | Select config and reject invalid deployment policies |
 | Agent guide | `AGENTS.md` | Keep AI agents inside the Kernel development paradigm |
 
 ## Agent rule
