@@ -41,14 +41,29 @@ func (f *file) loadFile(path string) (*configx.KeyValue, error) {
 	}, nil
 }
 
+// supportedExts lists file extensions that are treated as config files.
+// Files with other extensions (e.g. .pub, .pem, .cert) are silently skipped.
+var supportedExts = map[string]bool{
+	".yaml": true,
+	".yml":  true,
+	".json": true,
+	".toml": true,
+	".proto": true,
+}
+
 func (f *file) loadDir(path string) (kvs []*configx.KeyValue, err error) {
 	files, err := os.ReadDir(path)
 	if err != nil {
 		return nil, err
 	}
 	for _, file := range files {
-		// ignore hidden files
+		// ignore hidden files and directories
 		if file.IsDir() || strings.HasPrefix(file.Name(), ".") {
+			continue
+		}
+		// skip files with unsupported extensions (e.g. .pub, .pem, .cert)
+		ext := strings.ToLower(filepath.Ext(file.Name()))
+		if !supportedExts[ext] {
 			continue
 		}
 		kv, err := f.loadFile(filepath.Join(path, file.Name()))
