@@ -299,6 +299,29 @@ type UserFilter struct {
 	Offset     int
 }
 
+// CreateUserRequest creates an identity-provider user without exposing any
+// concrete provider SDK type. Password credentials, MFA and hosted login state
+// are owned by the backing identity provider such as Casdoor.
+type CreateUserRequest struct {
+	User           User
+	IdempotencyKey string
+	Metadata       map[string]string
+}
+
+// UpdateUserRequest updates an identity-provider user projection.
+type UpdateUserRequest struct {
+	User     User
+	Metadata map[string]string
+}
+
+// DeleteUserRequest deletes or disables an identity-provider user.
+type DeleteUserRequest struct {
+	OrgID    string
+	UserID   string
+	Hard     bool
+	Metadata map[string]string
+}
+
 // Organization is Kernel's identity-side organization projection. Kernel IAM DB
 // can store richer business org metadata; this type is for authn provider sync.
 type Organization struct {

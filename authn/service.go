@@ -16,11 +16,20 @@ type TokenService interface {
 	RevokeToken(ctx context.Context, req RevokeTokenRequest) error
 }
 
-// UserDirectory reads and provisions identity-provider users. Business modules
-// should usually go through Kernel IAM service, not a provider SDK directly.
+// UserDirectory reads identity-provider users. Business modules should usually
+// go through Kernel IAM service, not a provider SDK directly.
 type UserDirectory interface {
 	GetUser(ctx context.Context, orgID, userID string) (User, error)
 	FindUsers(ctx context.Context, filter UserFilter) ([]User, error)
+}
+
+// UserAdmin manages identity-provider users. Passwords, MFA and session state are
+// owned by the backing identity provider, such as Casdoor. Kernel only exposes
+// the management surface; it must not store password hashes or local sessions.
+type UserAdmin interface {
+	CreateUser(ctx context.Context, req CreateUserRequest) (User, error)
+	UpdateUser(ctx context.Context, req UpdateUserRequest) (User, error)
+	DeleteUser(ctx context.Context, req DeleteUserRequest) error
 	UpsertUser(ctx context.Context, user User) (User, error)
 	DisableUser(ctx context.Context, orgID, userID string) error
 }
@@ -53,11 +62,13 @@ type GroupAdmin interface {
 	RemoveUserFromGroup(ctx context.Context, req AssignUserToGroupRequest) error
 }
 
-// IdentityAdmin is the full identity management surface expected from a Casdoor
-// adapter. Keep it out of normal business services; use it in IAM provisioning.
+// IdentityAdmin is the identity management surface expected from a Casdoor
+// adapter. Keep it out of normal business services; use it in IAM provisioning
+// after platform-level authorization has been checked.
 type IdentityAdmin interface {
 	TokenService
 	UserDirectory
+	UserAdmin
 	OrganizationAdmin
 	ApplicationAdmin
 	GroupAdmin

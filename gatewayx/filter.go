@@ -19,12 +19,12 @@ type RouteFilter struct {
 	IncludeTags     []string
 	ExcludeTags     []string
 
-	IncludeServices []string
-	ExcludeServices []string
+	IncludeServices  []string
+	ExcludeServices  []string
 	IncludePathGlobs []string
 	ExcludePathGlobs []string
-	IncludeIDs      []string
-	ExcludeIDs      []string
+	IncludeIDs       []string
+	ExcludeIDs       []string
 }
 
 // PublicRouteFilter publishes normal product APIs to a public gateway. INTERNAL

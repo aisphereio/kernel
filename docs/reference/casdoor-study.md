@@ -60,6 +60,38 @@ kernel_iam_memberships
 
 DB Store 通过 `database/sql` 实现，避免业务层依赖 GORM 或 Casdoor object。启动装配时可以由 dbx 提供底层连接。
 
+## Casdoor SDK 已知问题
+
+### GetOAuthToken 缺少 RedirectURL
+
+Casdoor Go SDK 的 `GetOAuthToken(code, state string)` 方法在构造 `oauth2.Config` 时**没有设置 `RedirectURL`**。SDK 源码中对应的行被注释掉了：
+
+```go
+// casdoor-go-sdk/casdoorsdk/auth.go
+func (c *Client) GetOAuthToken(code, state string) (*oauth2.Token, error) {
+    config := oauth2.Config{
+        ClientID:     c.ClientId,
+        ClientSecret: c.ClientSecret,
+        // RedirectURL: c.RedirectUrl,  ← 这行被注释掉了！
+        Endpoint: oauth2.Endpoint{
+            TokenURL:  c.Endpoint + "/api/login/oauth/access_token",
+            AuthStyle: oauth2.AuthStyleInParams,
+        },
+    }
+    return config.Exchange(context.Background(), code)
+}
+```
+
+**影响**：Casdoor 的 token endpoint 要求 `redirect_uri` 参数与授权请求中的 `redirect_uri` 匹配。缺少该参数会导致 Casdoor 拒绝 code exchange 请求，返回 400 错误。
+
+**解决方案**：不要直接调用 Casdoor SDK 的 `GetOAuthToken`。应使用 Kernel 的 `exchangeOAuthToken`（在 `authn/casdoor/token.go` 中），或者使用标准 `golang.org/x/oauth2` 库手动构造 `oauth2.Config` 并设置 `RedirectURL`。
+
+### ParseJwtToken 使用全局 jwt.TimeFunc
+
+Casdoor SDK 的 `ParseJwtToken` 使用 `golang-jwt` 库的全局 `jwt.TimeFunc` 进行时间比较。如果 Casdoor 服务器和验证服务之间的系统时间存在偏差，JWT 的 `iat`/`exp` 校验会失败。
+
+**解决方案**：在调用 `ParseJwtToken` 前临时修改 `jwt.TimeFunc` 添加时钟偏差，调用后恢复。注意加锁保护全局变量。
+
 最终范式：
 
 ```text

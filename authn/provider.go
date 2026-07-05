@@ -28,6 +28,11 @@ type ManagementProvider interface {
 type ProviderSet struct {
 	Runtime    Provider
 	Management ManagementProvider
+
+	// Optional identity-provider backed read models. In Casdoor-first deployments
+	// this is implemented by the Casdoor adapter and is used only for display
+	// surfaces such as online-user/session dashboards.
+	Sessions SessionDirectory
 }
 
 func (p ProviderSet) Authenticator() Authenticator {
@@ -73,6 +78,23 @@ func (p ProviderSet) Logout() LogoutService {
 func (p ProviderSet) IdentityAdmin() IdentityAdmin {
 	if p.Management != nil {
 		return p.Management
+	}
+	return nil
+}
+
+func (p ProviderSet) SessionDirectory() SessionDirectory {
+	if p.Sessions != nil {
+		return p.Sessions
+	}
+	if p.Management != nil {
+		if sessions, ok := p.Management.(SessionDirectory); ok {
+			return sessions
+		}
+	}
+	if p.Runtime != nil {
+		if sessions, ok := p.Runtime.(SessionDirectory); ok {
+			return sessions
+		}
 	}
 	return nil
 }

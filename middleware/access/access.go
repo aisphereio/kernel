@@ -3,9 +3,10 @@
 // The middleware supports two levels of skip control:
 //
 //  1. SkipPolicyResolver — checked before the main Resolver. When the policy
-//     is SkipAll, the request passes through without any authn/authz. When the
-//     policy is SkipAuthz, the policy is applied to the Check before calling
-//     Guard.Require (which skips the SpiceDB check but keeps authn + audit).
+//     is SkipAll, Guard.Require records audit and then the request passes
+//     through without authn/authz. When the policy is SkipAuthz, the policy is
+//     applied to the Check before calling Guard.Require (which skips the
+//     SpiceDB check but keeps authn + audit).
 //
 //  2. Resolver — the standard operation-to-Check mapper. If it returns
 //     required=false, the request passes through. Otherwise, Guard.Require
@@ -33,17 +34,17 @@ import (
 type Resolver func(ctx context.Context, operation string, req any) (accessx.Check, bool, error)
 
 // SkipPolicyResolver returns an accessx.SkipPolicy for a given operation.
-// When set on the middleware, it is checked before the Resolver — if the
-// policy is not SkipDefault, the middleware short-circuits without calling
-// the Resolver or Guard.Require.
+// When the policy is SkipAll, the middleware records audit and skips both authn
+// and authz. When the policy is SkipAuthz, the middleware still calls
+// Guard.Require with a synthetic check so authentication and audit stay active.
 type SkipPolicyResolver func(operation string) accessx.SkipPolicy
 
 // Option configures Server.
 type Option func(*options)
 
 type options struct {
-	resolver             Resolver
-	skipPolicyResolver   SkipPolicyResolver
+	resolver           Resolver
+	skipPolicyResolver SkipPolicyResolver
 }
 
 // WithResolver configures the operation-to-resource resolver.
@@ -51,13 +52,9 @@ func WithResolver(resolver Resolver) Option {
 	return func(o *options) { o.resolver = resolver }
 }
 
-// WithSkipPolicyResolver configures a skip-policy resolver that is checked
-// before the main Resolver. When the policy is not SkipDefault, the middleware
-// short-circuits and skips the Guard.Require call entirely.
-//
-// This is useful for config-driven skip policies (e.g. public endpoints,
-// operations that skip authz) that apply across all services without each
-// service needing to implement the logic in its own Resolver.
+// WithSkipPolicyResolver configures config-driven access shortcuts. Public
+// endpoints use SkipAll. Self/bootstrap/internal endpoints usually use
+// SkipAuthz so they still require authentication and generate audit records.
 func WithSkipPolicyResolver(resolver SkipPolicyResolver) Option {
 	return func(o *options) { o.skipPolicyResolver = resolver }
 }
@@ -67,10 +64,10 @@ func WithSkipPolicyResolver(resolver SkipPolicyResolver) Option {
 // user_agent from contextx and transport headers.
 //
 // The middleware checks skip policies in this order:
-//  1. If a SkipPolicyResolver is configured and returns a non-default policy,
-//     the request is passed through without calling the Resolver or Guard.
-//  2. If the Resolver returns required=false, the request is passed through.
-//  3. Otherwise, Guard.Require is called to enforce authn + authz + audit.
+//  1. SkipAll from SkipPolicyResolver passes through as public.
+//  2. SkipAuthz from SkipPolicyResolver authenticates and audits through Guard.
+//  3. Resolver checks are enriched and enforced through Guard.
+//  4. Resolver required=false passes through.
 func Server(guard accessx.Guard, opts ...Option) middleware.Middleware {
 	o := &options{}
 	for _, opt := range opts {
@@ -81,16 +78,24 @@ func Server(guard accessx.Guard, opts ...Option) middleware.Middleware {
 			tr, _ := transport.FromServerContext(ctx)
 			op := resolveOperation(ctx, tr)
 
-			// 1. Check skip policy before calling the resolver.
+			// 1. Check config-driven skip policy before calling the resolver.
+			// SkipAll is public. SkipAuthz still requires authn + audit, so build
+			// a minimal check and pass it through Guard.Require. This keeps GetMe,
+			// OIDC callback guards, and bootstrap routes consistent even when a
+			// service has no generated operation resolver for that route.
 			if o.skipPolicyResolver != nil {
 				if policy := o.skipPolicyResolver(op); policy != accessx.SkipDefault {
-					// SkipAll: no authn, no authz — pass through with anonymous principal.
-					// SkipAuthz: still requires authn + audit, handled by Guard.Require.
-					if policy == accessx.SkipAll {
-						return next(ctx, req)
+					check := enrich(ctx, tr, accessx.Check{
+						SkipPolicy:  policy,
+						AuditAction: auditActionFromOperation(op),
+					})
+					// SkipAll still goes through Guard.Require so public operations are
+					// recorded by the audit recorder. Guard.Require does not authenticate or
+					// authorize SkipAll checks.
+					if _, err := guard.Require(ctx, check); err != nil {
+						return nil, err
 					}
-					// For SkipAuthz, we still need to go through Guard.Require
-					// which will handle the skip internally.
+					return next(ctx, req)
 				}
 			}
 
@@ -197,4 +202,16 @@ func firstHeader(h transport.Header, names ...string) string {
 		}
 	}
 	return ""
+}
+
+func auditActionFromOperation(operation string) string {
+	operation = strings.TrimSpace(operation)
+	if operation == "" {
+		return "access.unknown"
+	}
+	if i := strings.LastIndex(operation, "/"); i >= 0 && i+1 < len(operation) {
+		operation = operation[i+1:]
+	}
+	operation = strings.ReplaceAll(operation, ".", "_")
+	return "access." + strings.ToLower(operation)
 }

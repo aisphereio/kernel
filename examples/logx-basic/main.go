@@ -1,7 +1,8 @@
 // Package main demonstrates logx basic usage.
 //
 // Run:
-//   go run ./examples/logx-basic
+//
+//	go run ./examples/logx-basic
 package main
 
 import (

@@ -13,7 +13,7 @@ import (
 )
 
 func TestServerWithSkipPolicyResolver_SkipAll(t *testing.T) {
-	// SkipAll should pass through without calling the resolver or guard.
+	// SkipAll should pass through without calling the resolver; Guard.Require still records audit.
 	guard := accessx.New(nil, authz.DenyAll(), auditx.Noop())
 	resolverCalled := false
 	mw := Server(guard,
@@ -45,8 +45,8 @@ func TestServerWithSkipPolicyResolver_SkipAll(t *testing.T) {
 }
 
 func TestServerSkipPolicyResolver_SkipAuthz(t *testing.T) {
-	// SkipAuthz should still call the resolver and guard.Require,
-	// but guard.Require should skip the authz check.
+	// SkipAuthz from config should authenticate and audit through Guard.Require,
+	// but Guard.Require should skip the authz check.
 	store := authz.NewMemoryRelationshipStore()
 	audit := auditx.NewMemoryStore()
 	guard := accessx.New(nil, authz.NewMemoryAuthorizer(store), audit)

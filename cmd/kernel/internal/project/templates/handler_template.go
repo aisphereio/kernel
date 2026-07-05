@@ -5,12 +5,12 @@
 // fill in the business logic.
 //
 // Key points illustrated:
-//   1. Error codes declared as errorx.Code constants at module top
-//   2. Constructor chosen by semantic (NotFound / BadRequest / Forbidden / ...)
-//   3. Cause preserved with errorx.Wrap or WithCause
-//   4. Internal metadata via WithMetadata, public metadata via WithPublicMetadata
-//   5. NO use of errors.New / fmt.Errorf / panic in business code
-//   6. NO use of log.Printf / fmt.Println — use logx.FromContext(ctx)
+//  1. Error codes declared as errorx.Code constants at module top
+//  2. Constructor chosen by semantic (NotFound / BadRequest / Forbidden / ...)
+//  3. Cause preserved with errorx.Wrap or WithCause
+//  4. Internal metadata via WithMetadata, public metadata via WithPublicMetadata
+//  5. NO use of errors.New / fmt.Errorf / panic in business code
+//  6. NO use of log.Printf / fmt.Println — use logx.FromContext(ctx)
 //
 // See docs/ai/errorx.md for the full AI coding recipe.
 package main

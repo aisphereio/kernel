@@ -40,8 +40,9 @@ const (
 	// where the target resource does not yet exist in the authorization graph.
 	SkipAuthz SkipPolicy = "skip_authz"
 	// SkipAll skips both authentication AND authorization. The request passes
-	// through without any principal. Use for public endpoints like health
-	// checks, login, token exchange, etc.
+	// through without any authenticated principal, but Guard.Require still records
+	// audit with an anonymous actor. Use for public endpoints like health checks,
+	// login, token exchange, etc.
 	// WARNING: No authenticated principal will be available in the handler.
 	SkipAll SkipPolicy = "skip_all"
 )
@@ -97,13 +98,27 @@ type Check struct {
 }
 
 type Guard struct {
+	// Authn is retained only as a legacy fallback for callers that still pass
+	// credentials directly to accessx.Check. The primary framework path is:
+	// middleware/authn authenticates first, injects authn.Principal into context,
+	// then accessx consumes Check.Principal. New services should not rely on this
+	// field for the normal request path.
 	Authn authn.Authenticator
 	Authz authz.Authorizer
 	Audit auditx.Recorder
 }
 
+// New constructs a Guard. The authenticator parameter is a legacy fallback;
+// new code should authenticate through middleware/authn and pass nil here.
 func New(authenticator authn.Authenticator, authorizer authz.Authorizer, recorder auditx.Recorder) Guard {
 	return Guard{Authn: authenticator, Authz: authorizer, Audit: recorder}
+}
+
+// NewGuard constructs the preferred access-only guard. Authentication must have
+// run before accessx.Require, and the principal must be available in Check or
+// context.
+func NewGuard(authorizer authz.Authorizer, recorder auditx.Recorder) Guard {
+	return Guard{Authz: authorizer, Audit: recorder}
 }
 
 func DenyAllGuard() Guard {
@@ -178,11 +193,18 @@ func (g Guard) Authenticate(ctx context.Context, check Check) (authn.Principal, 
 	}
 	if g.Authn == nil {
 		if check.Credential.Token == "" {
-			return authn.Anonymous(), nil
+			return authn.Principal{}, authn.ErrUnauthenticated("authentication required")
 		}
 		return authn.Principal{}, authn.ErrIdentityBackendFailed("authenticator is not configured", nil)
 	}
-	return g.Authn.Authenticate(ctx, check.Credential)
+	principal, err := g.Authn.Authenticate(ctx, check.Credential)
+	if err != nil {
+		return authn.Principal{}, err
+	}
+	if !principal.IsAuthenticated() {
+		return authn.Principal{}, authn.ErrUnauthenticated("authentication required")
+	}
+	return principal.Normalize(), nil
 }
 
 func (g Guard) Authorize(ctx context.Context, principal authn.Principal, check Check) (authz.Decision, error) {

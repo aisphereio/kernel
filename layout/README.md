@@ -5,6 +5,51 @@ This project was generated from the local Aisphere Kernel layout.
 It is a Kernel-first service skeleton. Application code should use Kernel
 modules instead of importing infrastructure SDKs directly.
 
+## Authn
+
+Kernel provides a provider-neutral OIDC/JWKS JWT verification package at `authn/oidcx/`.
+
+```text
+authn/oidcx/
+├── config.go       # Config struct with Normalized() defaults
+├── jwks.go         # JWKS discovery, fetch, cache, RSA/EC key parsing
+└── verifier.go     # JWT signature verification + claims validation + Principal mapping
+```
+
+It supports:
+- OIDC Discovery URL auto-configuration
+- JWKS public key caching (in-process, TTL configurable)
+- JWT signature verification (RSA and ECDSA)
+- Claims validation: `iss`, `aud`, `exp`, `nbf`, `iat`, `alg`, Casdoor `owner`
+- Configurable claim name mapping for provider-neutral usage
+- Principal normalization into `authn.Principal`
+
+Additional authn utilities:
+- `authn/cached_authenticator.go` — token verification result cache (SHA-256 key, TTL capped by token exp)
+- `authn/trusted_headers.go` — Gateway trusted header injection, stripping, and reconstruction
+- `authn/trusted_authenticator.go` — TrustedHeaderAuthenticator for `gateway_trusted` mode
+
+### Gateway Integration
+
+The Gateway (`aisphere-gateway`) uses `authn/oidcx` to verify external JWTs locally before forwarding trusted identity headers to internal services. See `gatewayx/dispatcher.go` for the authn orchestration flow:
+
+1. `StripTrustedHeaders` — remove any client-supplied X-Aisphere-* headers
+2. Extract Bearer token from `Authorization` header or `aisphere_access_token` cookie
+3. `oidcx.Verifier.Authenticate()` — verify JWT signature + claims
+4. `InjectTrustedHeaders` — inject verified Principal as X-Aisphere-* headers
+5. Forward to upstream gRPC service
+
+### Backend Service Modes
+
+Backend services (IAM, Hub) support two authentication modes:
+
+| Mode | Description | Config |
+| --- | --- | --- |
+| `casdoor_jwt` | Backend verifies the JWT locally using `oidcx.Verifier` | `security.authn.mode: casdoor_jwt` |
+| `gateway_trusted` | Backend trusts Gateway-injected X-Aisphere-* headers | `security.authn.mode: gateway_trusted` |
+
+See `docs/design/authn-full-flow.md` for the full design document.
+
 ## Included Defaults
 
 - Features: `__KERNEL_FEATURES__`

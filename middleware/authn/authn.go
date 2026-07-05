@@ -101,6 +101,55 @@ func HeaderExtractor(headerName, scheme string) CredentialExtractor {
 	}
 }
 
+// TrustedHeaderExtractor extracts Gateway-verified identity headers. It is for
+// internal services running in gateway_trusted mode; external traffic must never
+// be allowed to set these headers directly.
+func TrustedHeaderExtractor(h transport.Header) (rootauthn.Credential, bool) {
+	return GatewayTrustedExtractor(rootauthn.InternalServiceTokenHeader)(h)
+}
+
+// GatewayTrustedExtractor extracts both Gateway-injected Principal headers and
+// the optional Gateway-to-backend internal token header. The authenticator
+// decides whether the internal token is required.
+func GatewayTrustedExtractor(internalTokenHeader string) CredentialExtractor {
+	return func(h transport.Header) (rootauthn.Credential, bool) {
+		if h == nil {
+			return rootauthn.Credential{}, false
+		}
+		metadata := map[string]string{}
+		for _, key := range rootauthn.TrustedHeaderNames() {
+			if value := strings.TrimSpace(h.Get(key)); value != "" {
+				metadata[key] = value
+			}
+		}
+		if header := strings.TrimSpace(internalTokenHeader); header != "" {
+			if value := strings.TrimSpace(h.Get(header)); value != "" {
+				metadata[header] = value
+			}
+		}
+		if value := strings.TrimSpace(h.Get(rootauthn.InternalServiceTokenHeader)); value != "" {
+			metadata[rootauthn.InternalServiceTokenHeader] = value
+		}
+		if _, ok := rootauthn.PrincipalFromTrustedHeaders(metadata); !ok {
+			return rootauthn.Credential{}, false
+		}
+		return rootauthn.Credential{Scheme: rootauthn.CredentialGatewayTrusted, Token: metadata[rootauthn.TrustedHeaderSubject], Metadata: metadata}, true
+	}
+}
+
+// HybridBearerOrGatewayTrustedExtractor extracts a bearer JWT when present;
+// otherwise it falls back to Gateway trusted Principal headers. This is intended
+// for migration/testing. Prefer a strict single mode in production.
+func HybridBearerOrGatewayTrustedExtractor(internalTokenHeader string) CredentialExtractor {
+	trusted := GatewayTrustedExtractor(internalTokenHeader)
+	return func(h transport.Header) (rootauthn.Credential, bool) {
+		if cred, ok := BearerExtractor(h); ok {
+			return cred, true
+		}
+		return trusted(h)
+	}
+}
+
 func withPrincipal(ctx context.Context, p rootauthn.Principal) context.Context {
 	p = p.Normalize()
 	ctx = rootauthn.ContextWithPrincipal(ctx, p)

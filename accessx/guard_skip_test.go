@@ -243,8 +243,8 @@ func TestGuardRequire_RecordsAuditOnSkip(t *testing.T) {
 	}
 }
 
-func TestGuardRequire_SkipAllNoAudit(t *testing.T) {
-	// SkipAll should not record audit (no principal, no action).
+func TestGuardRequire_SkipAllRecordsAudit(t *testing.T) {
+	// SkipAll skips authn/authz but still records audit with an anonymous actor.
 	audit := &fakeAuditRecorder{}
 	guard := New(nil, authz.DenyAll(), audit)
 	_, err := guard.Require(context.Background(), Check{

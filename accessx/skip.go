@@ -15,7 +15,7 @@ type SkipPolicyResolver func(operation string) SkipPolicy
 //   - HTTP URL paths (e.g. "/v1/iam/control-plane/orgs")
 //
 // The resolver checks operations in this priority order:
-// 1. PublicOperations — returns SkipAll (skip authn + authz)
+// 1. PublicOperations — returns SkipAll (skip authn + authz, still audit)
 // 2. SkipOperations — returns SkipAuthz (skip authz only)
 // 3. AllowAllOperations (deprecated) — returns SkipAuthz (skip authz only)
 // 4. Otherwise — returns SkipDefault (perform full check)

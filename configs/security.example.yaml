@@ -28,6 +28,11 @@ security:
         jwt_certificate: "${CASDOOR_ADMIN_JWT_CERTIFICATE:}"
         jwt_certificate_file: "${CASDOOR_ADMIN_JWT_CERTIFICATE_FILE:}"
 
+  internal_call:
+    enabled: true
+    header: X-Aisphere-Internal-Token
+    token: "${GATEWAY_TO_APP_INTERNAL_TOKEN}"
+
   authz:
     provider: spicedb
     spicedb:

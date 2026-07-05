@@ -56,12 +56,12 @@ type serverOptions struct {
 	rateLimitProvider ratelimitx.Provider
 	rateLimitKey      RateLimitKeyFunc
 
-accessEnabled bool
-		guard         accessx.Guard
-		resolver      accessmw.Resolver
-		skipResolver  accessmw.SkipPolicyResolver
+	accessEnabled bool
+	guard         accessx.Guard
+	resolver      accessmw.Resolver
+	skipResolver  accessmw.SkipPolicyResolver
 
-		admission admissionx.Chain
+	admission admissionx.Chain
 }
 
 // WithBefore prepends middleware before Kernel's default chain. Use sparingly;
@@ -181,13 +181,13 @@ func Server(opts ...ServerOption) []middleware.Middleware {
 	if o.rateLimitEnabled {
 		chain = append(chain, rateLimitMiddleware(o.rateLimitPolicy, o.rateLimitProvider, o.rateLimitKey))
 	}
-if o.accessEnabled {
-			accessOpts := []accessmw.Option{accessmw.WithResolver(o.resolver)}
-			if o.skipResolver != nil {
-				accessOpts = append(accessOpts, accessmw.WithSkipPolicyResolver(o.skipResolver))
-			}
-			chain = append(chain, accessmw.Server(o.guard, accessOpts...))
+	if o.accessEnabled {
+		accessOpts := []accessmw.Option{accessmw.WithResolver(o.resolver)}
+		if o.skipResolver != nil {
+			accessOpts = append(accessOpts, accessmw.WithSkipPolicyResolver(o.skipResolver))
 		}
+		chain = append(chain, accessmw.Server(o.guard, accessOpts...))
+	}
 	if !o.admission.Empty() {
 		chain = append(chain, admissionx.Middleware(o.admission))
 	}

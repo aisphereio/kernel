@@ -11,6 +11,33 @@ import (
 
 var _ authn.IdentityAdmin = (*Client)(nil)
 
+func (c *Client) CreateUser(ctx context.Context, req authn.CreateUserRequest) (authn.User, error) {
+	return c.UpsertUser(ctx, req.User)
+}
+
+func (c *Client) UpdateUser(ctx context.Context, req authn.UpdateUserRequest) (authn.User, error) {
+	return c.UpsertUser(ctx, req.User)
+}
+
+func (c *Client) DeleteUser(ctx context.Context, req authn.DeleteUserRequest) error {
+	_ = ctx
+	userID := firstNonEmpty(req.UserID, req.Metadata["username"])
+	if userID == "" {
+		return authn.ErrInvalidTokenRequest("user id is required")
+	}
+	if !req.Hard {
+		return c.DisableUser(ctx, req.OrgID, userID)
+	}
+	ok, err := c.adminSDK().DeleteUser(&casdoorsdk.User{Owner: firstNonEmpty(req.OrgID, c.cfg.OrganizationName), Name: userID})
+	if err != nil {
+		return wrapBackend("casdoor delete user failed", err)
+	}
+	if !ok {
+		return wrapBackend("casdoor delete user returned not affected", nil)
+	}
+	return nil
+}
+
 func (c *Client) GetUser(ctx context.Context, orgID, userID string) (authn.User, error) {
 	_ = ctx
 	user, err := c.adminSDK().GetUser(userID)
@@ -502,7 +529,7 @@ func groupToSDK(group authn.Group) *casdoorsdk.Group {
 		Name:        firstNonEmpty(group.Name, group.ID),
 		DisplayName: group.DisplayName,
 		ParentId:    group.ParentID,
-		Type:        firstNonEmpty(group.Type, "group"),
+		Type:        firstNonEmpty(group.Type, authn.GroupTypeVirtual),
 		Users:       append([]string(nil), group.Users...),
 		IsEnabled:   true,
 	}

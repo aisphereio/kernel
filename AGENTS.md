@@ -139,6 +139,18 @@ go test ./serverx ./bootx ./requestx ./admissionx ./middleware/autowire ./rateli
 - 文档默认使用中文。
 - 过期文档移动到 `docs/archive/legacy/`，不要继续作为新开发依据。
 
+### 6.1 AuthN 全流程文档
+
+AuthN 全流程设计文档位于 `layout/docs/design/authn-full-flow.md`，涵盖：
+
+- Gateway 本地 OIDC/JWKS 验 JWT → 注入可信 header → 转发后端
+- `kernel/authn/oidcx` 包：通用 OIDC/JWKS verifier，不依赖 Casdoor SDK
+- 后端两种模式：`casdoor_jwt`（再验 JWT）和 `gateway_trusted`（信任 Gateway）
+- 缓存策略：JWKS 进程内缓存、token 结果可选 Redis
+- 配置参考、验证命令、已修复问题记录
+
+涉及此流程的代码变更应同步更新该文档。
+
 ## 7. Generator 互相依赖约束
 
 `cmd/protoc-gen-go-kernel` 生成的 `_kernel.pb.go` 必须自洽：如果它在 `serverx.ServiceModule` 中引用 resolver，那么 resolver 必须由同一个 generator 生成，或引用 Kernel runtime 中稳定存在的 symbol。

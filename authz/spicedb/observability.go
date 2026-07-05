@@ -83,6 +83,9 @@ func observeSpiceDBCall(cfg Config, logger logx.Logger, ctx context.Context, met
 		logx.Duration("elapsed", elapsed),
 	}
 	if err != nil {
+		if st, ok := status.FromError(err); ok {
+			fields = append(fields, logx.String("grpc_message", st.Message()))
+		}
 		logger.Error("spicedb backend call failed", append(fields, logx.Err(errorx.Wrap(err, errorx.CodeUnavailable, errorx.WithMessage("spicedb backend call failed"))))...)
 		return
 	}

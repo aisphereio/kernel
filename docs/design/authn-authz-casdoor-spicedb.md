@@ -70,6 +70,65 @@ should depend on:
 - `auditx.Recorder`
 - optionally `accessx.Guard` at transport boundaries
 
+## Casdoor SDK RedirectURL 陷阱
+
+**重要发现**：Casdoor Go SDK 的 `GetOAuthToken(code, state)` 方法在构造 OAuth2 token 请求时**没有设置 `redirect_uri` 参数**。SDK 源码中对应的行被注释掉了：
+
+```go
+// casdoor-go-sdk/casdoorsdk/auth.go (简化)
+func (c *Client) GetOAuthToken(code, state string) (*oauth2.Token, error) {
+    config := oauth2.Config{
+        ClientID:     c.ClientId,
+        ClientSecret: c.ClientSecret,
+        // RedirectURL 未设置！ ← 这行被注释掉了
+        Endpoint: oauth2.Endpoint{...},
+    }
+    return config.Exchange(ctx, code)
+}
+```
+
+而 Kernel 的 `authn/casdoor/token.go` 中的 `exchangeOAuthToken` 方法**正确设置了 `RedirectURL`**：
+
+```go
+// kernel/authn/casdoor/token.go
+func exchangeOAuthToken(ctx context.Context, cfg Config, req AuthCodeExchangeRequest) (*oauth2.Token, error) {
+    config := oauth2.Config{
+        ClientID:     cfg.ClientID,
+        ClientSecret: cfg.ClientSecret,
+        RedirectURL:  req.RedirectURI,  // 正确设置
+        Endpoint:     oauth2.Endpoint{...},
+    }
+    return config.Exchange(ctx, req.Code)
+}
+```
+
+**影响**：如果 IAM 服务包装了 `casdoor.Client` 并直接调用 Casdoor SDK 的 `GetOAuthToken`（而不是 Kernel 的 `exchangeOAuthToken`），Casdoor 的 token endpoint 会因为缺少 `redirect_uri` 而拒绝请求，返回 500 `AUTHN_IDENTITY_BACKEND_FAILED`。
+
+**解决方案**：在包装 provider 中重写 `ExchangeCode` 方法，使用标准 `golang.org/x/oauth2` 库手动构造 `oauth2.Config` 并设置 `RedirectURL`，而不是调用 Casdoor SDK 的 `GetOAuthToken`。
+
+## Casdoor JWT 时钟偏差处理
+
+Casdoor 签发的 JWT 在服务端验证时，如果 Casdoor 服务器和 IAM 服务之间的系统时间存在偏差（常见于 Docker 或跨主机部署），JWT 的 `iat`（签发时间）和 `exp`（过期时间）校验会失败。
+
+Kernel 的 `casdoor.Client.VerifyToken` 使用 `jwt.TimeFunc` 进行时间比较，默认使用 `time.Now()`。如果 Casdoor 服务器时间比 IAM 快 30 秒，新签发的 JWT 在 IAM 验证时会显示"未生效"。
+
+**解决方案**：在 IAM 中创建 `casdoorClockSkewProvider` 包装器，在解析 JWT 时设置 60 秒的时钟偏差：
+
+```go
+const casdoorTokenClockLeeway = 60 * time.Second
+
+func (p *casdoorClockSkewProvider) parseJwtTokenWithLeeway(token string) (*casdoorsdk.Claims, error) {
+    jwtTimeFuncMu.Lock()
+    defer jwtTimeFuncMu.Unlock()
+    previous := jwt.TimeFunc
+    jwt.TimeFunc = func() time.Time { return time.Now().Add(casdoorTokenClockLeeway) }
+    defer func() { jwt.TimeFunc = previous }()
+    return p.sdk.ParseJwtToken(token)
+}
+```
+
+注意 `jwt.TimeFunc` 是 `golang-jwt` 库的全局变量，修改时需要加锁保护。
+
 ## External YAML
 
 Example config lives in `configs/security.example.yaml`.

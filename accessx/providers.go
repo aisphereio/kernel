@@ -18,5 +18,9 @@ type Providers struct {
 // Guard builds the request-time access guard from provider-neutral Kernel
 // interfaces. Missing authz defaults to deny-all at the Guard layer.
 func (p Providers) Guard() Guard {
-	return New(p.Authn.Authenticator(), p.Authz.Authorizer(), p.Audit)
+	// Authn is intentionally not copied into Guard on the main framework path.
+	// serverx/autowire installs middleware/authn before middleware/access, so the
+	// access guard consumes the already-injected Principal and performs only
+	// authz/audit. This avoids a second, implicit authn flow inside accessx.
+	return NewGuard(p.Authz.Authorizer(), p.Audit)
 }

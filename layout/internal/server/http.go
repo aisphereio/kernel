@@ -14,7 +14,7 @@ import (
 	khttp "github.com/aisphereio/kernel/transportx/http"
 )
 
-func NewHTTPServer(cfg conf.ServerConfig, logCfg logx.Config, metricsCfg conf.MetricsConfig, logger logx.Logger, metrics metricsx.Manager, resources *data.Resources, todo *service.TodoService) *khttp.Server {
+func NewHTTPServer(cfg conf.ServerConfig, logCfg logx.Config, metricsCfg conf.MetricsConfig, logger logx.Logger, metrics metricsx.Manager, resources *data.Resources, todo *service.TodoService, securityCfg conf.SecurityConfig) *khttp.Server {
 	addr := cfg.HTTP.Addr
 	if addr == "" {
 		addr = "0.0.0.0:8000"
@@ -32,6 +32,9 @@ func NewHTTPServer(cfg conf.ServerConfig, logCfg logx.Config, metricsCfg conf.Me
 	}
 	if metricsCfg.Enabled {
 		opts = append(opts, khttp.Metrics(metrics))
+	}
+	if m := todoServerMiddlewares(resources, securityCfg); len(m) > 0 {
+		opts = append(opts, khttp.Middleware(m...))
 	}
 	srv := khttp.NewServer(opts...)
 	v1.RegisterTodoServiceHTTPServer(srv, todo)

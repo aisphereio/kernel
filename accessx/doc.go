@@ -1,8 +1,10 @@
-// Package accessx provides a small authn + authz + audit facade for handlers.
+// Package accessx provides the request-time access guard for authz and audit.
 //
-// It is intentionally a thin orchestration layer. Business code may depend on
-// Guard for endpoint protection, while lower-level services should still depend
-// directly on authn.Authenticator, authz.Authorizer, and auditx.Recorder.
+// In the normal Kernel server path, middleware/authn authenticates first and
+// injects authn.Principal into context. accessx then consumes that principal,
+// applies authorization policy, and records audit. A legacy authenticator hook
+// remains on Guard only for direct callers that still pass raw credentials in
+// Check.
 //
 // # SkipPolicy
 //
@@ -16,14 +18,15 @@
 //     CreateOrganization where the target resource does not yet exist in
 //     the authorization graph.
 //   - SkipAll — skips both authentication AND authorization. Use for public
-//     endpoints like health checks, login, token exchange, etc.
+//     endpoints like health checks, login, token exchange, etc. Guard.Require
+//     still records audit with an anonymous actor.
 //
 // # AccessConfig
 //
 // AccessConfig controls per-operation access policies via YAML configuration.
 // It supports three operation lists evaluated in priority order:
 //
-//  1. PublicOperations — operations that skip both authn and authz (SkipAll).
+//  1. PublicOperations — operations that skip both authn and authz but still audit (SkipAll).
 //  2. SkipOperations — operations that skip authz but keep authn (SkipAuthz).
 //  3. AllowAllOperations (deprecated) — legacy, use SkipOperations instead.
 //

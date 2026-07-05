@@ -6,11 +6,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aisphereio/kernel/accessx"
 	accessv1 "github.com/aisphereio/kernel/api/aisphere/access/v1"
 )
 
 // AuthnMode describes how the gateway treats authentication at the edge.
-// Resource-level authorization remains the downstream service's responsibility.
+// Resource-level authorization can be declared with accessx.AccessRule and
+// executed by Gateway AccessX or delegated to the downstream IAM AuthzService.
 type AuthnMode string
 
 const (
@@ -20,9 +22,9 @@ const (
 	AuthnModeIntrospect AuthnMode = "introspect"
 )
 
-// GatewayPolicy is the boundary-governance slice of a route policy. It must not
-// contain business resource authorization details; those stay in the service
-// access resolver and authz provider.
+// GatewayPolicy is the boundary-governance slice of a route policy. Business
+// resource authorization is declared separately on GatewayRoute.Access using
+// accessx.AccessRule so the gateway can remain provider-neutral.
 type GatewayPolicy struct {
 	Exposure             accessv1.Exposure
 	AuthnMode            AuthnMode
@@ -38,7 +40,7 @@ type GatewayPolicy struct {
 }
 
 // EffectiveAuthnMode returns the explicit mode or derives a safe default from
-// exposure. MVP gateway deployments should use passive token relay by default.
+// exposure. Gateway deployments verify JWTs at the edge by default for authenticated routes.
 func (p GatewayPolicy) EffectiveAuthnMode() AuthnMode {
 	if p.AuthnMode != "" {
 		return p.AuthnMode
@@ -47,7 +49,7 @@ func (p GatewayPolicy) EffectiveAuthnMode() AuthnMode {
 	case accessv1.Exposure_PUBLIC, accessv1.Exposure_SYSTEM:
 		return AuthnModeNone
 	case accessv1.Exposure_AUTHENTICATED, accessv1.Exposure_AUTHORIZED:
-		return AuthnModePassive
+		return AuthnModeVerifyJWT
 	case accessv1.Exposure_INTERNAL:
 		return AuthnModeNone
 	default:
@@ -80,6 +82,11 @@ type GatewayRoute struct {
 	Path     string
 	Upstream UpstreamRef
 	Gateway  GatewayPolicy
+
+	// Access is the optional provider-neutral authn/authz/audit declaration for
+	// this route. Gateways may execute it directly through accessx.Guard or
+	// forward it to IAM AuthzService depending on deployment mode.
+	Access accessx.AccessRule
 }
 
 // Manifest is the route artifact a service publishes into the route registry.

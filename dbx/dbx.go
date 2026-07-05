@@ -782,7 +782,7 @@ func safeUpsert(gormDB *gorm.DB, dest any, allowedColumns []string) error {
 
 	// GORM's clause.OnConflict works for both postgres and mysql; the driver
 	// translates it to the correct syntax.
-	res := gormDB.Clauses(onConflictClause(cleaned)).Create(dest)
+	res := gormDB.Clauses(onConflictClause(primaryKeyColumns(gormDB, dest), cleaned)).Create(dest)
 	return wrapDriverErr(res.Error)
 }
 
@@ -792,8 +792,22 @@ func safeUpsert(gormDB *gorm.DB, dest any, allowedColumns []string) error {
 //
 // Returns clause.Expression (from gorm.io/gorm/clause) so it can be passed
 // directly to gormDB.Clauses().
-var onConflictClause = func(updateColumns []string) clause.Expression {
-	return buildOnConflictClause(updateColumns)
+var onConflictClause = func(conflictColumns []clause.Column, updateColumns []string) clause.Expression {
+	return buildOnConflictClause(conflictColumns, updateColumns)
+}
+
+func primaryKeyColumns(gormDB *gorm.DB, dest any) []clause.Column {
+	stmt := &gorm.Statement{DB: gormDB}
+	if err := stmt.Parse(dest); err != nil || stmt.Schema == nil {
+		return nil
+	}
+	out := make([]clause.Column, 0, len(stmt.Schema.PrimaryFields))
+	for _, field := range stmt.Schema.PrimaryFields {
+		if field != nil && field.DBName != "" {
+			out = append(out, clause.Column{Name: field.DBName})
+		}
+	}
+	return out
 }
 
 // increment atomically adds delta to column.

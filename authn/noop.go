@@ -29,6 +29,15 @@ func (noopAdmin) GetUser(context.Context, string, string) (User, error) {
 func (noopAdmin) FindUsers(context.Context, UserFilter) ([]User, error) {
 	return nil, ErrIdentityBackendFailed("authn user directory is disabled", nil)
 }
+func (noopAdmin) CreateUser(context.Context, CreateUserRequest) (User, error) {
+	return User{}, ErrIdentityBackendFailed("authn user provisioning is disabled", nil)
+}
+func (noopAdmin) UpdateUser(context.Context, UpdateUserRequest) (User, error) {
+	return User{}, ErrIdentityBackendFailed("authn user provisioning is disabled", nil)
+}
+func (noopAdmin) DeleteUser(context.Context, DeleteUserRequest) error {
+	return ErrIdentityBackendFailed("authn user provisioning is disabled", nil)
+}
 func (noopAdmin) UpsertUser(context.Context, User) (User, error) {
 	return User{}, ErrIdentityBackendFailed("authn user provisioning is disabled", nil)
 }

@@ -28,7 +28,8 @@ type AccessConfig struct {
 
 	// PublicOperations lists operations that skip both authentication AND
 	// authorization. Use for endpoints that must be accessible without any
-	// credentials (health checks, login, token exchange, etc.).
+	// credentials (health checks, login, token exchange, etc.). Guard.Require
+	// still records audit with an anonymous actor.
 	//
 	// Each entry follows the same matching rules as SkipOperations.
 	PublicOperations []string `json:"public_operations" yaml:"public_operations"`

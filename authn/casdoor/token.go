@@ -123,18 +123,38 @@ func tokenLeeway(leeway time.Duration) time.Duration {
 func (c *Client) parseJWTToken(token string, orgID, appID string, leeway time.Duration) (*casdoorsdk.Claims, error) {
 	claims := &claimsWithLeeway{leeway: tokenLeeway(leeway)}
 	t, err := jwt.ParseWithClaims(token, claims, c.jwtKeyFunc(orgID, appID))
-	if t != nil {
-		if parsed, ok := t.Claims.(*claimsWithLeeway); ok && t.Valid {
-			return &parsed.Claims, nil
-		}
+	if err != nil {
+		return nil, err
 	}
-	return nil, err
+	if t == nil || !t.Valid {
+		return nil, fmt.Errorf("token is invalid")
+	}
+	parsed, ok := t.Claims.(*claimsWithLeeway)
+	if !ok {
+		return nil, fmt.Errorf("unexpected casdoor claims type")
+	}
+	if err := c.validateClaims(&parsed.Claims, orgID, appID); err != nil {
+		return nil, err
+	}
+	return &parsed.Claims, nil
 }
 
 func (c *Client) jwtKeyFunc(orgID, appID string) jwt.Keyfunc {
 	client := c.loginSDK(orgID, appID)
 	return func(token *jwt.Token) (any, error) {
-		switch token.Method.Alg() {
+		alg := token.Method.Alg()
+		allowedAlgs := c.cfg.AllowedAlgs
+		if len(allowedAlgs) == 0 {
+			allowedAlgs = []string{jwt.SigningMethodRS256.Alg(), jwt.SigningMethodRS512.Alg(), jwt.SigningMethodES256.Alg(), jwt.SigningMethodES512.Alg()}
+		}
+		if !containsString(allowedAlgs, alg) {
+			return nil, fmt.Errorf("unsupported signing method: %v", token.Header["alg"])
+		}
+		if c.jwks != nil {
+			kid, _ := token.Header["kid"].(string)
+			return c.jwks.key(context.Background(), kid)
+		}
+		switch alg {
 		case jwt.SigningMethodES256.Alg():
 			return jwt.ParseECPublicKeyFromPEM([]byte(client.Certificate))
 		case jwt.SigningMethodES512.Alg():
@@ -147,6 +167,50 @@ func (c *Client) jwtKeyFunc(orgID, appID string) jwt.Keyfunc {
 			return nil, fmt.Errorf("unsupported signing method: %v", token.Header["alg"])
 		}
 	}
+}
+
+func (c *Client) validateClaims(claims *casdoorsdk.Claims, orgID, appID string) error {
+	if claims == nil {
+		return fmt.Errorf("empty claims")
+	}
+	expectedIssuer := strings.TrimRight(strings.TrimSpace(firstNonEmpty(c.cfg.Issuer, c.cfg.Endpoint)), "/")
+	if expectedIssuer != "" && strings.TrimRight(strings.TrimSpace(claims.Issuer), "/") != expectedIssuer {
+		return fmt.Errorf("invalid issuer %q", claims.Issuer)
+	}
+	audiences := c.cfg.Audience
+	if len(audiences) == 0 {
+		audiences = []string{firstNonEmpty(appID, c.cfg.ClientID)}
+	}
+	if len(audiences) > 0 {
+		matched := false
+		for _, aud := range audiences {
+			if aud != "" && claims.VerifyAudience(aud, false) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("invalid audience %v", []string(claims.Audience))
+		}
+	}
+	allowedOwners := c.cfg.AllowedOwners
+	if len(allowedOwners) == 0 && orgID != "" {
+		allowedOwners = []string{orgID}
+	}
+	if len(allowedOwners) > 0 && !containsString(allowedOwners, claims.Owner) {
+		return fmt.Errorf("invalid casdoor owner %q", claims.Owner)
+	}
+	return nil
+}
+
+func containsString(values []string, want string) bool {
+	want = strings.TrimSpace(want)
+	for _, v := range values {
+		if strings.TrimSpace(v) == want {
+			return true
+		}
+	}
+	return false
 }
 
 type claimsWithLeeway struct {

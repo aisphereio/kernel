@@ -27,7 +27,7 @@ var (
 )
 
 func init() {
-	flag.StringVar(&flagconf, "conf", "configs", "config path, eg: -conf configs")
+	flag.StringVar(&flagconf, "conf", "configs/config.yaml", "config path, eg: -conf configs/config.yaml")
 }
 
 func main() {
@@ -76,8 +76,8 @@ func main() {
 	todoRepo := data.NewTodoRepo(dataStore)
 	todoUsecase := biz.NewTodoUsecase(todoRepo)
 	todoService := service.NewTodoService(todoUsecase)
-	httpServer := server.NewHTTPServer(bc.Server, bc.Log, bc.Metrics, logger, metrics, resources, todoService)
-	grpcServer := server.NewGRPCServer(bc.Server, bc.Log, bc.Metrics, logger, metrics, todoService)
+	httpServer := server.NewHTTPServer(bc.Server, bc.Log, bc.Metrics, logger, metrics, resources, todoService, bc.Security)
+	grpcServer := server.NewGRPCServer(bc.Server, bc.Log, bc.Metrics, logger, metrics, resources, todoService, bc.Security)
 
 	options := []kernel.Option{
 		kernel.Name(bc.Service.Name),
@@ -126,8 +126,6 @@ func applyBuildInfo(bc *conf.Bootstrap) {
 		bc.Metrics.Path = "/metrics"
 	}
 	if bc.DTM.ServiceBaseURL == "" && bc.Server.HTTP.Addr != "" {
-		// Use an explicit service_base_url in production, especially when DTM runs
-		// outside the process host or behind service discovery.
 		bc.DTM.ServiceBaseURL = "http://127.0.0.1" + normalizeAddrPort(bc.Server.HTTP.Addr)
 	}
 }

@@ -14,8 +14,9 @@ import (
 //
 // Returns clause.Expression so dbx.go can pass it to gormDB.Clauses()
 // without importing gorm/clause directly.
-func buildOnConflictClause(updateColumns []string) clause.Expression {
+func buildOnConflictClause(conflictColumns []clause.Column, updateColumns []string) clause.Expression {
 	return clause.OnConflict{
+		Columns:   conflictColumns,
 		UpdateAll: false,
 		DoUpdates: clause.AssignmentColumns(updateColumns),
 	}

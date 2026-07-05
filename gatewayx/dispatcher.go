@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aisphereio/kernel/authn"
 	"github.com/aisphereio/kernel/errorx"
 )
 
@@ -34,13 +35,38 @@ type UpstreamInvoker interface {
 // Dispatcher combines route registry, matcher snapshot, boundary authn policy
 // and upstream invocation.
 type Dispatcher struct {
-	Registry RouteRegistry
-	Hosts    StaticHosts
-	Invoker  UpstreamInvoker
+	Registry      RouteRegistry
+	Hosts         StaticHosts
+	Invoker       UpstreamInvoker
+	Authenticator authn.Authenticator
+	InternalToken authn.InternalServiceTokenConfig
 }
 
-func NewDispatcher(registry RouteRegistry, hosts StaticHosts, invoker UpstreamInvoker) Dispatcher {
-	return Dispatcher{Registry: registry, Hosts: hosts, Invoker: invoker}
+// DispatchOption configures Dispatcher without forcing all existing callers to
+// understand Gateway authentication internals.
+type DispatchOption func(*Dispatcher)
+
+// WithAuthenticator lets Gateway verify external Casdoor JWTs locally before
+// forwarding trusted identity headers to internal services.
+func WithAuthenticator(a authn.Authenticator) DispatchOption {
+	return func(d *Dispatcher) { d.Authenticator = a }
+}
+
+// WithInternalServiceToken configures the shared Gateway -> backend token that
+// is injected after external JWT verification. It is stripped from inbound
+// client requests before being injected, so clients cannot spoof the boundary.
+func WithInternalServiceToken(cfg authn.InternalServiceTokenConfig) DispatchOption {
+	return func(d *Dispatcher) { d.InternalToken = cfg.Normalized() }
+}
+
+func NewDispatcher(registry RouteRegistry, hosts StaticHosts, invoker UpstreamInvoker, opts ...DispatchOption) Dispatcher {
+	d := Dispatcher{Registry: registry, Hosts: hosts, Invoker: invoker}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&d)
+		}
+	}
+	return d
 }
 
 func (d Dispatcher) Dispatch(ctx context.Context, req DispatchRequest) (DispatchResponse, error) {
@@ -55,8 +81,28 @@ func (d Dispatcher) Dispatch(ctx context.Context, req DispatchRequest) (Dispatch
 	if match.Route.Gateway.Exposure.String() == "INTERNAL" {
 		return DispatchResponse{Status: 404}, errorx.NotFound("ROUTE_NOT_FOUND", "gateway route not found")
 	}
-	if requiresAuthorization(match.Route.Gateway) && bearer(req.Headers) == "" {
-		return DispatchResponse{Status: 401}, errorx.Unauthorized("AUTHN_REQUIRED", "login required")
+	authn.StripGatewayControlledHeaders(req.Headers, d.InternalToken.Header())
+	// The internal token is injected for every proxied route, including public
+	// login/callback routes, so backends can optionally enforce "only Gateway may
+	// call me" independently from end-user authentication.
+	authn.InjectInternalServiceToken(req.Headers, d.InternalToken)
+	if requiresAuthorization(match.Route.Gateway) {
+		rawToken := bearer(req.Headers)
+		if rawToken == "" {
+			rawToken = cookie(req.Headers, "aisphere_access_token")
+		}
+		if rawToken == "" {
+			return DispatchResponse{Status: 401}, errorx.Unauthorized("AUTHN_REQUIRED", "login required")
+		}
+		if d.Authenticator == nil {
+			return DispatchResponse{Status: 503}, errorx.Unavailable("AUTHN_BACKEND_NOT_CONFIGURED", "gateway authenticator is not configured")
+		}
+		principal, err := d.Authenticator.Authenticate(ctx, authn.Credential{Scheme: authn.CredentialBearer, Token: rawToken})
+		if err != nil {
+			return DispatchResponse{Status: 401}, errorx.Unauthorized("AUTHN_INVALID", err.Error())
+		}
+		ctx = authn.ContextWithPrincipal(ctx, principal)
+		authn.InjectTrustedHeaders(req.Headers, principal)
 	}
 	target, err := d.Hosts.Resolve(match.Route.Upstream)
 	if err != nil {
@@ -85,6 +131,28 @@ func bearer(headers map[string]string) string {
 				return strings.TrimSpace(v[len("Bearer "):])
 			}
 			return v
+		}
+	}
+	return ""
+}
+
+func cookie(headers map[string]string, name string) string {
+	if strings.TrimSpace(name) == "" {
+		return ""
+	}
+	for k, v := range headers {
+		if !strings.EqualFold(k, "cookie") {
+			continue
+		}
+		for _, part := range strings.Split(v, ";") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			key, value, ok := strings.Cut(part, "=")
+			if ok && strings.TrimSpace(key) == name {
+				return strings.TrimSpace(value)
+			}
 		}
 	}
 	return ""
