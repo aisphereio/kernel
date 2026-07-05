@@ -191,6 +191,20 @@ func validateConfig(cfg Config) error {
 	if cfg.ApplicationName == "" {
 		return errInvalidConfig("casdoor application name is required")
 	}
+	if cfg.Admin.Enabled {
+		if cfg.Admin.OrganizationName == "" {
+			return errInvalidConfig("casdoor admin organization name is required when admin is enabled")
+		}
+		if cfg.Admin.ApplicationName == "" {
+			return errInvalidConfig("casdoor admin application name is required when admin is enabled")
+		}
+		if cfg.Admin.ClientID == "" {
+			return errInvalidConfig("casdoor admin client id is required when admin is enabled")
+		}
+		if cfg.Admin.ClientSecret == "" {
+			return errInvalidConfig("casdoor admin client secret is required when admin is enabled")
+		}
+	}
 	return nil
 }
 
