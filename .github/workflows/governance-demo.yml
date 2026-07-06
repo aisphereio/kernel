@@ -7,6 +7,7 @@ on:
       - 'serverx/**'
       - 'gatewayx/**'
       - 'cmd/protoc-gen-go-gateway/**'
+      - 'cmd/protoc-gen-go-deploy/**'
       - 'cmd/protoc-gen-go-kernel/**'
       - 'cmd/buf-check-aisphere/**'
       - 'bootx/**'
@@ -32,7 +33,7 @@ jobs:
       - name: Targeted governance tests
         run: |
           set -euxo pipefail
-          go test ./cmd/protoc-gen-go-gateway ./cmd/protoc-gen-go-kernel ./cmd/buf-check-aisphere ./gatewayx ./serverx ./bootx ./requestx ./admissionx ./middleware/autowire ./ratelimitx ./clientpolicyx ./middleware/retry ./middleware/timeout | tee governance-targeted-tests.log
+          go test ./cmd/protoc-gen-go-gateway ./cmd/protoc-gen-go-deploy ./cmd/protoc-gen-go-kernel ./cmd/buf-check-aisphere ./gatewayx ./serverx ./bootx ./requestx ./admissionx ./middleware/autowire ./ratelimitx ./clientpolicyx ./middleware/retry ./middleware/timeout | tee governance-targeted-tests.log
       - name: Generated layout compile smoke
         run: |
           set -euxo pipefail
