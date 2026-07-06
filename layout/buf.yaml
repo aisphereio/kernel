@@ -1,6 +1,9 @@
 version: v2
 modules:
   - path: api
+  - path: ../api
+    exclude:
+      - third_party
 deps:
   - buf.build/googleapis/googleapis
   - buf.build/grpc-ecosystem/grpc-gateway
