@@ -11,6 +11,7 @@ kernel new todo-service
 cd todo-service
 make tools
 make api
+make deploy
 make proto-check
 make verify
 make run
@@ -42,7 +43,7 @@ kernel new todo-service --disable iam,gateway,dtmx
 ## 固定 Kernel 版本
 
 ```bash
-KERNEL_VERSION=v0.1.16
+KERNEL_VERSION=v0.2.4
 go install github.com/aisphereio/kernel/cmd/kernel@${KERNEL_VERSION}
 kernel new todo-service --kernel-version ${KERNEL_VERSION}
 ```
@@ -85,6 +86,7 @@ kernel new todo-service --repo https://github.com/aisphereio/kernel-layout.git -
 cd todo-service
 make tools
 make api
+make deploy
 make proto-check
 make verify
 make run
