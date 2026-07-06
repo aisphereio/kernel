@@ -37,9 +37,14 @@ type UserGroupQuery struct {
 	Offset           int
 }
 
-// Directory is the IAM read/write surface for users, orgs, groups and memberships.
-// It is intentionally provider-neutral. Casdoor, DB-backed IAM and hybrid sync
-// implementations must adapt to this interface.
+// Directory is Kernel IAM's read/write control-plane surface for users, orgs,
+// groups and memberships. It is intentionally provider-neutral and represents
+// Kernel's canonical IAM facts.
+//
+// Do not confuse Directory with authn.IdentityAdmin: IdentityAdmin talks to an
+// external identity provider such as Casdoor and manages provider projections;
+// Directory is what business services and IAM domain code should use after
+// authorization has already been resolved.
 type Directory interface {
 	CreateUser(ctx context.Context, user User) (User, error)
 	GetUser(ctx context.Context, orgID, userID string) (User, error)

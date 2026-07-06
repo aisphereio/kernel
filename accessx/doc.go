@@ -1,10 +1,20 @@
-// Package accessx provides the request-time access guard for authz and audit.
+// Package accessx provides Kernel's request-time access guard.
 //
-// In the normal Kernel server path, middleware/authn authenticates first and
-// injects authn.Principal into context. accessx then consumes that principal,
-// applies authorization policy, and records audit. A legacy authenticator hook
-// remains on Guard only for direct callers that still pass raw credentials in
-// Check.
+// accessx is the runtime orchestration layer for authn + authz + audit. In the
+// normal Kernel server path, middleware/authn authenticates first and injects an
+// authn.Principal into context. accessx then consumes that principal, applies
+// authorization policy, resolves SkipPolicy, and records audit. A legacy
+// authenticator hook remains on Guard only for direct callers that still pass raw
+// credentials in Check.
+//
+// # accessx.Guard vs authz.Authorizer
+//
+// Use accessx.Guard when handling a request and you need the whole access chain:
+// principal resolution, optional authn fallback, authz decision, SkipPolicy and
+// audit.
+//
+// Use authz.Authorizer when you only need to ask the authorization backend for a
+// provider-neutral decision. authz must not grow a second request-time guard.
 //
 // # SkipPolicy
 //

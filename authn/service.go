@@ -62,9 +62,15 @@ type GroupAdmin interface {
 	RemoveUserFromGroup(ctx context.Context, req AssignUserToGroupRequest) error
 }
 
-// IdentityAdmin is the identity management surface expected from a Casdoor
-// adapter. Keep it out of normal business services; use it in IAM provisioning
-// after platform-level authorization has been checked.
+// IdentityAdmin is the external identity-provider management surface expected
+// from adapters such as Casdoor. It is deliberately not Kernel's canonical IAM
+// storage API.
+//
+// Use IdentityAdmin only in IAM provisioning/sync adapters after platform-level
+// authorization has already been checked. Business services and domain code
+// should depend on iamx.Service/iamx.Directory for users, organizations, groups
+// and memberships. That split keeps provider-side projections separate from the
+// Kernel IAM control-plane facts.
 type IdentityAdmin interface {
 	TokenService
 	UserDirectory
