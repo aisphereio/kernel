@@ -31,6 +31,14 @@ type ServiceBinding struct {
 	Implementation any
 }
 
+// GatewayBinding pairs one generated service module with its generated upstream
+// client. Kernel uses the generated module registration hook to bind Gateway
+// operations to the invoker registry.
+type GatewayBinding struct {
+	Module ServiceModule
+	Client any
+}
+
 // NewServiceCatalog validates and stores generated service modules.
 func NewServiceCatalog(modules ...ServiceModule) (ServiceCatalog, error) {
 	seen := map[string]struct{}{}
@@ -106,6 +114,24 @@ func (c ServiceCatalog) RegisterGatewayRoutesWithFilter(ctx context.Context, reg
 	return RegisterServiceGatewayRoutesWithFilter(ctx, registry, filter, c.modules...)
 }
 
+func RegisterGatewayInvokers(registry *gatewayx.InvokerRegistry, bindings ...GatewayBinding) error {
+	if registry == nil {
+		return fmt.Errorf("serverx: gateway invoker registry is nil")
+	}
+	for _, binding := range bindings {
+		if err := binding.validate(); err != nil {
+			return err
+		}
+		if binding.Module.RegisterGatewayInvokers == nil {
+			return fmt.Errorf("serverx: service module %s missing generated gateway invoker registration hook", binding.Module.ModuleName())
+		}
+		if err := binding.Module.RegisterGatewayInvokers(registry, binding.Client); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func RegisterHTTPServices(srv *transporthttp.Server, bindings ...ServiceBinding) error {
 	if srv == nil {
 		return fmt.Errorf("serverx: http server is nil")
@@ -148,6 +174,16 @@ func (b ServiceBinding) validate() error {
 	}
 	if b.Implementation == nil {
 		return fmt.Errorf("serverx: service module %s implementation is nil", b.Module.ModuleName())
+	}
+	return nil
+}
+
+func (b GatewayBinding) validate() error {
+	if err := b.Module.Validate(); err != nil {
+		return err
+	}
+	if b.Client == nil {
+		return fmt.Errorf("serverx: service module %s gateway client is nil", b.Module.ModuleName())
 	}
 	return nil
 }
