@@ -1,0 +1,384 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+	"unicode"
+
+	"github.com/aisphereio/kernel/internal/protooptions"
+	"google.golang.org/genproto/googleapis/api/annotations"
+	"google.golang.org/protobuf/compiler/protogen"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/pluginpb"
+)
+
+var (
+	showVersion          = flag.Bool("version", false, "print version and exit")
+	optService           = flag.String("service", "", "Kubernetes backend Service name. Defaults to the proto service name.")
+	optNamespace         = flag.String("namespace", "aisphere", "Kubernetes namespace for generated HTTPRoute resources and backendRefs.")
+	optBackendPort       = flag.Int("backend_port", 19080, "Backend gRPC Service port used by HTTPRoute backendRefs.")
+	optParentNamespace   = flag.String("parent_namespace", "aisphere-system", "Gateway namespace used by generated parentRefs.")
+	optPublicGateway     = flag.String("public_gateway", "public-gateway", "Gateway name for PUBLIC routes.")
+	optAuthenticatedGate = flag.String("authenticated_gateway", "authenticated-gateway", "Gateway name for AUTHENTICATED/AUTHORIZED routes.")
+	optInternalGateway   = flag.String("internal_gateway", "internal-gateway", "Gateway name for INTERNAL/SYSTEM routes.")
+)
+
+func main() {
+	flag.Parse()
+	if *showVersion {
+		fmt.Printf("protoc-gen-go-deploy %s (generates Gateway API HTTPRoute manifests)\n", release)
+		return
+	}
+	protogen.Options{ParamFunc: flag.CommandLine.Set}.Run(func(gen *protogen.Plugin) error {
+		gen.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
+		for _, f := range gen.Files {
+			if f.Generate {
+				generateFile(gen, f)
+			}
+		}
+		return nil
+	})
+}
+
+type deployRoute struct {
+	ServiceFullName string
+	ServiceGoName   string
+	MethodGoName    string
+	MethodName      string
+	FullMethod      string
+	HTTPMethod      string
+	Path            string
+	Exposure        int32
+	Audience        string
+	AuthzAction     string
+	AuthzResource   string
+	ForwardAuth     bool
+	Tags            []string
+	Profiles        []string
+}
+
+func generateFile(gen *protogen.Plugin, file *protogen.File) {
+	for _, svc := range file.Services {
+		routes := collectDeployRoutes(svc)
+		if len(routes) == 0 {
+			continue
+		}
+		for _, bucket := range []string{"public", "authenticated", "internal"} {
+			bucketRoutes := filterRoutes(routes, bucket)
+			if len(bucketRoutes) == 0 {
+				continue
+			}
+			resourceName := dnsName(defaultServiceName(string(svc.Desc.FullName())) + "-" + bucket)
+			filename := "deploy/generated/gateway/" + bucket + "/" + resourceName + ".yaml"
+			g := gen.NewGeneratedFile(filename, file.GoImportPath)
+			writeHTTPRoute(g, bucket, resourceName, bucketRoutes)
+		}
+	}
+}
+
+func collectDeployRoutes(svc *protogen.Service) []deployRoute {
+	var out []deployRoute
+	for _, m := range svc.Methods {
+		if m.Desc.IsStreamingClient() || m.Desc.IsStreamingServer() {
+			continue
+		}
+		rule, ok := proto.GetExtension(m.Desc.Options(), annotations.E_Http).(*annotations.HttpRule)
+		if !ok || rule == nil {
+			continue
+		}
+		access, ok := accessPolicy(m)
+		if !ok || access.Gateway.Publish == protooptions.GatewayPublishDisabled {
+			continue
+		}
+		exposure := access.Exposure
+		if exposure == 0 {
+			exposure = 3
+		}
+		bindings := append([]*annotations.HttpRule{}, rule.AdditionalBindings...)
+		bindings = append(bindings, rule)
+		for _, binding := range bindings {
+			method, path := httpBinding(binding)
+			if path == "" {
+				continue
+			}
+			audience := strings.TrimSpace(access.Authz.Audience)
+			if audience == "" {
+				audience = defaultServiceName(string(svc.Desc.FullName()))
+			}
+			out = append(out, deployRoute{
+				ServiceFullName: string(svc.Desc.FullName()),
+				ServiceGoName:   svc.GoName,
+				MethodGoName:    m.GoName,
+				MethodName:      string(m.Desc.Name()),
+				FullMethod:      "/" + string(svc.Desc.FullName()) + "/" + string(m.Desc.Name()),
+				HTTPMethod:      method,
+				Path:            path,
+				Exposure:        exposure,
+				Audience:        audience,
+				AuthzAction:     access.Authz.Action,
+				AuthzResource:   access.Authz.Resource,
+				ForwardAuth:     forwardAuth(exposure),
+				Tags:            cleanStrings(access.Gateway.Tags),
+				Profiles:        cleanStrings(access.Gateway.Profiles),
+			})
+		}
+	}
+	return out
+}
+
+func filterRoutes(routes []deployRoute, bucket string) []deployRoute {
+	out := make([]deployRoute, 0, len(routes))
+	for _, rt := range routes {
+		if exposureBucket(rt.Exposure) == bucket {
+			out = append(out, rt)
+		}
+	}
+	return out
+}
+
+func writeHTTPRoute(g *protogen.GeneratedFile, bucket string, name string, routes []deployRoute) {
+	backendService := strings.TrimSpace(*optService)
+	if backendService == "" {
+		backendService = defaultServiceName(routes[0].ServiceFullName)
+	}
+	parentGateway := gatewayForBucket(bucket)
+	g.P("# Code generated by protoc-gen-go-deploy. DO NOT EDIT.")
+	g.P("# Source service: ", routes[0].ServiceFullName)
+	g.P("apiVersion: gateway.networking.k8s.io/v1")
+	g.P("kind: HTTPRoute")
+	g.P("metadata:")
+	g.P("  name: ", name)
+	g.P("  namespace: ", yamlQuote(cleanDefault(*optNamespace, "aisphere")))
+	g.P("  labels:")
+	g.P("    app.kubernetes.io/name: ", yamlQuote(backendService))
+	g.P("    app.kubernetes.io/component: ", yamlQuote("gateway-route"))
+	g.P("    aisphere.io/generated-by: ", yamlQuote("protoc-gen-go-deploy"))
+	g.P("    aisphere.io/exposure-bucket: ", yamlQuote(bucket))
+	g.P("spec:")
+	g.P("  parentRefs:")
+	g.P("    - name: ", yamlQuote(parentGateway))
+	if strings.TrimSpace(*optParentNamespace) != "" {
+		g.P("      namespace: ", yamlQuote(strings.TrimSpace(*optParentNamespace)))
+	}
+	g.P("  rules:")
+	for _, rt := range routes {
+		writeHTTPRouteRule(g, backendService, rt)
+	}
+}
+
+func writeHTTPRouteRule(g *protogen.GeneratedFile, backendService string, rt deployRoute) {
+	g.P("    - matches:")
+	g.P("        - method: ", yamlQuote(rt.HTTPMethod))
+	g.P("          path:")
+	g.P("            type: PathPrefix")
+	g.P("            value: ", yamlQuote(rt.Path))
+	g.P("      filters:")
+	g.P("        - type: RequestHeaderModifier")
+	g.P("          requestHeaderModifier:")
+	g.P("            set:")
+	g.P("              - name: X-Aisphere-Upstream-Operation")
+	g.P("                value: ", yamlQuote(rt.FullMethod))
+	g.P("              - name: X-Aisphere-Route-Exposure")
+	g.P("                value: ", yamlQuote(exposureName(rt.Exposure)))
+	g.P("              - name: X-Aisphere-Route-Authn-Mode")
+	g.P("                value: ", yamlQuote(authnMode(rt.Exposure)))
+	g.P("              - name: X-Aisphere-Route-Forward-Authorization")
+	g.P("                value: ", yamlQuote(strconv.FormatBool(rt.ForwardAuth)))
+	if strings.TrimSpace(rt.AuthzAction) != "" {
+		g.P("              - name: X-Aisphere-Authz-Action")
+		g.P("                value: ", yamlQuote(rt.AuthzAction))
+	}
+	if strings.TrimSpace(rt.AuthzResource) != "" {
+		g.P("              - name: X-Aisphere-Authz-Resource")
+		g.P("                value: ", yamlQuote(rt.AuthzResource))
+	}
+	g.P("      backendRefs:")
+	g.P("        - name: ", yamlQuote(backendService))
+	if strings.TrimSpace(*optNamespace) != "" {
+		g.P("          namespace: ", yamlQuote(strings.TrimSpace(*optNamespace)))
+	}
+	g.P("          port: ", *optBackendPort)
+}
+
+func accessPolicy(m *protogen.Method) (protooptions.AccessPolicy, bool) {
+	unknown := m.Desc.Options().ProtoReflect().GetUnknown()
+	if payload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtAccess); ok {
+		return protooptions.ParseAccessPolicy(payload), true
+	}
+	return protooptions.AccessPolicy{}, false
+}
+
+func httpBinding(rule *annotations.HttpRule) (string, string) {
+	switch p := rule.Pattern.(type) {
+	case *annotations.HttpRule_Get:
+		return http.MethodGet, p.Get
+	case *annotations.HttpRule_Put:
+		return http.MethodPut, p.Put
+	case *annotations.HttpRule_Post:
+		return http.MethodPost, p.Post
+	case *annotations.HttpRule_Delete:
+		return http.MethodDelete, p.Delete
+	case *annotations.HttpRule_Patch:
+		return http.MethodPatch, p.Patch
+	case *annotations.HttpRule_Custom:
+		return strings.ToUpper(p.Custom.Kind), p.Custom.Path
+	default:
+		return http.MethodPost, ""
+	}
+}
+
+func exposureBucket(exposure int32) string {
+	switch exposure {
+	case 1:
+		return "public"
+	case 2, 3:
+		return "authenticated"
+	case 4, 5:
+		return "internal"
+	default:
+		return "authenticated"
+	}
+}
+
+func exposureName(exposure int32) string {
+	switch exposure {
+	case 1:
+		return "PUBLIC"
+	case 2:
+		return "AUTHENTICATED"
+	case 3:
+		return "AUTHORIZED"
+	case 4:
+		return "INTERNAL"
+	case 5:
+		return "SYSTEM"
+	default:
+		return "AUTHORIZED"
+	}
+}
+
+func authnMode(exposure int32) string {
+	switch exposure {
+	case 1:
+		return "none"
+	case 4, 5:
+		return "m2m"
+	default:
+		return "verify_jwt"
+	}
+}
+
+func forwardAuth(exposure int32) bool { return exposure == 2 || exposure == 3 || exposure == 4 }
+
+func gatewayForBucket(bucket string) string {
+	switch bucket {
+	case "public":
+		return cleanDefault(*optPublicGateway, "public-gateway")
+	case "authenticated":
+		return cleanDefault(*optAuthenticatedGate, "authenticated-gateway")
+	case "internal":
+		return cleanDefault(*optInternalGateway, "internal-gateway")
+	default:
+		return cleanDefault(*optAuthenticatedGate, "authenticated-gateway")
+	}
+}
+
+func cleanDefault(v, fallback string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return fallback
+	}
+	return v
+}
+
+func defaultServiceName(full string) string {
+	full = strings.TrimSpace(full)
+	if full == "" {
+		return "service"
+	}
+	parts := strings.Split(full, ".")
+	name := parts[len(parts)-1]
+	name = strings.TrimSuffix(name, "Service")
+	if name == "" {
+		name = parts[len(parts)-1]
+	}
+	return strings.ToLower(kebab(name)) + "-service"
+}
+
+func cleanStrings(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := map[string]struct{}{}
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
+}
+
+func kebab(s string) string {
+	var b strings.Builder
+	for i, r := range s {
+		if r == '.' || r == '_' || r == ' ' {
+			b.WriteByte('-')
+			continue
+		}
+		if unicode.IsUpper(r) {
+			if i > 0 {
+				b.WriteByte('-')
+			}
+			b.WriteRune(unicode.ToLower(r))
+			continue
+		}
+		b.WriteRune(unicode.ToLower(r))
+	}
+	return strings.Trim(collapseDash(b.String()), "-")
+}
+
+func dnsName(s string) string {
+	s = strings.ToLower(s)
+	var b strings.Builder
+	prevDash := false
+	for _, r := range s {
+		valid := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if valid {
+			b.WriteRune(r)
+			prevDash = false
+			continue
+		}
+		if !prevDash {
+			b.WriteByte('-')
+			prevDash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if len(out) > 63 {
+		out = strings.Trim(out[:63], "-")
+	}
+	if out == "" {
+		return "route"
+	}
+	return out
+}
+
+func collapseDash(s string) string {
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	return s
+}
+
+func yamlQuote(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "\"", "\\\"")
+	return "\"" + s + "\""
+}
