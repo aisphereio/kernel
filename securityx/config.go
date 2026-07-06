@@ -37,7 +37,10 @@ type Config struct {
 }
 
 // AuthnConfig is kept as a type alias for older code that imported
-// securityx.AuthnConfig. New code should use AuthnBoundaryConfig.
+// securityx.AuthnConfig.
+//
+// Deprecated: use AuthnBoundaryConfig. This alias remains only as a short-term
+// migration shim and must not be used by new generated code or examples.
 type AuthnConfig = AuthnBoundaryConfig
 
 type AuthzConfig struct {

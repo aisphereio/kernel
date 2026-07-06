@@ -35,16 +35,18 @@ kernel new todo-service --disable iam,gateway,dtmx
 
 ## Runtime API
 
-业务代码和生成代码可以 import：
+业务代码、服务 boot 代码和生成代码可以 import：
 
 ```text
-errorx logx configx metricsx serverx
+errorx logx configx metricsx serverx securityx bootx contextx
 transportx/http transportx/grpc
 requestx accessx authn authz auditx
 gatewayx admissionx ratelimitx clientpolicyx
 dbx cachex objectstorex dtmx
 selectorx registry encodingx
 ```
+
+说明：`securityx` 负责把 `config.yaml` 的安全配置构造成 provider-neutral runtime，不是新的 middleware 装配层；中间件装配仍统一走 `serverx` / `middleware/autowire`。
 
 ## Development tooling
 
@@ -71,6 +73,7 @@ middleware/ratelimit/       removed; use ratelimitx
 internal/ratelimit/         removed; use ratelimitx providers
 github.com/aisphereio/kernel/errors removed; use errorx
 core/httpx/contextx as main docs wording obsolete; use serverx/transportx/requestx/accessx
+securityx.AuthnConfig       deprecated alias; use securityx.AuthnBoundaryConfig
 grpcgatewayx                not mainline; use grpc-gateway generator, protoc-gen-go-gateway and gatewayx
 ```
 
@@ -106,6 +109,7 @@ make api
 make test
 make test-cmd
 make vet
+make vuln
 ```
 
 完整本地门禁：
@@ -122,3 +126,4 @@ make verify
 - [docs/contracts/package-status.md](docs/contracts/package-status.md)
 - [docs/contracts/runtime-api-boundary.md](docs/contracts/runtime-api-boundary.md)
 - [docs/contracts/proto-capability-matrix.md](docs/contracts/proto-capability-matrix.md)
+- [docs/contracts/cleanup-audit.md](docs/contracts/cleanup-audit.md)

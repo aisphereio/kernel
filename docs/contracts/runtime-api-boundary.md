@@ -1,19 +1,25 @@
 # Runtime API 边界
 
-Kernel 仓库分为四类表面：runtime API、development tooling、layout、external validation。业务代码只能依赖 runtime API。
+Kernel 仓库分为四类表面：runtime API、development tooling、layout、external validation。业务代码只能依赖 runtime API；服务 boot 代码可以依赖 runtime API 中的装配类包，例如 `serverx`、`securityx`、`bootx`。
 
 ## 1. Runtime API
 
-业务代码和生成代码可以 import：
+业务代码、服务 boot 代码和生成代码可以 import：
 
 ```text
-errorx logx configx metricsx serverx
+errorx logx configx metricsx serverx securityx bootx contextx
 transportx/http transportx/grpc
 requestx accessx authn authz auditx
 gatewayx admissionx ratelimitx clientpolicyx
 dbx cachex objectstorex dtmx
 selectorx registry encodingx
 ```
+
+### 1.1 装配边界
+
+`securityx` 是安全配置和 provider-neutral runtime 构造层，不是 middleware 装配层。它负责把 `config.yaml` 中的 `security.*` 转换为 `serverx.RuntimeProviders` 可消费的 AuthN/AuthZ/Audit/skip-policy runtime。
+
+`serverx` / `middleware/autowire` 仍是唯一的服务端中间件链装配入口。业务服务不应该自行组装 authn/authz/audit middleware。
 
 ## 2. Development tooling
 
@@ -25,6 +31,7 @@ cmd/protoc-gen-go-http
 cmd/protoc-gen-go-errors
 cmd/protoc-gen-go-authz
 cmd/protoc-gen-go-gateway
+cmd/protoc-gen-go-deploy
 cmd/protoc-gen-go-kernel
 cmd/buf-check-aisphere
 ```
@@ -57,6 +64,7 @@ middleware/ratelimit/       -> use ratelimitx
 internal/ratelimit/         -> use ratelimitx providers
 github.com/aisphereio/kernel/errors -> use errorx
 core/httpx/contextx as docs wording -> use serverx/transportx/requestx/accessx
+securityx.AuthnConfig -> deprecated alias; use securityx.AuthnBoundaryConfig
 grpcgatewayx -> not mainline; use grpc-gateway generator + protoc-gen-go-gateway + gatewayx
 ```
 

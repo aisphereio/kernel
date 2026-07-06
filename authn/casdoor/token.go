@@ -106,7 +106,7 @@ func (c *Client) principalFromAccessToken(ctx context.Context, token string, org
 		logger.Warn("casdoor jwt parse failed", logx.Err(err), logx.Duration("leeway", leeway))
 		return authn.Principal{}, authn.ErrInvalidCredential("invalid casdoor token")
 	}
-	principal := principalFromClaims(claims, token, orgID, appID)
+	principal := principalFromClaims(claims, orgID, appID)
 	if !principal.IsAuthenticated() {
 		return authn.Principal{}, authn.ErrUnauthenticated("casdoor token has no authenticated subject")
 	}
@@ -122,7 +122,8 @@ func tokenLeeway(leeway time.Duration) time.Duration {
 
 func (c *Client) parseJWTToken(token string, orgID, appID string, leeway time.Duration) (*casdoorsdk.Claims, error) {
 	claims := &claimsWithLeeway{leeway: tokenLeeway(leeway)}
-	t, err := jwt.ParseWithClaims(token, claims, c.jwtKeyFunc(orgID, appID))
+	parser := jwt.NewParser(jwt.WithValidMethods(c.allowedJWTAlgs()))
+	t, err := parser.ParseWithClaims(token, claims, c.jwtKeyFunc(orgID, appID))
 	if err != nil {
 		return nil, err
 	}
@@ -139,14 +140,22 @@ func (c *Client) parseJWTToken(token string, orgID, appID string, leeway time.Du
 	return &parsed.Claims, nil
 }
 
+func (c *Client) allowedJWTAlgs() []string {
+	allowedAlgs := c.cfg.AllowedAlgs
+	if len(allowedAlgs) == 0 {
+		allowedAlgs = []string{jwt.SigningMethodRS256.Alg(), jwt.SigningMethodRS512.Alg(), jwt.SigningMethodES256.Alg(), jwt.SigningMethodES512.Alg()}
+	}
+	return append([]string(nil), allowedAlgs...)
+}
+
 func (c *Client) jwtKeyFunc(orgID, appID string) jwt.Keyfunc {
 	client := c.loginSDK(orgID, appID)
 	return func(token *jwt.Token) (any, error) {
-		alg := token.Method.Alg()
-		allowedAlgs := c.cfg.AllowedAlgs
-		if len(allowedAlgs) == 0 {
-			allowedAlgs = []string{jwt.SigningMethodRS256.Alg(), jwt.SigningMethodRS512.Alg(), jwt.SigningMethodES256.Alg(), jwt.SigningMethodES512.Alg()}
+		if token == nil || token.Method == nil {
+			return nil, fmt.Errorf("missing signing method")
 		}
+		alg := token.Method.Alg()
+		allowedAlgs := c.allowedJWTAlgs()
 		if !containsString(allowedAlgs, alg) {
 			return nil, fmt.Errorf("unsupported signing method: %v", token.Header["alg"])
 		}
@@ -246,7 +255,7 @@ func (c *claimsWithLeeway) Valid() error {
 	return vErr
 }
 
-func principalFromClaims(claims *casdoorsdk.Claims, accessToken string, orgID, appID string) authn.Principal {
+func principalFromClaims(claims *casdoorsdk.Claims, orgID, appID string) authn.Principal {
 	if claims == nil {
 		return authn.Anonymous()
 	}
@@ -268,7 +277,6 @@ func principalFromClaims(claims *casdoorsdk.Claims, accessToken string, orgID, a
 		"casdoor_external_id": claims.ExternalId,
 		"casdoor_token_type":  claims.TokenType,
 		"signin_method":       claims.SigninMethod,
-		"access_token":        accessToken,
 	}
 
 	return authn.Principal{

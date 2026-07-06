@@ -23,10 +23,10 @@ AI 写业务代码前必须先阅读并应用 `docs/ai/advanced-feature-playbook
 
 ## 2. Runtime API 边界
 
-业务代码和生成代码可以 import 的主线 runtime 包：
+业务代码、服务 boot 代码和生成代码可以 import 的主线 runtime 包：
 
 ```text
-errorx logx configx metricsx serverx
+errorx logx configx metricsx serverx securityx bootx contextx
 transportx/http transportx/grpc
 requestx accessx authn authz auditx
 gatewayx admissionx ratelimitx clientpolicyx
@@ -42,7 +42,7 @@ cmd/protoc-gen-*
 cmd/buf-check-*
 ```
 
-以下路径/概念已经移除或不作为主线：
+以下路径/概念已经移除、废弃或不作为主线：
 
 ```text
 validation/
@@ -50,6 +50,7 @@ middleware/ratelimit/
 internal/ratelimit/
 github.com/aisphereio/kernel/errors
 core/httpx/contextx as main docs wording
+securityx.AuthnConfig alias; use securityx.AuthnBoundaryConfig
 grpcgatewayx
 ```
 
@@ -64,6 +65,7 @@ grpcgatewayx
 | `cmd/buf-check-*` | 契约检查 | 失败即阻断 |
 | `requestx/` | 请求元信息中心 | 中间件、审计、限流、鉴权都读 `requestx.Info` |
 | `serverx/` | 一键服务装配 | 业务组件必须通过它启动服务 |
+| `securityx/` | 安全配置与 provider-neutral runtime | 不是 middleware 装配层，由 `serverx.RuntimeProviders` 消费 |
 | `transportx/` | HTTP/gRPC transport | 新代码使用 transportx |
 | `accessx/` | 访问控制 guard | 统一组合 authn/authz/audit |
 | `ratelimitx/` | 限流 provider 抽象 | 旧 ratelimit 路径已删除 |
@@ -126,6 +128,7 @@ Gateway 只做边界路由和边界准入。资源级授权必须在业务服务
 
 ```bash
 go test ./serverx ./bootx ./requestx ./admissionx ./middleware/autowire ./ratelimitx ./clientpolicyx ./middleware/retry ./middleware/timeout
+govulncheck ./...
 ```
 
 如果涉及 proto 或生成器，还要运行对应 `cmd/protoc-gen-*` 和 `cmd/buf-check-*` 测试。
