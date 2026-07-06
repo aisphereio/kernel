@@ -1,6 +1,6 @@
 # Runtime API 边界
 
-Kernel 仓库分为四类表面：runtime API、development tooling、layout、external validation。业务代码只能依赖 runtime API；服务 boot 代码可以依赖 runtime API 中的装配类包，例如 `serverx`、`securityx`、`bootx`。
+Kernel 仓库分为四类表面：runtime API、development tooling、layout、scenario validation。业务代码只能依赖 runtime API；服务 boot 代码可以依赖 runtime API 中的装配类包，例如 `serverx`、`securityx`、`bootx`。
 
 ## 1. Runtime API
 
@@ -44,11 +44,11 @@ cmd/buf-check-aisphere
 
 layout 可以包含示例业务代码，但 Kernel 核心包不能反向依赖 layout。
 
-## 4. External validation
+## 4. Scenario validation
 
-场景检查、generated-shape 实验、IAM/Gateway/SkillService 联调验证，不进入 Kernel 主模块默认包图。
+`validation/*` 当前仍在主模块内承载跨模块场景测试，例如 IAM/AuthN/AuthZ/ServerX 组合验证。它不是 runtime API，业务代码禁止 import。
 
-后续验证方式：
+后续迁移方向：
 
 ```text
 1. 独立 validation 仓库
