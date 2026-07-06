@@ -1,4 +1,4 @@
-.PHONY: help deps tools api proto proto-check generate wire build run test test-root test-errorx test-logx test-cmd test-race test-integration verify verify-full check check-errorx release-check vet vuln lint lint-ci contract cover cover-html verify-errorx bench-errorx fuzz-errorx clean tidy golangci-lint-install pre-commit-install pre-commit-run
+.PHONY: help deps tools api deploy proto proto-check generate wire build run test test-root test-errorx test-logx test-cmd test-race test-integration verify verify-full check check-errorx release-check vet vuln lint lint-ci contract cover cover-html verify-errorx bench-errorx fuzz-errorx clean tidy golangci-lint-install pre-commit-install pre-commit-run
 
 GO ?= go
 LOCAL_BIN := $(CURDIR)/.bin
@@ -16,7 +16,8 @@ endif
 help:
 	@echo "Aisphere Kernel targets:"
 	@echo "  make tools             build local tools into .bin"
-	@echo "  make api               generate protobuf, grpc, http, gateway, deploy and openapi code"
+	@echo "  make api               generate protobuf, grpc, http, gateway and openapi code"
+	@echo "  make deploy            generate deploy route manifests when buf.gen.deploy.yaml exists"
 	@echo "  make proto-check       run buf lint and buf-check-aisphere"
 	@echo "  make test              run root module tests"
 	@echo "  make test-cmd          run command package tests"
@@ -104,7 +105,19 @@ else
 endif
 
 api: proto
-	@echo "✓ api generation complete: protobuf, grpc, kernel http, grpc-gateway, gateway manifest, deploy route manifests, openapi"
+	@echo "✓ api generation complete: protobuf, grpc, kernel http, grpc-gateway, gateway manifest and openapi"
+
+deploy: tools
+ifeq ($(OS),Windows_NT)
+	@if exist buf.gen.deploy.yaml (if exist .bin\buf.exe (.bin\buf.exe generate --template buf.gen.deploy.yaml) else (buf generate --template buf.gen.deploy.yaml)) else (echo buf.gen.deploy.yaml not found; skip deploy generation)
+else
+	@if [ -f buf.gen.deploy.yaml ]; then \
+		if [ -x "$(LOCAL_BIN)/buf" ]; then $(LOCAL_BIN)/buf generate --template buf.gen.deploy.yaml; else buf generate --template buf.gen.deploy.yaml; fi; \
+	else \
+		echo "buf.gen.deploy.yaml not found; skip deploy generation"; \
+	fi
+endif
+	@echo "✓ deploy generation complete"
 
 proto-check: tools
 ifeq ($(OS),Windows_NT)
@@ -224,7 +237,7 @@ tidy:
 build: tools
 	@echo "kernel tools built into $(LOCAL_BIN)"
 
-verify: api proto-check wire test test-cmd test-race vet cover vuln lint
+verify: api deploy proto-check wire test test-cmd test-race vet cover vuln lint
 
 verify-full: verify test-integration
 
