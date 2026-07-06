@@ -2,11 +2,15 @@ syntax = "proto3";
 
 package aisphere.iam.v1;
 
-option go_package = "iam-service/api/iam/v1;v1";
+option go_package = "github.com/aisphereio/kernel/validation/iamservice/api/iam/v1;iamv1";
 
 import "google/api/annotations.proto";
-import "aisphere/access/v1/access.proto";
+import "api/aisphere/access/v1/access.proto";
 
+// IAMService is a scenario-validation contract input, not a committed runtime
+// API package. Generated files are intentionally not checked in under
+// validation/iamservice; validation jobs should generate into a temporary output
+// directory.
 service IAMService {
   rpc Login(LoginRequest) returns (LoginReply) {
     option (google.api.http) = { post: "/v1/iam/login" body: "*" };
@@ -27,7 +31,7 @@ service IAMService {
   }
 }
 
-message LoginRequest { string username = 1; string password = 2; }
-message LoginReply { string access_token = 1; }
+message LoginRequest { string username = 1; string credential = 2; }
+message LoginReply { string token = 1; }
 message GetUserRequest { string id = 1; }
 message User { string id = 1; string display_name = 2; string org_id = 3; }
