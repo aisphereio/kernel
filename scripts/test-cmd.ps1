@@ -10,6 +10,7 @@ $dirs = @(
     "cmd/protoc-gen-go-errors",
     "cmd/protoc-gen-go-authz",
     "cmd/protoc-gen-go-gateway",
+    "cmd/protoc-gen-go-deploy",
     "cmd/protoc-gen-go-kernel",
     "cmd/buf-check-aisphere"
 )

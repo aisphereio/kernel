@@ -72,6 +72,7 @@ try {
     Install-LocalCommand -Name "protoc-gen-go-errors" -Path (Join-Path $RepoRoot "cmd/protoc-gen-go-errors")
     Install-LocalCommand -Name "protoc-gen-go-authz" -Path (Join-Path $RepoRoot "cmd/protoc-gen-go-authz")
     Install-LocalCommand -Name "protoc-gen-go-gateway" -Path (Join-Path $RepoRoot "cmd/protoc-gen-go-gateway")
+    Install-LocalCommand -Name "protoc-gen-go-deploy" -Path (Join-Path $RepoRoot "cmd/protoc-gen-go-deploy")
     Install-LocalCommand -Name "protoc-gen-go-kernel" -Path (Join-Path $RepoRoot "cmd/protoc-gen-go-kernel")
     Install-LocalCommand -Name "buf-check-aisphere" -Path (Join-Path $RepoRoot "cmd/buf-check-aisphere")
 
