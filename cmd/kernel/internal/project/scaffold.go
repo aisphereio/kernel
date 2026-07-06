@@ -27,7 +27,9 @@ func applyScaffoldOptions(root string, opts ScaffoldOptions) error {
 	}
 	_ = os.RemoveAll(filepath.Join(root, layoutControlDir))
 
+	serviceName := filepath.Base(root)
 	replacements := map[string]string{
+		"__KERNEL_SERVICE_NAME__":       serviceName,
 		"__KERNEL_FEATURES__":           strings.Join(opts.Features, ","),
 		"__KERNEL_DISABLED_FEATURES__":  strings.Join(opts.DisabledFeatures, ","),
 		"__KERNEL_PROFILE__":            opts.Profile,
