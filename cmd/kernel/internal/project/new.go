@@ -42,15 +42,6 @@ func (p *Project) New(ctx context.Context, dir string, layout string, branch str
 	if err := repo.CopyTo(ctx, to, p.Name, []string{".git", ".github"}); err != nil {
 		return err
 	}
-	e := os.Rename(
-		filepath.Join(to, "cmd", "server"),
-		filepath.Join(to, "cmd", p.Name),
-	)
-	if e != nil {
-		if !os.IsNotExist(e) {
-			return e
-		}
-	}
 	if err := applyScaffoldOptions(to, opts); err != nil {
 		return err
 	}
@@ -62,6 +53,7 @@ func (p *Project) New(ctx context.Context, dir string, layout string, branch str
 	fmt.Println(color.WhiteString("$ cd %s", p.Name))
 	fmt.Println(color.WhiteString("$ make tools"))
 	fmt.Println(color.WhiteString("$ make api"))
+	fmt.Println(color.WhiteString("$ make deploy"))
 	fmt.Println(color.WhiteString("$ make proto-check"))
 	fmt.Println(color.WhiteString("$ make verify"))
 	fmt.Println(color.WhiteString("$ make run"))
