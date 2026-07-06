@@ -2,6 +2,11 @@ syntax = "proto3";
 
 package aisphere.access.v1;
 
+// Compatibility import path for old proto contracts.
+//
+// New proto files must import "api/aisphere/access/v1/access.proto" directly.
+// This wrapper intentionally uses the same go_package as the canonical proto so
+// it does not generate a second Go import path for the same proto package.
 import public "api/aisphere/access/v1/access.proto";
 
-option go_package = "github.com/aisphereio/kernel/aisphere/access/v1;accessv1";
+option go_package = "github.com/aisphereio/kernel/api/aisphere/access/v1;accessv1";
