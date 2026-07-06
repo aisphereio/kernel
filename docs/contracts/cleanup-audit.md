@@ -11,14 +11,15 @@
 | `authn/casdoor/token.go` | `jwt.ParseWithClaims` 直接调用；Keyfunc 内部虽校验 alg，但 parser 层没有白名单 | 改为 `jwt.NewParser(jwt.WithValidMethods(...))`，统一 `allowedJWTAlgs()` |
 | `authn/casdoor/token.go` | `Principal.Attributes` 中保存原始 `access_token`，可能进入日志、审计或下游上下文 | 删除该字段；token 只通过 `authn.TokenSet` 返回，不进入 Principal |
 | `securityx/config.go` | `AuthnConfig` 只是旧别名，容易被新代码继续使用 | 标记 `Deprecated`，新代码必须使用 `AuthnBoundaryConfig` |
-| `validation/iamservice` | 如果仍在当前 checkout 中，会被 `go test ./...` 扫到，且违反 runtime tree 边界 | 删除、移出仓库，或改成显式 build tag / 独立 validation 仓库；不能留在默认包图 |
-| `README.md` / `doc.go` / `AGENTS.md` / `docs/contracts/*.md` | runtime API 边界没有同步 `securityx`、`bootx`、`contextx` 的当前定位 | 同步 runtime API 表和废弃入口说明 |
+| `.github/workflows/*` | push 分支仍指向 `main`，但仓库主线是 `master` | push 分支兼容 `master` / `main` |
+| `layout/Makefile` / `layout/buf.gen.deploy.yaml` | 内置 layout 缺少 `make deploy` 和 `protoc-gen-go-deploy` 工具链 | 同步 deploy route generation 流程 |
+| `validation/iamservice` | 当前仍在默认包图内，会被 `go test ./...` 扫到 | 暂定为 scenario tests only；业务禁止 import，后续迁移到 build tag 或独立 validation surface |
+| `README.md` / `doc.go` / `AGENTS.md` / `docs/contracts/*.md` | runtime API 边界没有同步 `securityx`、`bootx`、`contextx`、deploy generation 的当前定位 | 同步 runtime API 表和废弃入口说明 |
 
 ## 2. 已删除 / 不允许恢复的旧入口
 
 | 路径或概念 | 状态 | 当前替代 |
 |---|---:|---|
-| `validation/` | must not be in default runtime package graph | 独立 validation 仓库、生成项目自己的 tests、显式 build tag 或 GitHub Actions 专用 job |
 | `middleware/ratelimit/` | removed | `ratelimitx` policy/provider |
 | `internal/ratelimit/` | removed | `ratelimitx` providers |
 | `github.com/aisphereio/kernel/errors` | removed | `errorx` |
@@ -30,6 +31,7 @@
 
 | 包 | 为什么保留 | 使用边界 |
 |---|---|---|
+| `validation/` | 当前仍承载跨模块场景测试 | 不是 runtime API；新业务代码禁止 import；后续迁移到独立 validation test surface 或 build-tag 专用测试 |
 | `securityx` | Gateway 和后端都需要统一把 `config.yaml` 的 `security.*` 构造成 AuthN/AuthZ/Audit runtime | 它不是 middleware 装配层；装配入口仍是 `serverx` / `middleware/autowire` |
 | `middleware/*` | 框架内部需要可组合的中间件实现 | 业务不要手写装配链；通过 `serverx` 消费 |
 | `authn/casdoor` | Casdoor 是默认 authn provider 适配器 | 业务通过 `authn` 接口或 `securityx` 使用，不直接散落依赖 Casdoor SDK 对象 |
@@ -46,6 +48,7 @@ proto contract
   -> requestx.Info
   -> securityx runtime material
   -> serverx/autowire
+  -> gatewayx manifest / deploy HTTPRoute manifests
   -> admissionx
   -> business service
   -> errorx negotiated response
