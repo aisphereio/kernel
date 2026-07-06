@@ -17,7 +17,7 @@ make verify
 make run
 ```
 
-`kernel new` 会优先查本地 layout / `KERNEL_LAYOUT`，找不到时默认使用 `https://github.com/aisphereio/kernel-layout.git`。
+`kernel new` 默认使用独立模板仓库 `https://github.com/aisphereio/kernel-layout.git`。Kernel 仓库只保留框架 runtime、契约、生成器和 CLI。
 
 ## MVP
 
@@ -38,7 +38,7 @@ make run
 kernel new todo-service --disable iam,gateway,dtmx
 ```
 
-`--disable` 由 layout 仓库里的 `.kernel/features/<feature>` 处理。
+`--disable` 由 `kernel-layout` 仓库里的 `.kernel/features/<feature>` 处理。
 
 ## 固定 Kernel 版本
 
@@ -50,15 +50,17 @@ kernel new todo-service --kernel-version ${KERNEL_VERSION}
 
 ## 本地开发 layout
 
+本地调试模板时显式指定 `KERNEL_LAYOUT` 或 `--repo`：
+
 ```bash
-export KERNEL_LAYOUT=/path/to/kernel-layout
+export KERNEL_LAYOUT=/your/kernel-layout
 kernel new todo-service --kernel-version ${KERNEL_VERSION}
 ```
 
 也可以直接传本地路径或指定远程分支：
 
 ```bash
-kernel new todo-service --repo /path/to/kernel-layout
+kernel new todo-service --repo /your/kernel-layout
 kernel new todo-service --repo https://github.com/aisphereio/kernel-layout.git --branch main
 ```
 
@@ -82,6 +84,8 @@ kernel new todo-service --repo https://github.com/aisphereio/kernel-layout.git -
 
 ## 生成项目后的标准流程
 
+以下命令在生成后的业务服务仓库中执行，由 `kernel-layout` 的 Makefile 提供：
+
 ```bash
 cd todo-service
 make tools
@@ -91,6 +95,19 @@ make proto-check
 make verify
 make run
 ```
+
+## Kernel 仓库自身的验证
+
+如果你在开发 `github.com/aisphereio/kernel` 本身，根 Makefile 只负责 runtime、contract、generator 和 CLI：
+
+```bash
+make tools
+make api
+make proto-check
+make verify
+```
+
+服务部署清单生成模板和生成项目 Makefile 属于 `kernel-layout`。
 
 ## 规则
 
