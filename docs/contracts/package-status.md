@@ -46,6 +46,12 @@
 | `servicecontextx` | 服务上下文和客户端引用管理；仅 boot/框架装配代码使用 |
 | `iamx` | IAM 领域错误和辅助；不要把它扩展成独立 IAM runtime |
 
+## Scenario tests only
+
+| Package | Rule |
+|---|---|
+| `validation/*` | 只用于跨模块场景测试和 CI 验证；不是 runtime API，业务禁止 import |
+
 ## Tooling only
 
 | Package | Rule |
@@ -58,7 +64,6 @@
 
 | Package / Path | Replacement |
 |---|---|
-| `validation` | external validation / generated project tests |
 | `middleware/ratelimit` | `ratelimitx` |
 | `internal/ratelimit` | `ratelimitx` providers |
 | `errors` | `errorx` |
