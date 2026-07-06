@@ -12,7 +12,7 @@
 | `authn/casdoor/token.go` | `Principal.Attributes` 中保存原始 `access_token`，可能进入日志、审计或下游上下文 | 删除该字段；token 只通过 `authn.TokenSet` 返回，不进入 Principal |
 | `securityx/config.go` | `AuthnConfig` 只是旧别名，容易被新代码继续使用 | 标记 `Deprecated`，新代码必须使用 `AuthnBoundaryConfig` |
 | `.github/workflows/*` | push 分支仍指向 `main`，但仓库主线是 `master` | push 分支兼容 `master` / `main` |
-| `layout/Makefile` / `layout/buf.gen.deploy.yaml` | 内置 layout 缺少 `make deploy` 和 `protoc-gen-go-deploy` 工具链 | 同步 deploy route generation 流程 |
+| `layout/Makefile` / `layout/buf.gen.deploy.yaml` | 内置 layout 缺少 `make deploy` 和 `protoc-gen-go-deploy` 工具链 | ✅ 已修复：layout/Makefile 已包含 deploy target，protoc-gen-go-deploy 已实现 |
 | `validation/iamservice` | 当前仍在默认包图内，会被 `go test ./...` 扫到 | 暂定为 scenario tests only；业务禁止 import，后续迁移到 build tag 或独立 validation surface |
 | `README.md` / `doc.go` / `AGENTS.md` / `docs/contracts/*.md` | runtime API 边界没有同步 `securityx`、`bootx`、`contextx`、deploy generation 的当前定位 | 同步 runtime API 表和废弃入口说明 |
 

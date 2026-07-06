@@ -2,7 +2,7 @@ name: platform-real-grpc
 
 on:
   pull_request:
-    branches: [main]
+    branches: [master, main]
   workflow_dispatch:
 
 jobs:
