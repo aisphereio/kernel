@@ -12,6 +12,9 @@
 //   - metricsx: metrics manager
 //   - errorx: cross-protocol business errors
 //   - serverx: service assembly and runtime autowire
+//   - securityx: security configuration and provider-neutral runtime material
+//   - bootx: startup governance validation
+//   - contextx: request context injection and extraction helpers
 //   - transportx/http and transportx/grpc: HTTP and gRPC transports
 //   - requestx: request metadata shared by middleware and business logic
 //   - accessx, authn, authz and auditx: identity, authorization and audit
