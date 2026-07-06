@@ -62,10 +62,13 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
 	accessxPkg := protogen.GoImportPath("github.com/aisphereio/kernel/accessx")
 	authzPkg := protogen.GoImportPath("github.com/aisphereio/kernel/authz")
 	accessv1Pkg := protogen.GoImportPath("github.com/aisphereio/kernel/api/aisphere/access/v1")
+	transportGRPCPkg := protogen.GoImportPath("github.com/aisphereio/kernel/transportx/grpc")
+	transportHTTPPkg := protogen.GoImportPath("github.com/aisphereio/kernel/transportx/http")
 	contextPkg := protogen.GoImportPath("context")
+	fmtPkg := protogen.GoImportPath("fmt")
 	for _, svc := range file.Services {
 		contracts := collectKernelContracts(svc)
-		genServiceKernelModule(g, serverxPkg, svc)
+		genServiceKernelModule(g, serverxPkg, transportGRPCPkg, transportHTTPPkg, fmtPkg, svc)
 		genKernelRules(g, authzPkg, svc, contracts)
 		genKernelRequestInfoResolver(g, contextPkg, requestxPkg, accessv1Pkg, svc, contracts)
 		genKernelAccessResolver(g, contextPkg, accessxPkg, authzPkg, svc)
@@ -141,7 +144,7 @@ func (c kernelContract) hasAuthz() bool {
 	return strings.TrimSpace(c.Action) != "" || strings.TrimSpace(c.Resource) != "" || strings.TrimSpace(c.Audience) != ""
 }
 
-func genServiceKernelModule(g *protogen.GeneratedFile, serverxPkg protogen.GoImportPath, svc *protogen.Service) {
+func genServiceKernelModule(g *protogen.GeneratedFile, serverxPkg, transportGRPCPkg, transportHTTPPkg, fmtPkg protogen.GoImportPath, svc *protogen.Service) {
 	fn := svc.GoName + "KernelModule"
 	g.P("// ", fn, " returns the generated Kernel service module for ", svc.Desc.FullName(), ".")
 	g.P("func ", fn, "() ", serverxPkg.Ident("ServiceModule"), " {")
@@ -150,6 +153,18 @@ func genServiceKernelModule(g *protogen.GeneratedFile, serverxPkg protogen.GoImp
 	g.P("GatewayManifest: ", svc.GoName, "GatewayManifest(),")
 	g.P("RequestInfoResolver: ", svc.GoName, "KernelRequestInfoResolver,")
 	g.P("AccessResolver: ", svc.GoName, "KernelAccessResolver,")
+	g.P("RegisterGRPC: func(s *", transportGRPCPkg.Ident("Server"), ", impl any) error {")
+	g.P("typed, ok := impl.(", svc.GoName, "Server)")
+	g.P("if !ok { return ", fmtPkg.Ident("Errorf"), "(\"serverx: service implementation for ", svc.Desc.FullName(), " must implement ", svc.GoName, "Server, got %T\", impl) }")
+	g.P("Register", svc.GoName, "Server(s, typed)")
+	g.P("return nil")
+	g.P("},")
+	g.P("RegisterHTTP: func(s *", transportHTTPPkg.Ident("Server"), ", impl any) error {")
+	g.P("typed, ok := impl.(", svc.GoName, "HTTPServer)")
+	g.P("if !ok { return ", fmtPkg.Ident("Errorf"), "(\"serverx: service implementation for ", svc.Desc.FullName(), " must implement ", svc.GoName, "HTTPServer, got %T\", impl) }")
+	g.P("Register", svc.GoName, "HTTPServer(s, typed)")
+	g.P("return nil")
+	g.P("},")
 	g.P("}")
 	g.P("}")
 	g.P()
