@@ -1,8 +1,10 @@
-// Package iamx defines Kernel's provider-neutral IAM domain model.
+// Package iamx defines Kernel's provider-neutral IAM control-plane model.
 //
-// IAM owns users, organizations, groups and memberships inside Kernel. External
-// systems such as Casdoor are adapters or sync sources; business packages must
-// depend on iamx contracts, not on Casdoor object structs or SDK calls.
+// IAM owns Kernel's canonical users, organizations, groups and memberships.
+// External identity systems such as Casdoor are adapters or sync sources; their
+// management surface lives in authn.IdentityAdmin. Business packages should
+// depend on iamx.Service or iamx.Directory and must not treat authn provider
+// projections as the source of truth.
 package iamx
 
 import (
