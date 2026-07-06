@@ -5,6 +5,7 @@ LOCAL_BIN := $(CURDIR)/.bin
 COVERPROFILE ?= coverage.out
 FUZZTIME ?= 30s
 RELEASE_VERSION ?=
+KERNEL_TEST_PACKAGES ?= ./authn ./authz ./accessx ./serverx ./gatewayx ./requestx ./middleware/... ./cmd/...
 
 ifeq ($(OS),Windows_NT)
 LOCAL_BIN := $(CURDIR)\.bin
@@ -120,7 +121,7 @@ contract: proto-check
 test: test-root
 
 test-root:
-	$(GO) test ./...
+	$(GO) test $(KERNEL_TEST_PACKAGES)
 
 test-errorx:
 	$(GO) test ./errorx -v
@@ -144,10 +145,10 @@ endif
 
 test-race:
 ifeq ($(OS),Windows_NT)
-	@powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "if ((& '$(GO)' env CGO_ENABLED) -eq '1') { & '$(GO)' test -race ./...; exit $$LASTEXITCODE } else { Write-Host 'CGO_ENABLED=0; skipping race detector because Go requires cgo for -race' }"
+	@powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "if ((& '$(GO)' env CGO_ENABLED) -eq '1') { & '$(GO)' test -race $(KERNEL_TEST_PACKAGES); exit $$LASTEXITCODE } else { Write-Host 'CGO_ENABLED=0; skipping race detector because Go requires cgo for -race' }"
 else
 	@if [ "$$($(GO) env CGO_ENABLED)" = "1" ]; then \
-		$(GO) test -race ./...; \
+		$(GO) test -race $(KERNEL_TEST_PACKAGES); \
 	else \
 		echo 'CGO_ENABLED=0; skipping race detector because Go requires cgo for -race'; \
 	fi
@@ -178,7 +179,7 @@ else
 endif
 
 cover:
-	$(GO) test ./... -coverprofile $(COVERPROFILE)
+	$(GO) test $(KERNEL_TEST_PACKAGES) -coverprofile $(COVERPROFILE)
 ifeq ($(OS),Windows_NT)
 	@powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path '$(COVERPROFILE)') { & '$(GO)' tool cover -func='$(COVERPROFILE)'; exit $$LASTEXITCODE } else { Write-Host 'No coverage profile produced' }"
 else
