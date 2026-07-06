@@ -33,6 +33,17 @@ kernel new todo-service --disable iam,gateway,dtmx
 
 `--repo` 只作为高级覆盖项，用于本地模板、私有 layout 或测试 layout 分支。
 
+## Package index
+
+新业务、生成代码和 AI Agent 先看 [PACKAGE_INDEX.md](PACKAGE_INDEX.md)。它是当前包边界、状态和替代路径的总入口。
+
+| 问题 | 结论 |
+|---|---|
+| `authz` vs `accessx` | `authz` 是 provider contract；`accessx` 是 request-time guard/orchestrator |
+| `authn.IdentityAdmin` vs `iamx.Directory` | `IdentityAdmin` 管外部 IdP 投影；`Directory` 管 Kernel IAM 控制面事实 |
+| `resourcex` vs `authz` | `resourcex.Grant` 是控制面事实；`authz.Relationship` 是查询投影 |
+| `grpcgatewayx` | 不在主线；使用 upstream grpc-gateway generator + `protoc-gen-go-gateway` + `gatewayx` |
+
 ## Runtime API
 
 业务代码、服务 boot 代码和生成代码可以 import：
@@ -65,16 +76,26 @@ cmd/buf-check-aisphere
 
 生成项目通过 `make tools` 安装工具链。
 
+## Scenario validation / examples
+
+```text
+validation/                 scenario-only; not runtime API
+examples/                   example and generator inputs; not runtime API
+```
+
+`validation/*` 当前只承载跨模块场景测试和 CI 验证。它不是 runtime API，业务禁止 import。示例 proto 如果没有对应 README 声明可运行方式，默认视为 generator input，不承诺提交 `.pb.go`。
+
 ## Removed / not mainline
 
 ```text
-validation/                 removed; scenario checks must not live in runtime tree
 middleware/ratelimit/       removed; use ratelimitx
 internal/ratelimit/         removed; use ratelimitx providers
 github.com/aisphereio/kernel/errors removed; use errorx
+third_party/errors/errors.proto removed; orphan proto
 core/httpx/contextx as main docs wording obsolete; use serverx/transportx/requestx/accessx
 securityx.AuthnConfig       deprecated alias; use securityx.AuthnBoundaryConfig
 grpcgatewayx                not mainline; use grpc-gateway generator, protoc-gen-go-gateway and gatewayx
+aisphere/access/v1/access.proto compat wrapper; new proto imports api/aisphere/access/v1/access.proto
 ```
 
 ## Proto-first development
@@ -99,13 +120,15 @@ deploy/generated/gateway/authenticated/   AUTHENTICATED / AUTHORIZED 路由
 deploy/generated/gateway/internal/        INTERNAL / SYSTEM 路由
 ```
 
-生成器会把 upstream gRPC operation、暴露等级、鉴权模式和授权资源声明写入 `RequestHeaderModifier`，由 Gateway Controller 或边缘鉴权中间件消费。业务服务只维护 proto contract，不手写 Gateway 路由 YAML。
+业务服务只维护 proto contract，不手写 Gateway 路由 YAML。
 
 ## Verify
 
 ```bash
 make tools
 make api
+make deploy
+make proto-check
 make test
 make test-cmd
 make vet
@@ -120,8 +143,9 @@ make verify
 
 ## Documentation
 
-- [docs/getting-started.md](docs/getting-started.md)
+- [PACKAGE_INDEX.md](PACKAGE_INDEX.md)
 - [docs/README.md](docs/README.md)
+- [docs/getting-started.md](docs/getting-started.md)
 - [AGENTS.md](AGENTS.md)
 - [docs/contracts/package-status.md](docs/contracts/package-status.md)
 - [docs/contracts/runtime-api-boundary.md](docs/contracts/runtime-api-boundary.md)
