@@ -46,24 +46,26 @@
 | `servicecontextx` | 服务上下文和客户端引用管理；仅 boot/框架装配代码使用 |
 | `iamx` | IAM 领域错误和辅助；不要把它扩展成独立 IAM runtime |
 
-## Scenario tests only
-
-| Package | Rule |
-|---|---|
-| `validation/*` | 只用于跨模块场景测试和 CI 验证；不是 runtime API，业务禁止 import |
-
 ## Tooling only
 
 | Package | Rule |
 |---|---|
-| `cmd/kernel` | CLI，业务禁止 import |
+| `cmd/kernel` | CLI，业务禁止 import；默认从独立 `aisphereio/kernel-layout` 仓库拉取服务模板 |
 | `cmd/protoc-gen-*` | generator，业务禁止 import |
 | `cmd/buf-check-*` | contract checker，业务禁止 import |
+
+## External repositories
+
+| Repository | Rule |
+|---|---|
+| `aisphereio/kernel-layout` | 生成项目模板、生成项目 Makefile、`make deploy`、layout 文档和 layout smoke tests 都放这里；不能再复制回 `kernel/layout` |
 
 ## Removed / deprecated / not mainline
 
 | Package / Path | Replacement |
 |---|---|
+| `layout/` in this repository | `aisphereio/kernel-layout` |
+| `validation/` | 删除；场景验证放到业务仓库、layout 仓库或专用测试面，不进入 Kernel runtime tree |
 | `middleware/ratelimit` | `ratelimitx` |
 | `internal/ratelimit` | `ratelimitx` providers |
 | `errors` | `errorx` |
@@ -75,4 +77,4 @@
 
 ## Rule
 
-新代码如果需要基础设施能力，必须优先检查本表。
+新代码如果需要基础设施能力，必须优先检查本表。不要为了旧文档、旧 CI 或旧示例恢复 `layout/`、`validation/` 这类已迁出的树。
