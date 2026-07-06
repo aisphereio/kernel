@@ -1,20 +1,20 @@
-# IAM 微服务验证用例
+# IAMService validation contract
 
-这个目录不是 Kernel 核心包，而是验证业务代码，用来证明 IAM 服务可以按照 Kernel 开发范式落地：
+`validation/iamservice` is a scenario-validation input for Kernel proto/generator checks. It is not a runtime API package and business repositories must not import it.
+
+This directory proves the IAM service can follow the Kernel development flow:
 
 1. `kernel new iam-service --repo ./layout`
-2. 编写 `api/iam/v1/iam.proto`
-3. `make api` 生成 HTTP/gRPC/authz/request-info glue code
-4. 业务服务只依赖 Kernel 的 `authn`、`authz`、`accessx`、`serverx`
-5. authn 默认实现是 Casdoor provider，authz 默认实现是 SpiceDB provider
+2. Write `api/iam/v1/iam.proto`
+3. Run `make api` / validation generation into a temporary output directory
+4. Wire business code through Kernel `authn`, `authz`, `accessx` and `serverx`
+5. Replace fake providers with `authn/casdoor` and `authz/spicedb` in production
 
-当前测试使用 fake Casdoor token provider + memory authorizer 模拟真实链路，覆盖：
+Rules:
 
-- 未登录：authn middleware 拒绝，业务 handler 不执行
-- 已登录但无权限：accessx/authz 拒绝，业务 handler 不执行
-- 已登录且有权限：业务 handler 执行，并写入 audit 记录
+1. Keep `.proto` contracts here small and focused on Kernel generator behavior.
+2. Do not commit `.pb.go`, grpc stubs or gateway stubs under this directory.
+3. Validation jobs should generate into a temporary output directory.
+4. New proto imports must use canonical Kernel proto paths, for example `api/aisphere/access/v1/access.proto`.
 
-真实生产路径中，fake provider 替换为：
-
-- `authn/casdoor.Client`
-- `authz/spicedb.Client`
+The short wrapper import `aisphere/access/v1/access.proto` is retained only for compatibility with older generated projects.
