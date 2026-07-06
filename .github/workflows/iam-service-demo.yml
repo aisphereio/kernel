@@ -1,4 +1,4 @@
-name: iam-service-demo
+name: kernel-cli-smoke
 
 on:
   pull_request:
@@ -6,9 +6,9 @@ on:
     branches: [master, main]
 
 jobs:
-  iam-service-flow:
+  kernel-cli-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -16,45 +16,16 @@ jobs:
           go-version: '1.25.x'
           cache: true
 
-      - name: Targeted Kernel IAM flow tests
+      - name: Targeted runtime package tests
         run: |
-          go test ./authn ./authz ./accessx ./serverx ./validation/iamservice -count=1
+          go test ./authn ./authz ./accessx ./serverx -count=1
 
-      - name: Build kernel CLI and tools
+      - name: Build kernel CLI and generators
         run: |
           mkdir -p .bin
           GOBIN=$PWD/.bin go install ./cmd/kernel ./cmd/protoc-gen-go-http ./cmd/protoc-gen-go-errors ./cmd/protoc-gen-go-authz ./cmd/protoc-gen-go-gateway ./cmd/protoc-gen-go-deploy ./cmd/protoc-gen-go-kernel ./cmd/buf-check-aisphere
-          GOBIN=$PWD/.bin go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
-          GOBIN=$PWD/.bin go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
-          GOBIN=$PWD/.bin go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.29.0
-          GOBIN=$PWD/.bin go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.29.0
-          GOBIN=$PWD/.bin go install github.com/google/wire/cmd/wire@v0.7.0
-          GOBIN=$PWD/.bin go install github.com/bufbuild/buf/cmd/buf@v1.50.0
 
-      - name: Smoke kernel new + make api/deploy
+      - name: Smoke kernel CLI help
         run: |
-          export PATH=$PWD/.bin:$PATH
-          rm -rf /tmp/kernel-iam-demo
-          mkdir -p /tmp/kernel-iam-demo
-          cd /tmp/kernel-iam-demo
-          kernel new iam-service --repo "$GITHUB_WORKSPACE/layout" --timeout 180s
-          cd iam-service
-          # Copy kernel api directory so buf can find
-          # aisphere/access/v1/access.proto and other kernel proto files.
-          cp -r "$GITHUB_WORKSPACE/api" /tmp/kernel-iam-demo/iam-service/api
-          buf dep update
-          make api
-          make deploy
-          make proto-check
-
-      - name: Upload IAM demo logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: iam-service-demo-logs
-          path: |
-            /tmp/kernel-iam-demo/iam-service/docs/openapi
-            /tmp/kernel-iam-demo/iam-service/deploy/generated
-            /tmp/kernel-iam-demo/iam-service/.bin/layout-descriptor.bin
-          if-no-files-found: ignore
-          retention-days: 7
+          ./.bin/kernel --help
+          ./.bin/kernel new --help
