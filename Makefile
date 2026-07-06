@@ -1,4 +1,4 @@
-.PHONY: help deps tools api deploy proto proto-check generate wire build run test test-root test-errorx test-logx test-cmd test-race test-integration verify verify-full check check-errorx release-check vet vuln lint lint-ci contract cover cover-html verify-errorx bench-errorx fuzz-errorx clean tidy golangci-lint-install pre-commit-install pre-commit-run
+.PHONY: help deps tools api proto proto-check generate build run test test-root test-errorx test-logx test-cmd test-race test-integration verify verify-full check check-errorx release-check vet vuln lint lint-ci contract cover cover-html verify-errorx bench-errorx fuzz-errorx clean tidy golangci-lint-install pre-commit-install pre-commit-run
 
 GO ?= go
 LOCAL_BIN := $(CURDIR)/.bin
@@ -14,18 +14,18 @@ export PATH := $(LOCAL_BIN):$(PATH)
 endif
 
 help:
-	@echo "Aisphere Kernel targets:"
-	@echo "  make tools             build local tools into .bin"
-	@echo "  make api               generate protobuf, grpc, http, gateway and openapi code"
-	@echo "  make deploy            generate deploy route manifests when buf.gen.deploy.yaml exists"
-	@echo "  make proto-check       run buf lint and buf-check-aisphere"
-	@echo "  make test              run root module tests"
+	@echo "Aisphere Kernel repository targets:"
+	@echo "  make tools             build Kernel CLI and generator tools into .bin"
+	@echo "  make api               generate Kernel protobuf/grpc/http/gateway/openapi code"
+	@echo "  make proto-check       run buf lint and buf-check-aisphere on Kernel proto contracts"
+	@echo "  make test              run Kernel runtime/tooling tests"
 	@echo "  make test-cmd          run command package tests"
-	@echo "  make test-integration  run Docker/Testcontainers integration tests"
-	@echo "  make verify            run local verification gate"
-	@echo "  make verify-full       run verify plus integration tests"
-	@echo "  make run               run kernel cli help"
+	@echo "  make verify            run the normal Kernel repository gate"
+	@echo "  make verify-full       run verify plus race/vuln/integration checks"
+	@echo "  make run               run kernel CLI help"
 	@echo "  make clean             remove generated local artifacts"
+	@echo ""
+	@echo "Generated service layout targets such as make deploy belong to github.com/aisphereio/kernel-layout."
 
 check: check-errorx vet test
 	@echo "✓ all checks passed"
@@ -91,7 +91,6 @@ else
 	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.29.0
 	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.29.0
 	@if ! command -v buf >/dev/null 2>&1; then GOBIN=$(LOCAL_BIN) $(GO) install github.com/bufbuild/buf/cmd/buf@v1.50.0; fi
-	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/google/wire/cmd/wire@v0.7.0
 endif
 
 generate: tools
@@ -105,19 +104,7 @@ else
 endif
 
 api: proto
-	@echo "✓ api generation complete: protobuf, grpc, kernel http, grpc-gateway, gateway manifest and openapi"
-
-deploy: tools
-ifeq ($(OS),Windows_NT)
-	@if exist buf.gen.deploy.yaml (if exist .bin\buf.exe (.bin\buf.exe generate --template buf.gen.deploy.yaml) else (buf generate --template buf.gen.deploy.yaml)) else (echo buf.gen.deploy.yaml not found; skip deploy generation)
-else
-	@if [ -f buf.gen.deploy.yaml ]; then \
-		if [ -x "$(LOCAL_BIN)/buf" ]; then $(LOCAL_BIN)/buf generate --template buf.gen.deploy.yaml; else buf generate --template buf.gen.deploy.yaml; fi; \
-	else \
-		echo "buf.gen.deploy.yaml not found; skip deploy generation"; \
-	fi
-endif
-	@echo "✓ deploy generation complete"
+	@echo "✓ kernel api generation complete"
 
 proto-check: tools
 ifeq ($(OS),Windows_NT)
@@ -205,19 +192,6 @@ else
 	@if [ -f '$(COVERPROFILE)' ]; then $(GO) tool cover -html=$(COVERPROFILE) -o coverage.html; else echo 'No coverage profile produced'; fi
 endif
 
-wire: tools
-ifeq ($(OS),Windows_NT)
-	@powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$$done = $$false; if (Test-Path 'cmd/kernel/wire.go') { Push-Location 'cmd/kernel'; & '$(GO)' run github.com/google/wire/cmd/wire@v0.7.0 .; $$code = $$LASTEXITCODE; Pop-Location; if ($$code -ne 0) { exit $$code }; $$done = $$true }; if (Test-Path 'internal/app/wire.go') { & '$(GO)' run github.com/google/wire/cmd/wire@v0.7.0 ./internal/app; if ($$LASTEXITCODE -ne 0) { exit $$LASTEXITCODE }; $$done = $$true }; if (-not $$done) { Write-Host 'no wire.go found; skipping wire' }"
-else
-	@if [ -f cmd/kernel/wire.go ]; then \
-		cd cmd/kernel && $(GO) run github.com/google/wire/cmd/wire@v0.7.0 .; \
-	elif [ -f internal/app/wire.go ]; then \
-		$(GO) run github.com/google/wire/cmd/wire@v0.7.0 ./internal/app; \
-	else \
-		echo 'no wire.go found; skipping wire'; \
-	fi
-endif
-
 run:
 ifeq ($(OS),Windows_NT)
 	@if exist .bin\kernel.exe (.bin\kernel.exe --help) else (cd cmd\kernel && $(GO) run . --help)
@@ -237,9 +211,9 @@ tidy:
 build: tools
 	@echo "kernel tools built into $(LOCAL_BIN)"
 
-verify: api deploy proto-check wire test test-cmd test-race vet cover vuln lint
+verify: deps proto-check test test-cmd vet cover
 
-verify-full: verify test-integration
+verify-full: verify test-race vuln test-integration
 
 verify-errorx:
 ifeq ($(OS),Windows_NT)
