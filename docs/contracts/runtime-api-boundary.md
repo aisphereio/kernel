@@ -1,6 +1,6 @@
 # Runtime API 边界
 
-Kernel 仓库分为四类表面：runtime API、development tooling、layout、scenario validation。业务代码只能依赖 runtime API；服务 boot 代码可以依赖 runtime API 中的装配类包，例如 `serverx`、`securityx`、`bootx`。
+Kernel 仓库分为三类表面：runtime API、development tooling、external layout repository。业务代码只能依赖 runtime API；服务 boot 代码可以依赖 runtime API 中的装配类包，例如 `serverx`、`securityx`、`bootx`。
 
 ## 1. Runtime API
 
@@ -36,38 +36,31 @@ cmd/protoc-gen-go-kernel
 cmd/buf-check-aisphere
 ```
 
-生成项目通过 `make tools` 安装这些工具。
+`cmd/kernel` 默认从独立 `https://github.com/aisphereio/kernel-layout.git` 拉取服务模板。Kernel 仓库不再内置服务模板目录。
 
-## 3. Layout
+## 3. External layout repository
 
-`layout/` 和独立 `kernel-layout` 仓库用于表达推荐工程结构，不是 runtime API。
-
-layout 可以包含示例业务代码，但 Kernel 核心包不能反向依赖 layout。
-
-## 4. Scenario validation
-
-`validation/*` 当前仍在主模块内承载跨模块场景测试，例如 IAM/AuthN/AuthZ/ServerX 组合验证。它不是 runtime API，业务代码禁止 import。
-
-后续迁移方向：
+服务模板、生成项目 Makefile、生成项目 `make deploy`、layout 文档、layout smoke tests 都属于独立仓库：
 
 ```text
-1. 独立 validation 仓库
-2. 生成项目自己的 tests
-3. 显式 build tag
-4. GitHub Actions 专用 job
+https://github.com/aisphereio/kernel-layout
 ```
 
-## 5. 旧入口处理
+Kernel 仓库只保留 runtime 包、proto option、代码生成器和 CLI。模板能力不要复制回 Kernel 仓库。
+
+## 4. Removed / not mainline
 
 ```text
-middleware/ratelimit/       -> use ratelimitx
-internal/ratelimit/         -> use ratelimitx providers
+layout tree in Kernel repo     -> moved to aisphereio/kernel-layout
+validation tree in Kernel repo -> removed; scenario validation belongs to service/layout test surfaces
+middleware/ratelimit/          -> use ratelimitx
+internal/ratelimit/            -> use ratelimitx providers
 github.com/aisphereio/kernel/errors -> use errorx
 core/httpx/contextx as docs wording -> use serverx/transportx/requestx/accessx
 securityx.AuthnConfig -> deprecated alias; use securityx.AuthnBoundaryConfig
 grpcgatewayx -> not mainline; use grpc-gateway generator + protoc-gen-go-gateway + gatewayx
 ```
 
-## 6. Agent 规则
+## 5. Agent 规则
 
 AI Agent 遇到不存在或旧入口时，不允许重新创建同名兼容层。必须改用当前主线包，或先更新本契约文档再实现新抽象。
