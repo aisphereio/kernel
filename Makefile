@@ -16,7 +16,7 @@ endif
 help:
 	@echo "Aisphere Kernel targets:"
 	@echo "  make tools             build local tools into .bin"
-	@echo "  make api               generate protobuf, grpc, http, gateway and openapi code"
+	@echo "  make api               generate protobuf, grpc, http, gateway, deploy and openapi code"
 	@echo "  make proto-check       run buf lint and buf-check-aisphere"
 	@echo "  make test              run root module tests"
 	@echo "  make test-cmd          run command package tests"
@@ -82,6 +82,7 @@ else
 	@if [ -d cmd/protoc-gen-go-errors ]; then cd cmd/protoc-gen-go-errors && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
 	@if [ -d cmd/protoc-gen-go-authz ]; then cd cmd/protoc-gen-go-authz && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
 	@if [ -d cmd/protoc-gen-go-gateway ]; then cd cmd/protoc-gen-go-gateway && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
+	@if [ -d cmd/protoc-gen-go-deploy ]; then cd cmd/protoc-gen-go-deploy && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
 	@if [ -d cmd/protoc-gen-go-kernel ]; then cd cmd/protoc-gen-go-kernel && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
 	@if [ -d cmd/buf-check-aisphere ]; then cd cmd/buf-check-aisphere && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
 	@GOBIN=$(LOCAL_BIN) $(GO) install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
@@ -103,7 +104,7 @@ else
 endif
 
 api: proto
-	@echo "✓ api generation complete: protobuf, grpc, kernel http, grpc-gateway, gateway manifest, openapi"
+	@echo "✓ api generation complete: protobuf, grpc, kernel http, grpc-gateway, gateway manifest, deploy route manifests, openapi"
 
 proto-check: tools
 ifeq ($(OS),Windows_NT)
@@ -136,6 +137,7 @@ else
 	@if [ -d cmd/protoc-gen-go-errors ]; then cd cmd/protoc-gen-go-errors && $(GO) test ./...; fi
 	@if [ -d cmd/protoc-gen-go-authz ]; then cd cmd/protoc-gen-go-authz && $(GO) test ./...; fi
 	@if [ -d cmd/protoc-gen-go-gateway ]; then cd cmd/protoc-gen-go-gateway && $(GO) test ./...; fi
+	@if [ -d cmd/protoc-gen-go-deploy ]; then cd cmd/protoc-gen-go-deploy && $(GO) test ./...; fi
 	@if [ -d cmd/protoc-gen-go-kernel ]; then cd cmd/protoc-gen-go-kernel && $(GO) test ./...; fi
 	@if [ -d cmd/buf-check-aisphere ]; then cd cmd/buf-check-aisphere && $(GO) test ./...; fi
 endif
