@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -292,54 +291,17 @@ func removeDisabledFromFeatures(features []string, disabled []string) []string {
 	return out
 }
 
-func resolveLayout(repo string, wd string) (string, error) {
+func resolveLayout(repo string, _ string) (string, error) {
 	if strings.TrimSpace(repo) != "" {
 		return strings.TrimSpace(repo), nil
 	}
 	if env := strings.TrimSpace(os.Getenv("KERNEL_LAYOUT")); env != "" {
 		return env, nil
 	}
-	for _, start := range layoutSearchRoots(wd) {
-		if layout, ok := findLocalLayout(start); ok {
-			return layout, nil
-		}
-	}
 	if layout := strings.TrimSpace(projects["service"]); layout != "" {
 		return layout, nil
 	}
-	return "", fmt.Errorf("local layout not found; pass --repo or set KERNEL_LAYOUT")
-}
-
-func layoutSearchRoots(wd string) []string {
-	roots := []string{wd}
-	if _, file, _, ok := runtime.Caller(0); ok {
-		roots = append(roots, filepath.Dir(file))
-	}
-	if exe, err := os.Executable(); err == nil {
-		roots = append(roots, filepath.Dir(exe))
-	}
-	return roots
-}
-
-func findLocalLayout(start string) (string, bool) {
-	if start == "" {
-		return "", false
-	}
-	dir, err := filepath.Abs(start)
-	if err != nil {
-		return "", false
-	}
-	for {
-		candidate := filepath.Join(dir, "layout")
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate, true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", false
-		}
-		dir = parent
-	}
+	return "", fmt.Errorf("layout repo not configured; pass --repo or set KERNEL_LAYOUT")
 }
 
 func processProjectParams(projectName string, workingDir string) (projectNameResult, workingDirResult string) {

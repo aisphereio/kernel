@@ -2,7 +2,7 @@
 
 Aisphere Kernel 是 Aisphere 项目的规范驱动微服务基础框架。
 
-核心原则：业务声明契约，Kernel 负责检查、生成、装配、治理和验证。业务项目优先写 proto contract 和领域逻辑，不手写 transport glue、错误协议转换、访问控制、审计、限流、Gateway 分发或部署路由清单。
+核心原则：业务声明契约，Kernel 负责检查、生成、装配、治理和验证。业务项目优先写 proto contract 和领域逻辑，不手写 transport glue、错误协议转换、访问控制、审计、限流或 Gateway 分发 glue。
 
 ## Quick start
 
@@ -10,28 +10,20 @@ Aisphere Kernel 是 Aisphere 项目的规范驱动微服务基础框架。
 go install github.com/aisphereio/kernel/cmd/kernel@latest
 kernel version
 kernel new todo-service
-cd todo-service
+```
+
+`kernel new` 默认从独立仓库 `https://github.com/aisphereio/kernel-layout.git` 拉取生成服务模板。需要本地或私有模板时使用 `--repo` 或 `KERNEL_LAYOUT`。
+
+Kernel 仓库自身验证：
+
+```bash
 make tools
 make api
-make deploy
 make proto-check
 make verify
-make run
 ```
 
-最小可运行服务：
-
-```bash
-kernel new todo-service --mvp
-```
-
-裁剪能力：
-
-```bash
-kernel new todo-service --disable iam,gateway,dtmx
-```
-
-`--repo` 只作为高级覆盖项，用于本地模板、私有 layout 或测试 layout 分支。
+生成服务里的 `make deploy`、layout smoke test、deploy 模板和业务工程 Makefile 归属 `aisphereio/kernel-layout`，不再放在 Kernel 仓库内。
 
 ## Package index
 
@@ -42,7 +34,8 @@ kernel new todo-service --disable iam,gateway,dtmx
 | `authz` vs `accessx` | `authz` 是 provider contract；`accessx` 是 request-time guard/orchestrator |
 | `authn.IdentityAdmin` vs `iamx.Directory` | `IdentityAdmin` 管外部 IdP 投影；`Directory` 管 Kernel IAM 控制面事实 |
 | `resourcex` vs `authz` | `resourcex.Grant` 是控制面事实；`authz.Relationship` 是查询投影 |
-| `grpcgatewayx` | 不在主线；使用 upstream grpc-gateway generator + `protoc-gen-go-gateway` + `gatewayx` |
+| `layout/` | 已移到 `aisphereio/kernel-layout` |
+| `validation/` | 已从 runtime tree 移除；场景验证应放到独立验证仓库、CI 临时生成目录或 generated service tests |
 
 ## Runtime API
 
@@ -57,7 +50,7 @@ dbx cachex objectstorex dtmx
 selectorx registry encodingx
 ```
 
-说明：`securityx` 负责把 `config.yaml` 的安全配置构造成 provider-neutral runtime，不是新的 middleware 装配层；中间件装配仍统一走 `serverx` / `middleware/autowire`。
+`securityx` 负责把 `config.yaml` 的安全配置构造成 provider-neutral runtime，不是新的 middleware 装配层；中间件装配仍统一走 `serverx` / `middleware/autowire`。
 
 ## Development tooling
 
@@ -74,20 +67,22 @@ cmd/protoc-gen-go-kernel
 cmd/buf-check-aisphere
 ```
 
-生成项目通过 `make tools` 安装工具链。
+生成项目通过 `make tools` 或 layout 仓库的 Makefile 安装工具链。
 
-## Scenario validation / examples
+## External layout
+
+Kernel runtime、proto options、generators、contract checkers 和 CLI 行为留在本仓库。生成服务模板、生成服务 Makefile 行为、deploy manifest 模板、layout 文档和 layout smoke tests 归属独立仓库：
 
 ```text
-validation/                 scenario-only; not runtime API
-examples/                   example and generator inputs; not runtime API
+https://github.com/aisphereio/kernel-layout
 ```
-
-`validation/*` 当前只承载跨模块场景测试和 CI 验证。它不是 runtime API，业务禁止 import。示例 proto 如果没有对应 README 声明可运行方式，默认视为 generator input，不承诺提交 `.pb.go`。
 
 ## Removed / not mainline
 
 ```text
+layout/                     moved to aisphereio/kernel-layout
+validation/                 removed from Kernel runtime tree
+buf.gen.deploy.yaml         removed from Kernel root; generated-service deploy template belongs to kernel-layout
 middleware/ratelimit/       removed; use ratelimitx
 internal/ratelimit/         removed; use ratelimitx providers
 github.com/aisphereio/kernel/errors removed; use errorx
@@ -104,42 +99,11 @@ aisphere/access/v1/access.proto compat wrapper; new proto imports api/aisphere/a
 proto contract
   -> buf-check-aisphere
   -> protoc generators
-  -> requestx.Info / accessx / gatewayx / deploy HTTPRoute manifests / serverx
+  -> requestx.Info / accessx / gatewayx / serverx
   -> business service implementation
 ```
 
-Full profile 的外部 RPC 必须声明 `google.api.http` 和 `aisphere.access.v1.policy`。`--mvp` 只用于最小可运行骨架。
-
-## Deploy route generation
-
-`protoc-gen-go-deploy` 从 `google.api.http` 和 `aisphere.access.v1.policy` 生成 Kubernetes Gateway API `HTTPRoute` 清单。生成文件按路由暴露等级写入：
-
-```text
-deploy/generated/gateway/public/          PUBLIC 路由
-deploy/generated/gateway/authenticated/   AUTHENTICATED / AUTHORIZED 路由
-deploy/generated/gateway/internal/        INTERNAL / SYSTEM 路由
-```
-
-业务服务只维护 proto contract，不手写 Gateway 路由 YAML。
-
-## Verify
-
-```bash
-make tools
-make api
-make deploy
-make proto-check
-make test
-make test-cmd
-make vet
-make vuln
-```
-
-完整本地门禁：
-
-```bash
-make verify
-```
+`cmd/protoc-gen-go-deploy` 仍保留在 Kernel，作为生成器能力；生成服务如何调用 deploy generation 由 `kernel-layout` 的 Makefile 和模板负责。
 
 ## Documentation
 

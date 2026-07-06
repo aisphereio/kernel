@@ -2,24 +2,24 @@
 
 本文记录 Kernel 主线代码中已经确认的删除项、废弃项、保留项和本轮安全修复项。后续 AI Agent 或人类开发者做清理时，先看本文，避免把已删除入口重新补回来。
 
-## 1. 本轮必须处理的问题
+## 1. 已确认处理的问题
 
-| 文件 | 发现 | 处理 |
+| 文件 / 路径 | 发现 | 处理 |
 |---|---|---|
-| `go.mod` / `go.sum` | `github.com/golang-jwt/jwt/v4@v4.5.0` 命中 GO-2025-3553 / GO-2024-3250；代码直接 import 但被标成 `// indirect` | 升级到 `v4.5.2`，移动为直接依赖；必须同步 `go.sum` 两条 `v4.5.2` checksum |
-| `authn/oidcx/verifier.go` | `Parser.ParseWithClaims` 调用缺少 parser-level signing method 白名单 | 改为 `jwt.NewParser(jwt.WithoutClaimsValidation(), jwt.WithValidMethods(...))`，并保留手动 issuer/audience/time/owner 校验 |
-| `authn/casdoor/token.go` | `jwt.ParseWithClaims` 直接调用；Keyfunc 内部虽校验 alg，但 parser 层没有白名单 | 改为 `jwt.NewParser(jwt.WithValidMethods(...))`，统一 `allowedJWTAlgs()` |
-| `authn/casdoor/token.go` | `Principal.Attributes` 中保存原始 `access_token`，可能进入日志、审计或下游上下文 | 删除该字段；token 只通过 `authn.TokenSet` 返回，不进入 Principal |
-| `securityx/config.go` | `AuthnConfig` 只是旧别名，容易被新代码继续使用 | 标记 `Deprecated`，新代码必须使用 `AuthnBoundaryConfig` |
-| `.github/workflows/*` | push 分支仍指向 `main`，但仓库主线是 `master` | push 分支兼容 `master` / `main` |
-| `layout/Makefile` / `layout/buf.gen.deploy.yaml` | 内置 layout 缺少 `make deploy` 和 `protoc-gen-go-deploy` 工具链 | ✅ 已修复：layout/Makefile 已包含 deploy target，protoc-gen-go-deploy 已实现 |
-| `validation/iamservice` | 当前仍在默认包图内，会被 `go test ./...` 扫到 | 暂定为 scenario tests only；业务禁止 import，后续迁移到 build tag 或独立 validation surface |
-| `README.md` / `doc.go` / `AGENTS.md` / `docs/contracts/*.md` | runtime API 边界没有同步 `securityx`、`bootx`、`contextx`、deploy generation 的当前定位 | 同步 runtime API 表和废弃入口说明 |
+| `layout/` | Kernel 仓库内置了一份服务模板，和独立 `aisphereio/kernel-layout` 仓库职责重复，CI 还会把它当作生成项目来源 | 从 Kernel 仓库删除；模板、生成项目 Makefile、layout 文档和 layout smoke tests 只放在 `kernel-layout` |
+| `validation/` | 场景验证目录进入默认 `go test ./...` 包图，和 runtime tree 边界不一致 | 从 Kernel 仓库删除；场景验证放到业务仓库、layout 仓库或专用测试面 |
+| `.github/workflows/iam-service-demo.yml` | 同时依赖 `validation/iamservice` 和仓库内 `layout/` | 改为 Kernel CLI/tooling smoke，不再引用 `validation/` 和仓库内模板目录 |
+| `.github/workflows/governance-demo.yml` | 包含 `cd layout` 的生成项目 compile smoke | 删除 layout compile smoke，只保留 Kernel governance targeted tests |
+| root `Makefile` | 混合了 Kernel runtime/tooling 与生成项目 layout 的职责，例如 root `make deploy` | 收敛为 Kernel 仓库自身门禁；生成项目的 `make deploy` 属于 `kernel-layout` |
+| root `buf.gen.deploy.yaml` | 让 Kernel 仓库本身看起来承担服务部署清单生成职责 | 删除；deploy manifest 生成能力仍由 `protoc-gen-go-deploy` 提供，但生成项目模板放在 `kernel-layout` |
+| `cmd/kernel` layout resolution | 会自动向上搜索本仓库或当前目录中的 `layout/` | 改为仅使用 `--repo`、`KERNEL_LAYOUT` 或默认远程 `https://github.com/aisphereio/kernel-layout.git` |
 
 ## 2. 已删除 / 不允许恢复的旧入口
 
 | 路径或概念 | 状态 | 当前替代 |
 |---|---:|---|
+| Kernel 仓库内置 `layout/` | removed | `aisphereio/kernel-layout` |
+| Kernel 仓库内置 `validation/` | removed | service/layout 专用测试面 |
 | `middleware/ratelimit/` | removed | `ratelimitx` policy/provider |
 | `internal/ratelimit/` | removed | `ratelimitx` providers |
 | `github.com/aisphereio/kernel/errors` | removed | `errorx` |
@@ -31,7 +31,6 @@
 
 | 包 | 为什么保留 | 使用边界 |
 |---|---|---|
-| `validation/` | 当前仍承载跨模块场景测试 | 不是 runtime API；新业务代码禁止 import；后续迁移到独立 validation test surface 或 build-tag 专用测试 |
 | `securityx` | Gateway 和后端都需要统一把 `config.yaml` 的 `security.*` 构造成 AuthN/AuthZ/Audit runtime | 它不是 middleware 装配层；装配入口仍是 `serverx` / `middleware/autowire` |
 | `middleware/*` | 框架内部需要可组合的中间件实现 | 业务不要手写装配链；通过 `serverx` 消费 |
 | `authn/casdoor` | Casdoor 是默认 authn provider 适配器 | 业务通过 `authn` 接口或 `securityx` 使用，不直接散落依赖 Casdoor SDK 对象 |
@@ -48,13 +47,13 @@ proto contract
   -> requestx.Info
   -> securityx runtime material
   -> serverx/autowire
-  -> gatewayx manifest / deploy HTTPRoute manifests
+  -> gatewayx manifest / deploy HTTPRoute generator
   -> admissionx
   -> business service
   -> errorx negotiated response
 ```
 
-业务服务只写领域逻辑。认证、授权、审计、限流、重试、熔断、超时、错误协议转换、Gateway route manifest 和 deploy route manifest 都应由 Kernel 提供。
+Kernel 仓库只提供 runtime、contract、generator 和 CLI。生成项目模板、生成项目 Makefile、`make deploy` 示例和模板文档属于 `kernel-layout`。
 
 ## 5. 清理规则
 
