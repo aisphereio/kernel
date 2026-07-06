@@ -72,6 +72,9 @@ func (fakeModuleAuthn) RevokeToken(context.Context, authn.RevokeTokenRequest) er
 func (fakeModuleAuthn) BuildLoginURL(context.Context, authn.LoginURLRequest) (authn.LoginURL, error) {
 	return authn.LoginURL{}, nil
 }
+func (fakeModuleAuthn) BuildLogoutURL(context.Context, authn.LogoutURLRequest) (authn.LogoutURL, error) {
+	return authn.LogoutURL{}, nil
+}
 func (fakeModuleAuthn) HandleCallback(context.Context, authn.CallbackRequest) (authn.CallbackResult, error) {
 	return authn.CallbackResult{}, nil
 }
