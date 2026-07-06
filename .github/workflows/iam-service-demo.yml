@@ -3,7 +3,7 @@ name: iam-service-demo
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [master, main]
 
 jobs:
   iam-service-flow:
@@ -23,7 +23,7 @@ jobs:
       - name: Build kernel CLI and tools
         run: |
           mkdir -p .bin
-          GOBIN=$PWD/.bin go install ./cmd/kernel ./cmd/protoc-gen-go-http ./cmd/protoc-gen-go-errors ./cmd/protoc-gen-go-authz ./cmd/protoc-gen-go-gateway ./cmd/protoc-gen-go-kernel ./cmd/buf-check-aisphere
+          GOBIN=$PWD/.bin go install ./cmd/kernel ./cmd/protoc-gen-go-http ./cmd/protoc-gen-go-errors ./cmd/protoc-gen-go-authz ./cmd/protoc-gen-go-gateway ./cmd/protoc-gen-go-deploy ./cmd/protoc-gen-go-kernel ./cmd/buf-check-aisphere
           GOBIN=$PWD/.bin go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
           GOBIN=$PWD/.bin go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
           GOBIN=$PWD/.bin go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.29.0
@@ -31,7 +31,7 @@ jobs:
           GOBIN=$PWD/.bin go install github.com/google/wire/cmd/wire@v0.7.0
           GOBIN=$PWD/.bin go install github.com/bufbuild/buf/cmd/buf@v1.50.0
 
-      - name: Smoke kernel new + make api
+      - name: Smoke kernel new + make api/deploy
         run: |
           export PATH=$PWD/.bin:$PATH
           rm -rf /tmp/kernel-iam-demo
@@ -41,6 +41,7 @@ jobs:
           cd iam-service
           buf dep update
           make api
+          make deploy
           make proto-check
 
       - name: Upload IAM demo logs
@@ -50,6 +51,7 @@ jobs:
           name: iam-service-demo-logs
           path: |
             /tmp/kernel-iam-demo/iam-service/docs/openapi
+            /tmp/kernel-iam-demo/iam-service/deploy/generated
             /tmp/kernel-iam-demo/iam-service/.bin/layout-descriptor.bin
           if-no-files-found: ignore
           retention-days: 7
