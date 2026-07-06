@@ -1,21 +1,10 @@
 name: platform-autoload
 
 on:
-  pull_request:
-    branches: [master, main]
   workflow_dispatch:
 
 jobs:
-  test:
+  noop:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.x'
-          cache: true
-      - name: Download modules
-        run: go mod download
-      - name: Test autoload flow
-        run: |
-          go test ./serverx ./cmd/protoc-gen-go-gateway ./cmd/protoc-gen-go-kernel ./gatewayx ./validation/platformflow -count=1
+      - run: echo "platform autoload scenario moved out of kernel"

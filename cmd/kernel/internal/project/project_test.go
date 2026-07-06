@@ -1,157 +1,68 @@
 package project
 
 import (
-	"fmt"
-	"go/parser"
-	"go/token"
-	"os"
-	"path/filepath"
+	"reflect"
 	"testing"
-
-	"github.com/aisphereio/kernel/cmd/kernel/internal/base"
 )
 
-// TestCmdNew tests the `kernel new` command.
-func TestCmdNew(t *testing.T) {
-	cwd := changeCurrentDir(t)
-	projectName := "helloworld"
-
-	// create a new project
-	CmdNew.SetArgs([]string{projectName})
-	if err := CmdNew.Execute(); err != nil {
-		t.Fatalf("executing command: %v", err)
+func TestResolveLayoutPrefersExplicitRepo(t *testing.T) {
+	want := "local-kernel-layout"
+	got, err := resolveLayout(want, t.TempDir())
+	if err != nil {
+		t.Fatalf("resolveLayout returned error: %v", err)
 	}
+	if got != want {
+		t.Fatalf("expected explicit repo %q, got %q", want, got)
+	}
+}
 
-	// check that the expected files were created
-	for _, file := range []string{
-		goModFileName,
-		goSumFileName,
-		readmeFileName,
-		"Makefile",
-		"buf.yaml",
-		"buf.gen.yaml",
-		"api/todo/v1/todo.proto",
-		"api/todo/v1/todo.pb.go",
-		"api/todo/v1/todo_http.pb.go",
-		"api/todo/v1/todo_grpc.pb.go",
-		"cmd/helloworld/main.go",
-		"internal/server/http.go",
-		"internal/server/grpc.go",
-		"internal/server/server.go",
-		"internal/service/todo.go",
-		"internal/biz/todo.go",
-		"internal/data/todo.go",
-	} {
-		if _, err := os.Stat(filepath.Join(cwd, projectName, file)); err != nil {
-			t.Errorf("expected file %s to exist", file)
+func TestResolveLayoutUsesEnvironment(t *testing.T) {
+	want := "env-kernel-layout"
+	t.Setenv("KERNEL_LAYOUT", want)
+	got, err := resolveLayout("", t.TempDir())
+	if err != nil {
+		t.Fatalf("resolveLayout returned error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("expected env layout %q, got %q", want, got)
+	}
+}
+
+func TestResolveLayoutDefaultsToKernelLayoutRepository(t *testing.T) {
+	t.Setenv("KERNEL_LAYOUT", "")
+	got, err := resolveLayout("", t.TempDir())
+	if err != nil {
+		t.Fatalf("resolveLayout returned error: %v", err)
+	}
+	want := "https://github.com/aisphereio/kernel-layout.git"
+	if got != want {
+		t.Fatalf("expected default layout repo %q, got %q", want, got)
+	}
+}
+
+func TestMergeDisabledFeaturesExpandsIAM(t *testing.T) {
+	got := mergeDisabledFeatures(nil, []string{"iam"})
+	want := []string{"iam", "authn", "authz", "access", "gateway"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+}
+
+func TestMVPScaffoldOptions(t *testing.T) {
+	opts := mvpScaffoldOptions()
+	if opts.Profile != layoutProfileMVP {
+		t.Fatalf("expected MVP profile, got %q", opts.Profile)
+	}
+	for _, disabled := range []string{"iam", "authn", "authz", "access", "gateway", "dbx", "cachex", "objectstorex", "dtmx", "auditx", "metricsx"} {
+		found := false
+		for _, got := range opts.DisabledFeatures {
+			if got == disabled {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected disabled feature %q in %v", disabled, opts.DisabledFeatures)
 		}
 	}
-
-	// check that the go.mod file contains the expected module name
-	assertGoMod(t, filepath.Join(cwd, projectName, goModFileName), projectName)
-
-	assertImportsInclude(t, filepath.Join(cwd, projectName, "cmd", projectName, "wire.go"), fmt.Sprintf(`"%s/internal/biz"`, projectName))
-}
-
-// TestCmdNewNoMod tests the `kernel new` command with the --nomod flag.
-func TestCmdNewNoMod(t *testing.T) {
-	cwd := changeCurrentDir(t)
-
-	// create a new project
-	CmdNew.SetArgs([]string{"project"})
-	if err := CmdNew.Execute(); err != nil {
-		t.Fatalf("executing command: %v", err)
-	}
-
-	// add new app with --nomod flag
-	CmdNew.SetArgs([]string{"--nomod", "project/app/user"})
-	if err := CmdNew.Execute(); err != nil {
-		t.Fatalf("executing command: %v", err)
-	}
-
-	// check that the expected files were created
-	for _, file := range []string{
-		goModFileName,
-		goSumFileName,
-		readmeFileName,
-		"cmd/server/main.go",
-		"app/user/cmd/user/main.go",
-	} {
-		if _, err := os.Stat(filepath.Join(cwd, "project", file)); err != nil {
-			t.Errorf("expected file %s to exist", file)
-		}
-	}
-
-	assertImportsInclude(t, filepath.Join(cwd, "project/app/user/cmd/user/wire.go"), `"project/app/user/internal/biz"`)
-}
-
-// assertImportsInclude checks that the file at path contains the expected import.
-func assertImportsInclude(t *testing.T, path, expected string) {
-	t.Helper()
-
-	got, err := imports(path)
-	if err != nil {
-		t.Fatalf("getting imports: %v", err)
-	}
-
-	for _, imp := range got {
-		if imp == expected {
-			return
-		}
-	}
-
-	t.Errorf("expected imports to include %s, got %v", expected, got)
-}
-
-// imports returns the imports in the file at path.
-func imports(path string) ([]string, error) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
-	if err != nil {
-		return nil, err
-	}
-
-	imports := make([]string, 0, len(f.Imports))
-	for _, s := range f.Imports {
-		imports = append(imports, s.Path.Value)
-	}
-
-	return imports, nil
-}
-
-// assertGoMod checks that the go.mod file contains the expected module name.
-func assertGoMod(t *testing.T, path, expected string) {
-	t.Helper()
-
-	got, err := base.ModulePath(path)
-	if err != nil {
-		t.Fatalf("getting module path: %v", err)
-	}
-
-	if got != expected {
-		t.Errorf("expected module name %s, got %s", expected, got)
-	}
-}
-
-// change the working directory to the tempdir
-func changeCurrentDir(t *testing.T) string {
-	t.Helper()
-
-	tmp := t.TempDir()
-
-	oldCWD, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getting working directory: %v", err)
-	}
-
-	if err := os.Chdir(tmp); err != nil {
-		t.Fatalf("changing working directory: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(oldCWD); err != nil {
-			t.Fatalf("restoring working directory: %v", err)
-		}
-	})
-
-	return tmp
 }

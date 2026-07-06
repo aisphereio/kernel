@@ -34,18 +34,10 @@ jobs:
         run: |
           set -euxo pipefail
           go test ./cmd/protoc-gen-go-gateway ./cmd/protoc-gen-go-deploy ./cmd/protoc-gen-go-kernel ./cmd/buf-check-aisphere ./gatewayx ./serverx ./bootx ./requestx ./admissionx ./middleware/autowire ./ratelimitx ./clientpolicyx ./middleware/retry ./middleware/timeout | tee governance-targeted-tests.log
-      - name: Generated layout compile smoke
-        run: |
-          set -euxo pipefail
-          (cd layout && go test ./api/todo/v1 -run TestNonExistent -count=0) | tee governance-layout-api.log
-          (cd layout && go test ./cmd/fullflow-smoke -run TestNonExistent -count=0) | tee governance-fullflow-compile.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: governance-demo-logs
-          path: |
-            governance-targeted-tests.log
-            governance-layout-api.log
-            governance-fullflow-compile.log
+          path: governance-targeted-tests.log
           if-no-files-found: ignore
           retention-days: 7

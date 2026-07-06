@@ -4,8 +4,6 @@
 
 ## 1. 核心主线包
 
-这些包是业务服务和生成代码的默认依赖面。
-
 | 分类 | 包 | 边界 |
 |---|---|---|
 | 基础设施 | `errorx`, `logx`, `configx`, `metricsx`, `contextx` | 错误、日志、配置、指标、请求上下文主线 |
@@ -15,8 +13,6 @@
 | Gateway | `gatewayx`, `admissionx`, `ratelimitx`, `clientpolicyx` | Gateway runtime、准入、限流、下游治理 |
 
 ## 2. 可选能力包
-
-这些包按服务需要启用，不是最小服务必须依赖。
 
 | 分类 | 包 | 说明 |
 |---|---|---|
@@ -41,22 +37,24 @@
 
 | 路径 | 规则 |
 |---|---|
-| `cmd/kernel` | CLI；业务禁止 import |
+| `cmd/kernel` | CLI；业务禁止 import；默认从 `aisphereio/kernel-layout` 拉取服务模板 |
 | `cmd/protoc-gen-*` | 代码生成器；业务禁止 import |
 | `cmd/buf-check-*` | proto contract checker；业务禁止 import |
-| `layout/` | 脚手架模板和示例工程结构；Kernel runtime 不反向依赖 layout |
 
-## 5. Scenario validation / examples
+## 5. External layout / examples
 
 | 路径 | 规则 |
 |---|---|
-| `validation/*` | 只用于跨模块场景验证，不是 runtime API；业务禁止 import |
+| `aisphereio/kernel-layout` | 生成服务模板、生成服务 Makefile、deploy 模板、layout 文档和 smoke tests 的归属仓库 |
 | `examples/*` | 示例和契约输入；没有明确 README 的示例默认不承诺可独立运行 |
 
 ## 6. 废弃 / 不在主线
 
 | 路径或概念 | 当前替代 |
 |---|---|
+| `layout/` | moved to `aisphereio/kernel-layout` |
+| `validation/` | removed from Kernel runtime tree; use independent validation, CI temp generation, or generated service tests |
+| `buf.gen.deploy.yaml` at Kernel root | generated-service deploy template belongs to `kernel-layout` |
 | `middleware/ratelimit` | `ratelimitx` |
 | `internal/ratelimit` | `ratelimitx` providers |
 | `github.com/aisphereio/kernel/errors` | `errorx` |
@@ -71,7 +69,7 @@
 
 `authz` 是授权 provider 合同，核心接口是 `Authorizer.Check` 和关系写入/查询接口。它不负责认证，也不负责请求生命周期编排。
 
-`accessx` 是请求时 access guard，负责把已认证 Principal、授权检查、SkipPolicy 和审计串起来。业务 handler 或 server middleware 需要“拦请求”时用 `accessx`，只需要判断权限引擎时用 `authz`。
+`accessx` 是请求时 access guard，负责把已认证 Principal、授权检查、SkipPolicy 和审计串起来。业务 handler 或 server middleware 需要拦请求时用 `accessx`，只需要判断权限引擎时用 `authz`。
 
 ### `authn.IdentityAdmin` vs `iamx.Directory`
 
@@ -90,15 +88,14 @@
 ```text
 proto contract
   -> cmd/buf-check-* / cmd/protoc-gen-*
-  -> requestx + accessx + gatewayx + deploy manifests
+  -> requestx + accessx + gatewayx
   -> serverx / middleware/autowire
   -> authn + authz + auditx providers
   -> business service
 
-iamx/resourcex control-plane facts
-  -> transactional outbox/projector
-  -> authz relationships
-  -> accessx runtime decisions
+kernel-layout
+  -> generated service Makefile / deploy template / service skeleton
+  -> imports Kernel runtime and generator outputs
 ```
 
 更多状态细节见：

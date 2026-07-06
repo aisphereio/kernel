@@ -1,6 +1,6 @@
 # Runtime API 边界
 
-Kernel 仓库分为四类表面：runtime API、development tooling、layout、scenario validation。业务代码只能依赖 runtime API；服务 boot 代码可以依赖 runtime API 中的装配类包，例如 `serverx`、`securityx`、`bootx`。
+Kernel 仓库分为四类表面：runtime API、development tooling、external layout、examples。业务代码只能依赖 runtime API；服务 boot 代码可以依赖 runtime API 中的装配类包，例如 `serverx`、`securityx`、`bootx`。
 
 ## 1. Runtime API
 
@@ -36,38 +36,51 @@ cmd/protoc-gen-go-kernel
 cmd/buf-check-aisphere
 ```
 
-生成项目通过 `make tools` 安装这些工具。
+生成项目通过 `kernel-layout` 的 Makefile 或本仓库 `make tools` 安装这些工具。
 
-## 3. Layout
+## 3. External layout
 
-`layout/` 和独立 `kernel-layout` 仓库用于表达推荐工程结构，不是 runtime API。
+生成服务模板、生成服务 Makefile 行为、deploy manifest 模板、layout 文档和 layout smoke tests 不在 Kernel 仓库内维护，归属独立仓库：
 
-layout 可以包含示例业务代码，但 Kernel 核心包不能反向依赖 layout。
+```text
+https://github.com/aisphereio/kernel-layout
+```
 
-## 4. Scenario validation
+Kernel 的 `cmd/kernel` 只保留 layout 解析和拉取逻辑。默认解析顺序为：
 
-`validation/*` 当前仍在主模块内承载跨模块场景测试，例如 IAM/AuthN/AuthZ/ServerX 组合验证。它不是 runtime API，业务代码禁止 import。
+```text
+--repo -> KERNEL_LAYOUT -> https://github.com/aisphereio/kernel-layout.git
+```
 
-后续迁移方向：
+## 4. Examples
+
+`examples/*` 只用于示例和 proto/generator 输入，不是 runtime API。没有明确 README 和运行目标的示例默认不承诺可独立运行。
+
+## 5. 已移除验证树
+
+`validation/*` 已从 Kernel runtime tree 移除。后续验证方式：
 
 ```text
 1. 独立 validation 仓库
 2. 生成项目自己的 tests
-3. 显式 build tag
-4. GitHub Actions 专用 job
+3. CI job 中临时生成测试工程
+4. 显式 build tag 的外部验证包
 ```
 
-## 5. 旧入口处理
+## 6. 旧入口处理
 
 ```text
-middleware/ratelimit/       -> use ratelimitx
-internal/ratelimit/         -> use ratelimitx providers
+layout/ -> aisphereio/kernel-layout
+validation/ -> external validation / generated service tests
+buf.gen.deploy.yaml at Kernel root -> kernel-layout generated-service deploy template
+middleware/ratelimit/ -> use ratelimitx
+internal/ratelimit/ -> use ratelimitx providers
 github.com/aisphereio/kernel/errors -> use errorx
 core/httpx/contextx as docs wording -> use serverx/transportx/requestx/accessx
 securityx.AuthnConfig -> deprecated alias; use securityx.AuthnBoundaryConfig
 grpcgatewayx -> not mainline; use grpc-gateway generator + protoc-gen-go-gateway + gatewayx
 ```
 
-## 6. Agent 规则
+## 7. Agent 规则
 
 AI Agent 遇到不存在或旧入口时，不允许重新创建同名兼容层。必须改用当前主线包，或先更新本契约文档再实现新抽象。

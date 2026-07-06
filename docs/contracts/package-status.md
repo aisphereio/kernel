@@ -11,7 +11,8 @@
 | `optional` | 按需启用能力，不是最小服务必选依赖 |
 | `helper` | 框架装配/辅助包，业务一般不直接使用 |
 | `tooling` | CLI/generator/checker，禁止业务 import |
-| `scenario` | 场景验证或示例输入，不是 runtime API |
+| `external` | 不在 Kernel 仓库内维护，但属于推荐工作流的一部分 |
+| `scenario` | 示例输入，不是 runtime API |
 | `compat` | 兼容入口，只为旧代码保留，新代码禁止使用 |
 | `deprecated` | 已废弃，禁止新代码使用 |
 | `not-mainline` | 不在当前主线，必须使用替代方案 |
@@ -68,26 +69,28 @@
 | `restx` | helper | REST runtime helper；优先通过 `transportx/http` / `serverx` 使用 |
 | `servicecontextx` | helper | 服务上下文和客户端引用管理；仅 boot/框架装配代码使用 |
 
-## Scenario tests / examples only
+## External / scenario surfaces
 
 | Path | Status | Rule |
 |---|---:|---|
-| `validation/*` | scenario | 只用于跨模块场景测试和 CI 验证；不是 runtime API，业务禁止 import |
+| `aisphereio/kernel-layout` | external | 生成服务模板、生成服务 Makefile、deploy 模板、layout 文档和 smoke tests 的归属仓库 |
 | `examples/*` | scenario | 示例和 proto/generator 输入；没有明确 README 的示例默认不承诺可独立运行 |
 
 ## Tooling only
 
 | Package | Status | Rule |
 |---|---:|---|
-| `cmd/kernel` | tooling | CLI，业务禁止 import |
+| `cmd/kernel` | tooling | CLI，业务禁止 import；默认从 `aisphereio/kernel-layout` 解析服务模板 |
 | `cmd/protoc-gen-*` | tooling | generator，业务禁止 import |
 | `cmd/buf-check-*` | tooling | contract checker，业务禁止 import |
-| `layout/` | tooling | 脚手架模板和示例工程结构；runtime 包不能依赖 layout |
 
 ## Compatibility / removed / not mainline
 
 | Package / Path | Status | Replacement / Rule |
 |---|---:|---|
+| `layout/` | removed | moved to `aisphereio/kernel-layout` |
+| `validation/` | removed | use independent validation, CI temp generation, or generated service tests |
+| `buf.gen.deploy.yaml` at Kernel root | removed | generated-service deploy template belongs to `kernel-layout` |
 | `aisphere/access/v1/access.proto` | compat | 兼容 wrapper；新 proto 必须 import `api/aisphere/access/v1/access.proto` |
 | `securityx.AuthnConfig` | deprecated | deprecated alias; use `securityx.AuthnBoundaryConfig` |
 | `grpcgatewayx` | not-mainline | upstream grpc-gateway generator + `protoc-gen-go-gateway` + `gatewayx` |

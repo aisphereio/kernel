@@ -45,7 +45,8 @@ cmd/buf-check-*
 以下路径/概念已经移除、废弃或不作为主线：
 
 ```text
-validation/
+kernel-local layout tree -> use aisphereio/kernel-layout
+kernel-local validation tree
 middleware/ratelimit/
 internal/ratelimit/
 github.com/aisphereio/kernel/errors
@@ -61,6 +62,7 @@ grpcgatewayx
 | 目录 | 职责 | 规则 |
 |---|---|---|
 | `api/` | proto option、公共契约 | 新 RPC 必须声明 access policy |
+| `cmd/kernel` | CLI | 默认从 `aisphereio/kernel-layout` 拉取服务模板 |
 | `cmd/protoc-gen-*` | 代码生成器 | 生成 glue code，业务不 import |
 | `cmd/buf-check-*` | 契约检查 | 失败即阻断 |
 | `requestx/` | 请求元信息中心 | 中间件、审计、限流、鉴权都读 `requestx.Info` |
@@ -73,7 +75,6 @@ grpcgatewayx
 | `admissionx/` | 准入插件链 | 跨接口默认值和校验放这里 |
 | `gatewayx/` | Gateway runtime | route manifest、registry、matcher、dispatcher |
 | `registry/` | 服务注册发现 runtime API | 保持现有包名，不再在文档里写成不存在的 `registryx` |
-| `layout/` | 项目模板 | 体现推荐使用方式，不是 runtime API |
 | `docs/` | 中文规范文档 | 能力变化必须同步文档 |
 
 更多说明参考：`docs/contracts/runtime-api-boundary.md`、`docs/contracts/package-status.md` 和 `docs/ai/advanced-feature-playbook.md`。
@@ -144,15 +145,9 @@ govulncheck ./...
 
 ### 6.1 AuthN 全流程文档
 
-AuthN 全流程设计文档位于 `layout/docs/design/authn-full-flow.md`，涵盖：
+AuthN 全流程的业务服务示例、生成项目配置和 layout 文档归属 `aisphereio/kernel-layout`。Kernel 仓库只维护 `authn`、`authn/oidcx`、`authn/casdoor`、`securityx`、`serverx` 等 runtime contract 和装配能力。
 
-- Gateway 本地 OIDC/JWKS 验 JWT → 注入可信 header → 转发后端
-- `kernel/authn/oidcx` 包：通用 OIDC/JWKS verifier，不依赖 Casdoor SDK
-- 后端两种模式：`casdoor_jwt`（再验 JWT）和 `gateway_trusted`（信任 Gateway）
-- 缓存策略：JWKS 进程内缓存、token 结果可选 Redis
-- 配置参考、验证命令、已修复问题记录
-
-涉及此流程的代码变更应同步更新该文档。
+涉及此流程的 runtime 代码变更应同步更新 Kernel contract 文档；涉及生成项目结构和配置示例的变更应同步更新 `kernel-layout`。
 
 ## 7. Generator 互相依赖约束
 
