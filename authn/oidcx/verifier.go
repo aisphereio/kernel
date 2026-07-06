@@ -44,10 +44,13 @@ func (v *Verifier) VerifyToken(ctx context.Context, req authn.VerifyTokenRequest
 		return authn.Principal{}, authn.ErrMissingCredential("token is required")
 	}
 	claims := jwt.MapClaims{}
-	parser := jwt.Parser{SkipClaimsValidation: true}
+	parser := jwt.NewParser(
+		jwt.WithoutClaimsValidation(),
+		jwt.WithValidMethods(v.cfg.AllowedAlgs),
+	)
 	token, err := parser.ParseWithClaims(req.Token, claims, v.keyFunc(ctx))
 	if err != nil {
-		return authn.Principal{}, authn.ErrInvalidCredential("invalid oidc token: " + err.Error())
+		return authn.Principal{}, authn.ErrInvalidCredential("invalid oidc token: "+err.Error())
 	}
 	if token == nil || !token.Valid {
 		return authn.Principal{}, authn.ErrInvalidCredential("invalid oidc token")
@@ -64,6 +67,9 @@ func (v *Verifier) VerifyToken(ctx context.Context, req authn.VerifyTokenRequest
 
 func (v *Verifier) keyFunc(ctx context.Context) jwt.Keyfunc {
 	return func(token *jwt.Token) (any, error) {
+		if token == nil || token.Method == nil {
+			return nil, fmt.Errorf("missing signing method")
+		}
 		alg := token.Method.Alg()
 		if !contains(v.cfg.AllowedAlgs, alg) {
 			return nil, fmt.Errorf("unsupported signing method %q", alg)
