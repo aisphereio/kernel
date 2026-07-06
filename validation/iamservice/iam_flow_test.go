@@ -156,6 +156,9 @@ func (p fakeAuthnProvider) RevokeToken(context.Context, authn.RevokeTokenRequest
 func (p fakeAuthnProvider) BuildLoginURL(context.Context, authn.LoginURLRequest) (authn.LoginURL, error) {
 	return authn.LoginURL{URL: "https://casdoor.example.com/login", Provider: "casdoor"}, nil
 }
+func (p fakeAuthnProvider) BuildLogoutURL(context.Context, authn.LogoutURLRequest) (authn.LogoutURL, error) {
+	return authn.LogoutURL{URL: "https://casdoor.example.com/logout", Provider: "casdoor"}, nil
+}
 func (p fakeAuthnProvider) HandleCallback(context.Context, authn.CallbackRequest) (authn.CallbackResult, error) {
 	return authn.CallbackResult{Provider: "casdoor"}, nil
 }
