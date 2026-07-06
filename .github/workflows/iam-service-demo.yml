@@ -39,9 +39,9 @@ jobs:
           cd /tmp/kernel-iam-demo
           kernel new iam-service --repo "$GITHUB_WORKSPACE/layout" --timeout 180s
           cd iam-service
-          # Copy kernel api directory so buf.yaml's ../api module can find
+          # Copy kernel api directory so buf can find
           # aisphere/access/v1/access.proto and other kernel proto files.
-          cp -r "$GITHUB_WORKSPACE/api" /tmp/kernel-iam-demo/api
+          cp -r "$GITHUB_WORKSPACE/api" /tmp/kernel-iam-demo/iam-service/api
           buf dep update
           make api
           make deploy
