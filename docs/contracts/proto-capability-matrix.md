@@ -1,6 +1,6 @@
 # Proto 能力矩阵
 
-当前主线：proto contract 先声明服务、HTTP 绑定、策略元数据，再由 buf-check 和 protoc generators 生成运行时 glue。
+当前主线：proto contract 先声明服务、HTTP 绑定、策略元数据，再由 buf-check 和 protoc generators 生成运行时 glue、Gateway manifest 和部署路由清单。
 
 已接入能力：
 
@@ -12,6 +12,7 @@ protoc-gen-grpc-gateway
 protoc-gen-go-errors
 protoc-gen-go-authz
 protoc-gen-go-gateway
+protoc-gen-go-deploy
 protoc-gen-go-kernel
 protoc-gen-openapiv2
 ```
@@ -40,6 +41,7 @@ OpenAPI: active
 errorx helpers: stable
 request/access resolver: active
 gateway manifest/invoker: active
+deploy HTTPRoute manifests: active
 serverx service module: partial
 admission proto option: planned
 downstream policy proto option: planned
@@ -55,4 +57,5 @@ Current rule:
 
 - `protoc-gen-go-kernel` always generates module-scoped `KernelRequestInfoResolver` and `KernelAccessResolver` functions.
 - `protoc-gen-go-authz` can still generate richer client/server authz helpers, but `serverx.ServiceModule` no longer depends on those helper names to compile.
+- `protoc-gen-go-deploy` owns Kubernetes Gateway API `HTTPRoute` deploy manifests and writes them under `deploy/generated/gateway/<bucket>/`.
 - Business repositories must not add long-term hand-written resolver files just to make `_kernel.pb.go` compile. If a generator shape is missing, fix Kernel generator first.
