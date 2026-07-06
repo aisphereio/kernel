@@ -74,7 +74,7 @@ func TestCmdNewNoMod(t *testing.T) {
 		goModFileName,
 		goSumFileName,
 		readmeFileName,
-		"cmd/project/main.go",
+		"cmd/server/main.go",
 		"app/user/cmd/user/main.go",
 	} {
 		if _, err := os.Stat(filepath.Join(cwd, "project", file)); err != nil {
