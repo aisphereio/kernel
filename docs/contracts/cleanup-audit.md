@@ -6,18 +6,19 @@
 
 | 文件 | 发现 | 处理 |
 |---|---|---|
-| `go.mod` | `github.com/golang-jwt/jwt/v4@v4.5.0` 命中 GO-2025-3553 / GO-2024-3250；代码直接 import 但被标成 `// indirect` | 升级到 `v4.5.2`，移动为直接依赖 |
+| `go.mod` / `go.sum` | `github.com/golang-jwt/jwt/v4@v4.5.0` 命中 GO-2025-3553 / GO-2024-3250；代码直接 import 但被标成 `// indirect` | 升级到 `v4.5.2`，移动为直接依赖；必须同步 `go.sum` 两条 `v4.5.2` checksum |
 | `authn/oidcx/verifier.go` | `Parser.ParseWithClaims` 调用缺少 parser-level signing method 白名单 | 改为 `jwt.NewParser(jwt.WithoutClaimsValidation(), jwt.WithValidMethods(...))`，并保留手动 issuer/audience/time/owner 校验 |
 | `authn/casdoor/token.go` | `jwt.ParseWithClaims` 直接调用；Keyfunc 内部虽校验 alg，但 parser 层没有白名单 | 改为 `jwt.NewParser(jwt.WithValidMethods(...))`，统一 `allowedJWTAlgs()` |
 | `authn/casdoor/token.go` | `Principal.Attributes` 中保存原始 `access_token`，可能进入日志、审计或下游上下文 | 删除该字段；token 只通过 `authn.TokenSet` 返回，不进入 Principal |
 | `securityx/config.go` | `AuthnConfig` 只是旧别名，容易被新代码继续使用 | 标记 `Deprecated`，新代码必须使用 `AuthnBoundaryConfig` |
+| `validation/iamservice` | 如果仍在当前 checkout 中，会被 `go test ./...` 扫到，且违反 runtime tree 边界 | 删除、移出仓库，或改成显式 build tag / 独立 validation 仓库；不能留在默认包图 |
 | `README.md` / `doc.go` / `AGENTS.md` / `docs/contracts/*.md` | runtime API 边界没有同步 `securityx`、`bootx`、`contextx` 的当前定位 | 同步 runtime API 表和废弃入口说明 |
 
 ## 2. 已删除 / 不允许恢复的旧入口
 
 | 路径或概念 | 状态 | 当前替代 |
 |---|---:|---|
-| `validation/` | removed | 独立 validation 仓库、生成项目自己的 tests、显式 build tag 或 GitHub Actions 专用 job |
+| `validation/` | must not be in default runtime package graph | 独立 validation 仓库、生成项目自己的 tests、显式 build tag 或 GitHub Actions 专用 job |
 | `middleware/ratelimit/` | removed | `ratelimitx` policy/provider |
 | `internal/ratelimit/` | removed | `ratelimitx` providers |
 | `github.com/aisphereio/kernel/errors` | removed | `errorx` |
