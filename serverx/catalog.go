@@ -8,6 +8,8 @@ import (
 	"github.com/aisphereio/kernel/gatewayx"
 	mwaccess "github.com/aisphereio/kernel/middleware/access"
 	"github.com/aisphereio/kernel/requestx"
+	transportgrpc "github.com/aisphereio/kernel/transportx/grpc"
+	transporthttp "github.com/aisphereio/kernel/transportx/http"
 )
 
 // ServiceCatalog is the Kernel-owned composition boundary for generated service
@@ -19,6 +21,14 @@ import (
 // module lists for routes and middleware.
 type ServiceCatalog struct {
 	modules []ServiceModule
+}
+
+// ServiceBinding pairs one generated service module with its concrete service
+// implementation. Kernel uses the generated module registration hooks to bind
+// the implementation to managed HTTP/RPC transports.
+type ServiceBinding struct {
+	Module         ServiceModule
+	Implementation any
 }
 
 // NewServiceCatalog validates and stores generated service modules.
@@ -94,6 +104,52 @@ func (c ServiceCatalog) RegisterGatewayRoutes(ctx context.Context, registry gate
 
 func (c ServiceCatalog) RegisterGatewayRoutesWithFilter(ctx context.Context, registry gatewayx.RouteRegistry, filter gatewayx.RouteFilter) error {
 	return RegisterServiceGatewayRoutesWithFilter(ctx, registry, filter, c.modules...)
+}
+
+func RegisterHTTPServices(srv *transporthttp.Server, bindings ...ServiceBinding) error {
+	if srv == nil {
+		return fmt.Errorf("serverx: http server is nil")
+	}
+	for _, binding := range bindings {
+		if err := binding.validate(); err != nil {
+			return err
+		}
+		if binding.Module.RegisterHTTP == nil {
+			return fmt.Errorf("serverx: service module %s missing generated http registration hook", binding.Module.ModuleName())
+		}
+		if err := binding.Module.RegisterHTTP(srv, binding.Implementation); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func RegisterGRPCServices(srv *transportgrpc.Server, bindings ...ServiceBinding) error {
+	if srv == nil {
+		return fmt.Errorf("serverx: grpc server is nil")
+	}
+	for _, binding := range bindings {
+		if err := binding.validate(); err != nil {
+			return err
+		}
+		if binding.Module.RegisterGRPC == nil {
+			return fmt.Errorf("serverx: service module %s missing generated grpc registration hook", binding.Module.ModuleName())
+		}
+		if err := binding.Module.RegisterGRPC(srv, binding.Implementation); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b ServiceBinding) validate() error {
+	if err := b.Module.Validate(); err != nil {
+		return err
+	}
+	if b.Implementation == nil {
+		return fmt.Errorf("serverx: service module %s implementation is nil", b.Module.ModuleName())
+	}
+	return nil
 }
 
 var _ requestx.Resolver = (ServiceCatalog{}).RequestInfoResolver
