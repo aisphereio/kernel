@@ -26,12 +26,6 @@ const (
 	ExtAccess protowire.Number = 51010
 )
 
-const (
-	GatewayPublishUnspecified int32 = 0
-	GatewayPublishEnabled     int32 = 1
-	GatewayPublishDisabled    int32 = 2
-)
-
 type AuthzRule struct {
 	Action   string
 	Resource string
@@ -58,7 +52,6 @@ type AccessPolicy struct {
 	RateLimit AccessRateLimit
 	Breaker   AccessBreaker
 	Reason    string
-	Gateway   AccessGateway
 }
 
 type AccessAudit struct {
@@ -79,12 +72,6 @@ type AccessRateLimit struct {
 type AccessBreaker struct {
 	Enabled bool
 	Name    string
-}
-
-type AccessGateway struct {
-	Publish  int32
-	Profiles []string
-	Tags     []string
 }
 
 func MethodUnknown(m *descriptorpb.MethodDescriptorProto) []byte {
@@ -324,15 +311,6 @@ func ParseAccessPolicy(b []byte) AccessPolicy {
 					continue
 				}
 			}
-		case 7:
-			if typ == protowire.BytesType {
-				v, n := protowire.ConsumeBytes(b)
-				if n >= 0 {
-					o.Gateway = ParseAccessGateway(v)
-					b = b[n:]
-					continue
-				}
-			}
 		}
 		n = protowire.ConsumeFieldValue(num, typ, b)
 		if n < 0 {
@@ -487,52 +465,6 @@ func ParseAccessBreaker(b []byte) AccessBreaker {
 				v, n := protowire.ConsumeString(b)
 				if n >= 0 {
 					o.Name = v
-					b = b[n:]
-					continue
-				}
-			}
-		}
-		n = protowire.ConsumeFieldValue(num, typ, b)
-		if n < 0 {
-			return o
-		}
-		b = b[n:]
-	}
-	return o
-}
-
-func ParseAccessGateway(b []byte) AccessGateway {
-	var o AccessGateway
-	for len(b) > 0 {
-		num, typ, n := protowire.ConsumeTag(b)
-		if n < 0 {
-			return o
-		}
-		b = b[n:]
-		switch num {
-		case 1:
-			if typ == protowire.VarintType {
-				v, n := protowire.ConsumeVarint(b)
-				if n >= 0 {
-					o.Publish = int32(v)
-					b = b[n:]
-					continue
-				}
-			}
-		case 2:
-			if typ == protowire.BytesType {
-				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Profiles = append(o.Profiles, v)
-					b = b[n:]
-					continue
-				}
-			}
-		case 3:
-			if typ == protowire.BytesType {
-				v, n := protowire.ConsumeString(b)
-				if n >= 0 {
-					o.Tags = append(o.Tags, v)
 					b = b[n:]
 					continue
 				}
