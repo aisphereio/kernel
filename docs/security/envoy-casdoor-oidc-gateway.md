@@ -1,42 +1,54 @@
 # Envoy Gateway + Casdoor OIDC Authn 体系
 
-本文定义 Kernel 侧对接 Envoy Gateway + Casdoor OIDC 的协议、生成和运行时边界。
+本文定义 Kernel 侧对接 Envoy Gateway + Casdoor OIDC 的第一阶段协议、生成和运行时边界。
 
-## 1. 目标
+## 1. 阶段目标
 
-Aisphere 第一阶段采用：
+第一阶段只实现 OIDC/JWT 入口认证，不接入 Gateway ExternalAuth。
 
 ```text
 Casdoor = OIDC Provider
-Envoy Gateway = 南北向入口安全执行点
-Aisphere IAM = principal 映射、ExtAuth、internal JWT、资源级授权
-Kernel = proto 注解、生成器契约、服务端/客户端 middleware
+Envoy Gateway = OIDC 登录、JWT 验签、claimToHeaders、header sanitize、路由转发
+Kernel = proto 注解、Gateway API 生成契约、服务端 middleware、内部调用 middleware
+IAM = 作为后端业务服务/目录服务存在；不作为 Gateway ExternalAuth
 ```
 
-该阶段不要求 IAM 自己成为 OIDC Provider。Gateway 直接信任 Casdoor 的 issuer/JWKS；IAM 负责把 Casdoor external identity 映射为 Aisphere principal。
+该阶段的关键目标：
+
+```text
+1. Browser 访问受保护页面时由 Envoy Gateway 触发 Casdoor OIDC 登录。
+2. CLI/Agent/API Client 直接携带 Bearer token，由 Envoy Gateway 通过 Casdoor JWKS 验签。
+3. Gateway 将已验证 JWT 的有限 claim 转成 x-aisphere-external-* header。
+4. Gateway 清理客户端伪造的 x-aisphere-* / x-internal-* header。
+5. 后端 Kernel middleware 只读取 Gateway 生成的 external identity header。
+6. 业务 authz 暂时仍在服务内通过 Kernel accessx / IAM client 完成，不通过 Gateway ExternalAuth。
+```
+
+> 后续阶段再引入 IAM ExternalAuth、x-aisphere-principal 注入、internal JWT 和 Gateway 侧资源级授权。
 
 ## 2. 安全分级
 
-Kernel/proto 中的接口统一分为三类：
+Kernel/proto 中的接口统一分为三类，但本阶段 Gateway 只区分是否需要 OIDC/JWT：
 
-| 模式 | 认证 | 授权 | Gateway 生成行为 | 典型接口 |
+| 模式 | Gateway 认证 | Gateway 授权 | 后端要求 | 典型接口 |
 |---|---:|---:|---|---|
-| `AUTH_NONE` | 否 | 否 | 生成到 public route；不挂 SecurityPolicy | `/healthz`、`/readyz`、`/openapi.json`、`/api/v1/public/*` |
-| `AUTHN_ONLY` | 是 | 否 | 生成到 authn route；挂 OIDC/JWT | `/api/v1/me`、`/api/v1/profile` |
-| `AUTHZ` | 是 | 是 | 生成到 protected route；挂 OIDC/JWT + IAM ExtAuth | 业务资源接口 |
+| `AUTH_NONE` | 否 | 否 | 不要求 principal | `/healthz`、`/readyz`、`/openapi.json`、`/api/v1/public/*` |
+| `AUTHN_ONLY` | 是 | 否 | 可读取 external identity | `/api/v1/me`、`/api/v1/profile` |
+| `AUTHZ` | 是 | 否 | 后端 accessx/IAM client 做业务授权 | 业务资源接口 |
 
 约束：
 
 ```text
-1. 不允许把 Casdoor OIDC SecurityPolicy 挂到 Gateway 全局。
-2. public route 不挂 OIDC/JWT/ExtAuth。
-3. 所有 route 都必须执行 header sanitize。
-4. AUTHZ route 必须 fail-closed 调 IAM ExtAuth。
+1. 不把 Casdoor OIDC SecurityPolicy 挂到 Gateway 全局。
+2. public route 不挂 OIDC/JWT SecurityPolicy。
+3. authn/authz route 都挂 OIDC/JWT SecurityPolicy。
+4. 所有 route 都必须执行 header sanitize。
+5. 本阶段不生成 extAuth，不生成 headersToBackend，不生成 x-aisphere-internal-jwt。
 ```
 
 ## 3. Proto 注解契约
 
-Kernel 当前 access policy 仍是路由和权限事实源。新体系要求 generator 能从 proto 方法上得到以下语义：
+Kernel 当前 access policy 仍是路由和权限事实源。新体系要求 generator 能从 proto 方法得到以下语义：
 
 ```text
 auth mode        : AUTH_NONE / AUTHN_ONLY / AUTHZ
@@ -44,11 +56,10 @@ resource_type    : hub.agent / hub.workflow / iam.project / git.repository
 action           : read / create / update / delete / publish / clone
 public_exposed   : 是否生成公网 HTTPRoute
 internal_only    : 是否仅生成内部路由
-internal_jwt     : 后端是否必须校验 IAM internal JWT
 service_call     : 是否允许 service principal 调用
 ```
 
-推荐 proto option 语义示例：
+示例：
 
 ```proto
 rpc PublishAgent(PublishAgentRequest) returns (PublishAgentReply) {
@@ -62,12 +73,11 @@ rpc PublishAgent(PublishAgentRequest) returns (PublishAgentReply) {
     resource: "hub.agent"
     action: "publish"
     exposure: PUBLIC
-    require_internal_jwt: true
   };
 }
 ```
 
-如果现有 `aisphere.access.v1.policy` 字段名不同，generator 必须做兼容映射，不应要求业务仓库重复维护 route list。
+本阶段 `AUTHZ` 不代表 Gateway 会调用 IAM ExternalAuth，只代表 Gateway 必须完成 OIDC/JWT 认证，资源级授权仍由服务端 Kernel access chain 处理。
 
 ## 4. Gateway API 生成规则
 
@@ -84,23 +94,21 @@ rpc PublishAgent(PublishAgentRequest) returns (PublishAgentReply) {
 ```text
 public route     : no SecurityPolicy
 authn route      : OIDC/JWT SecurityPolicy
-protected route  : OIDC/JWT + ExtAuth SecurityPolicy
+protected route  : OIDC/JWT SecurityPolicy
 ```
 
-生成器必须将鉴权元数据写入 HTTPRoute metadata，供 IAM ExtAuth 使用：
+禁止生成：
 
-```yaml
-metadata:
-  annotations:
-    aisphere.io/service: "hub"
-    aisphere.io/auth-mode: "authz"
-    aisphere.io/resource-type: "hub.agent"
-    aisphere.io/action: "publish"
+```text
+extAuth
+headersToBackend
+x-aisphere-principal 注入
+x-aisphere-internal-jwt 注入
 ```
 
 ## 5. Header 规范
 
-### 5.1 外部身份 Header
+### 5.1 Gateway 输出的外部身份 Header
 
 由 Envoy Gateway `claimToHeaders` 从已验证 Casdoor JWT 中提取：
 
@@ -111,11 +119,11 @@ x-aisphere-external-name
 x-aisphere-external-username
 ```
 
-这些 header 只表示 Casdoor external identity，不等价于 Aisphere principal。
+这些 header 表示 Casdoor external identity，不等价于 Aisphere internal principal。
 
-### 5.2 内部身份 Header
+### 5.2 本阶段不输出的内部 Header
 
-由 IAM ExtAuth 返回，Gateway 注入给后端：
+本阶段 Gateway 不负责输出以下 header：
 
 ```text
 x-aisphere-principal
@@ -127,7 +135,7 @@ x-aisphere-authz-decision-id
 x-aisphere-internal-jwt
 ```
 
-这些 header 才能被业务服务读取。客户端直接传入的同名 header 必须被清理。
+这些 header 预留给后续 IAM ExternalAuth 阶段。本阶段如果业务需要 Aisphere user/org/project，应由后端 Kernel middleware 或业务服务通过 IAM client 根据 external identity 查询映射。
 
 ## 6. Header Sanitize
 
@@ -164,13 +172,13 @@ spec:
 
 ```text
 public/authn/authz 都必须 sanitize。
-Gateway sanitize 在 OIDC/JWT/ExtAuth 注入可信 header 前执行。
-业务服务不得信任客户端传入的 x-aisphere-*。
+sanitize 在 JWT claimToHeaders 生成可信 x-aisphere-external-* 前执行。
+业务服务不得信任客户端直接传入的 x-aisphere-*。
 ```
 
 ## 7. Casdoor OIDC/JWT 生成模板
 
-Authn route 生成 OIDC/JWT：
+Authn/protected route 生成 OIDC/JWT：
 
 ```yaml
 apiVersion: gateway.envoyproxy.io/v1alpha1
@@ -211,47 +219,20 @@ spec:
             header: x-aisphere-external-sub
           - claim: email
             header: x-aisphere-external-email
+          - claim: name
+            header: x-aisphere-external-name
+          - claim: preferred_username
+            header: x-aisphere-external-username
 ```
 
-Protected route 在此基础上增加 `extAuth`。
+## 8. Kernel 服务端运行时
 
-## 8. IAM ExtAuth 生成模板
-
-```yaml
-extAuth:
-  http:
-    backendRefs:
-      - name: aisphere-iam
-        port: 8080
-    pathOverride: /v1/extauth/check
-    headersToBackend:
-      - x-aisphere-principal
-      - x-aisphere-user-id
-      - x-aisphere-org-id
-      - x-aisphere-project-id
-      - x-aisphere-roles
-      - x-aisphere-authz-decision-id
-      - x-aisphere-internal-jwt
-  headersToExtAuth:
-    - Authorization
-    - Cookie
-    - X-Request-Id
-    - X-Forwarded-For
-    - X-Forwarded-Proto
-    - X-Forwarded-Host
-    - x-aisphere-external-sub
-    - x-aisphere-external-email
-  failOpen: false
-  timeout: 2s
-```
-
-## 9. Kernel 服务端运行时
-
-Kernel inbound middleware 必须支持两种来源：
+Kernel inbound middleware 在本阶段支持：
 
 | 来源 | 校验方式 | Principal 来源 |
 |---|---|---|
-| Gateway request | `x-aisphere-internal-jwt` 可选验签；读取 Gateway/IAM 注入 header | IAM ExtAuth |
+| public request | 不校验 | 无 |
+| Gateway OIDC/JWT request | 信任 Gateway 输出的 `x-aisphere-external-*`；可选后端二次校验 forwarded access token | Casdoor external identity |
 | Internal service request | `Authorization: Bearer <service-token>` 验签 | IAM service token |
 
 Inbound 处理顺序：
@@ -259,14 +240,16 @@ Inbound 处理顺序：
 ```text
 requestinfo
   -> metadata/header normalization
-  -> principal restore
-  -> optional internal JWT verification
-  -> accessx guard
+  -> external identity restore
+  -> optional backend token verification
+  -> accessx guard for AUTHZ methods
   -> auditx
   -> handler
 ```
 
-## 10. Kernel 客户端运行时
+注意：`AUTHZ` 方法仍然可以在后端执行 `accessx`。此时 accessx 的 Principal 可以先使用 external identity，再通过 IAM Directory/client 做内部 user 映射。
+
+## 9. Kernel 客户端运行时
 
 服务调用其他内部服务时，outbound middleware 自动注入：
 
@@ -277,43 +260,36 @@ x-aisphere-source-service: <service-name>
 x-aisphere-request-id: <request-id>
 ```
 
-service token 由 IAM 签发，claim 推荐：
+service token 由 IAM 签发。该能力与 Gateway OIDC 无耦合。
 
-```json
-{
-  "iss": "https://iam.aisphere.local",
-  "aud": "aisphere-internal-services",
-  "sub": "service:hub",
-  "typ": "service_token",
-  "service": "hub",
-  "namespace": "aisphere-system",
-  "scopes": ["iam.project.read", "runtime.invoke"],
-  "exp": 1710000600
-}
-```
+## 10. 后续阶段
 
-## 11. 内部服务互调分阶段
-
-第一阶段：
+本阶段明确不做：
 
 ```text
-Kernel service token + NetworkPolicy + optional Gateway->Backend mTLS
+IAM ExternalAuth
+Gateway resource-level authz
+x-aisphere-principal 注入
+x-aisphere-internal-jwt 注入
+headersToBackend
 ```
 
-第二阶段：
+后续阶段再扩展为：
 
 ```text
-Istio/Ambient Mesh mTLS + AuthorizationPolicy + IAM internal JWT
+Gateway OIDC/JWT
+  -> IAM ExternalAuth
+  -> IAM 返回 Aisphere internal principal
+  -> Gateway 注入 x-aisphere-principal
+  -> 后端可校验 x-aisphere-internal-jwt
 ```
 
-Kernel 侧不直接依赖 Istio；只要求 Principal、service token 和 authorization 语义保持 provider-neutral。
-
-## 12. 禁止事项
+## 11. 禁止事项
 
 ```text
 1. 禁止 x-jwt-secret / x-auth-secret 这种共享 secret header。
 2. 禁止把 Casdoor sub 直接作为 Aisphere user_id。
 3. 禁止业务服务自己维护 public/authn/authz route list。
-4. 禁止 public route 依赖 IAM ExtAuth 才能健康检查。
+4. 禁止 public route 依赖 IAM 才能健康检查。
 5. 禁止 Gateway 全局挂 OIDC 后再做路径例外。
 ```
