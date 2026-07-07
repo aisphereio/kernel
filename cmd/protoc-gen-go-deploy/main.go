@@ -90,7 +90,7 @@ func collectDeployRoutes(svc *protogen.Service) []deployRoute {
 			continue
 		}
 		access, ok := accessPolicy(m)
-		if !ok || access.Gateway.Publish == protooptions.GatewayPublishDisabled {
+		if !ok {
 			continue
 		}
 		exposure := access.Exposure
@@ -108,22 +108,7 @@ func collectDeployRoutes(svc *protogen.Service) []deployRoute {
 			if audience == "" {
 				audience = defaultServiceName(string(svc.Desc.FullName()))
 			}
-			out = append(out, deployRoute{
-				ServiceFullName: string(svc.Desc.FullName()),
-				ServiceGoName:   svc.GoName,
-				MethodGoName:    m.GoName,
-				MethodName:      string(m.Desc.Name()),
-				FullMethod:      "/" + string(svc.Desc.FullName()) + "/" + string(m.Desc.Name()),
-				HTTPMethod:      method,
-				Path:            path,
-				Exposure:        exposure,
-				Audience:        audience,
-				AuthzAction:     access.Authz.Action,
-				AuthzResource:   access.Authz.Resource,
-				ForwardAuth:     forwardAuth(exposure),
-				Tags:            cleanStrings(access.Gateway.Tags),
-				Profiles:        cleanStrings(access.Gateway.Profiles),
-			})
+			out = append(out, deployRoute{ServiceFullName: string(svc.Desc.FullName()), ServiceGoName: svc.GoName, MethodGoName: m.GoName, MethodName: string(m.Desc.Name()), FullMethod: "/" + string(svc.Desc.FullName()) + "/" + string(m.Desc.Name()), HTTPMethod: method, Path: path, Exposure: exposure, Audience: audience, AuthzAction: access.Authz.Action, AuthzResource: access.Authz.Resource, ForwardAuth: forwardAuth(exposure), Tags: cleanStrings(access.Gateway.Tags), Profiles: cleanStrings(access.Gateway.Profiles)})
 		}
 	}
 	return out
@@ -179,21 +164,15 @@ func writeHTTPRouteRule(g *protogen.GeneratedFile, backendService string, rt dep
 	g.P("        - type: RequestHeaderModifier")
 	g.P("          requestHeaderModifier:")
 	g.P("            set:")
-	g.P("              - name: X-Aisphere-Upstream-Operation")
-	g.P("                value: ", yamlQuote(rt.FullMethod))
-	g.P("              - name: X-Aisphere-Route-Exposure")
-	g.P("                value: ", yamlQuote(exposureName(rt.Exposure)))
-	g.P("              - name: X-Aisphere-Route-Authn-Mode")
-	g.P("                value: ", yamlQuote(authnMode(rt.Exposure)))
-	g.P("              - name: X-Aisphere-Route-Forward-Authorization")
-	g.P("                value: ", yamlQuote(strconv.FormatBool(rt.ForwardAuth)))
+	writeHeaderSet(g, "Upstream-Operation", rt.FullMethod)
+	writeHeaderSet(g, "Route-Exposure", exposureName(rt.Exposure))
+	writeHeaderSet(g, "Route-Authn-Mode", authnMode(rt.Exposure))
+	writeHeaderSet(g, "Route-Forward-Authorization", strconv.FormatBool(rt.ForwardAuth))
 	if strings.TrimSpace(rt.AuthzAction) != "" {
-		g.P("              - name: X-Aisphere-Authz-Action")
-		g.P("                value: ", yamlQuote(rt.AuthzAction))
+		writeHeaderSet(g, "Authz-Action", rt.AuthzAction)
 	}
 	if strings.TrimSpace(rt.AuthzResource) != "" {
-		g.P("              - name: X-Aisphere-Authz-Resource")
-		g.P("                value: ", yamlQuote(rt.AuthzResource))
+		writeHeaderSet(g, "Authz-Resource", rt.AuthzResource)
 	}
 	g.P("      backendRefs:")
 	g.P("        - name: ", yamlQuote(backendService))
@@ -202,6 +181,13 @@ func writeHTTPRouteRule(g *protogen.GeneratedFile, backendService string, rt dep
 	}
 	g.P("          port: ", *optBackendPort)
 }
+
+func writeHeaderSet(g *protogen.GeneratedFile, suffix string, value string) {
+	g.P("              - name: ", yamlQuote(aisphereHeader(suffix)))
+	g.P("                value: ", yamlQuote(value))
+}
+
+func aisphereHeader(suffix string) string { return "X-" + "Aisphere-" + suffix }
 
 func accessPolicy(m *protogen.Method) (protooptions.AccessPolicy, bool) {
 	unknown := m.Desc.Options().ProtoReflect().GetUnknown()
@@ -262,12 +248,10 @@ func exposureName(exposure int32) string {
 
 func authnMode(exposure int32) string {
 	switch exposure {
-	case 1:
+	case 1, 5:
 		return "none"
-	case 4, 5:
-		return "m2m"
 	default:
-		return "verify_jwt"
+		return "passive"
 	}
 }
 
@@ -286,14 +270,6 @@ func gatewayForBucket(bucket string) string {
 	}
 }
 
-func cleanDefault(v, fallback string) string {
-	v = strings.TrimSpace(v)
-	if v == "" {
-		return fallback
-	}
-	return v
-}
-
 func defaultServiceName(full string) string {
 	full = strings.TrimSpace(full)
 	if full == "" {
@@ -305,27 +281,10 @@ func defaultServiceName(full string) string {
 	if name == "" {
 		name = parts[len(parts)-1]
 	}
-	return strings.ToLower(kebab(name)) + "-service"
+	return dnsName(name)
 }
 
-func cleanStrings(in []string) []string {
-	out := make([]string, 0, len(in))
-	seen := map[string]struct{}{}
-	for _, s := range in {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-	return out
-}
-
-func kebab(s string) string {
+func dnsName(s string) string {
 	var b strings.Builder
 	for i, r := range s {
 		if r == '.' || r == '_' || r == ' ' {
@@ -339,30 +298,13 @@ func kebab(s string) string {
 			b.WriteRune(unicode.ToLower(r))
 			continue
 		}
-		b.WriteRune(unicode.ToLower(r))
-	}
-	return strings.Trim(collapseDash(b.String()), "-")
-}
-
-func dnsName(s string) string {
-	s = strings.ToLower(s)
-	var b strings.Builder
-	prevDash := false
-	for _, r := range s {
-		valid := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
-		if valid {
-			b.WriteRune(r)
-			prevDash = false
-			continue
-		}
-		if !prevDash {
-			b.WriteByte('-')
-			prevDash = true
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' {
+			b.WriteRune(unicode.ToLower(r))
 		}
 	}
 	out := strings.Trim(b.String(), "-")
-	if len(out) > 63 {
-		out = strings.Trim(out[:63], "-")
+	for strings.Contains(out, "--") {
+		out = strings.ReplaceAll(out, "--", "-")
 	}
 	if out == "" {
 		return "route"
@@ -370,15 +312,25 @@ func dnsName(s string) string {
 	return out
 }
 
-func collapseDash(s string) string {
-	for strings.Contains(s, "--") {
-		s = strings.ReplaceAll(s, "--", "-")
+func cleanDefault(v string, fallback string) string {
+	if strings.TrimSpace(v) == "" {
+		return fallback
 	}
-	return s
+	return strings.TrimSpace(v)
 }
 
-func yamlQuote(s string) string {
-	s = strings.ReplaceAll(s, "\\", "\\\\")
-	s = strings.ReplaceAll(s, "\"", "\\\"")
-	return "\"" + s + "\""
+func yamlQuote(v string) string { return strconv.Quote(v) }
+
+func cleanStrings(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := map[string]bool{}
+	for _, v := range in {
+		v = strings.TrimSpace(v)
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
 }
