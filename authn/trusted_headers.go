@@ -23,6 +23,28 @@ const (
 	TrustedHeaderScopes      = "X-Aisphere-Scopes"
 )
 
+const (
+	// GatewayClaimHeaderExternalSub is the normalized Envoy Gateway claimToHeaders
+	// output for the verified OIDC subject. This is the primary identity key for
+	// OIDC-only Gateway deployments.
+	GatewayClaimHeaderExternalSub      = "X-Aisphere-External-Sub"
+	GatewayClaimHeaderExternalIssuer   = "X-Aisphere-External-Issuer"
+	GatewayClaimHeaderExternalEmail    = "X-Aisphere-External-Email"
+	GatewayClaimHeaderExternalName     = "X-Aisphere-External-Name"
+	GatewayClaimHeaderExternalUsername = "X-Aisphere-External-Username"
+
+	// Optional internal projection headers. They are only trustworthy when the
+	// edge Gateway strips client-supplied values before injecting verified claims.
+	GatewayClaimHeaderPrincipal = "X-Aisphere-Principal"
+	GatewayClaimHeaderUserID    = "X-Aisphere-User-ID"
+	GatewayClaimHeaderOrgID     = "X-Aisphere-Org-ID"
+	GatewayClaimHeaderProjectID = "X-Aisphere-Project-ID"
+	GatewayClaimHeaderRoles     = "X-Aisphere-Roles"
+	GatewayClaimHeaderGroups    = "X-Aisphere-Groups"
+	GatewayClaimHeaderScopes    = "X-Aisphere-Scopes"
+	GatewayClaimHeaderProvider  = "X-Aisphere-Provider"
+)
+
 var trustedHeaderNames = []string{
 	TrustedHeaderVerified,
 	TrustedHeaderSubject,
@@ -40,6 +62,19 @@ var trustedHeaderNames = []string{
 	TrustedHeaderGroups,
 	TrustedHeaderRoles,
 	TrustedHeaderScopes,
+	GatewayClaimHeaderExternalSub,
+	GatewayClaimHeaderExternalIssuer,
+	GatewayClaimHeaderExternalEmail,
+	GatewayClaimHeaderExternalName,
+	GatewayClaimHeaderExternalUsername,
+	GatewayClaimHeaderPrincipal,
+	GatewayClaimHeaderUserID,
+	GatewayClaimHeaderOrgID,
+	GatewayClaimHeaderProjectID,
+	GatewayClaimHeaderRoles,
+	GatewayClaimHeaderGroups,
+	GatewayClaimHeaderScopes,
+	GatewayClaimHeaderProvider,
 }
 
 // TrustedHeaderNames returns all identity headers controlled by Gateway. Any
@@ -93,15 +128,37 @@ func InjectTrustedHeaders(headers map[string]string, p Principal) {
 	headers[TrustedHeaderGroups] = strings.Join(p.Groups, ",")
 	headers[TrustedHeaderRoles] = strings.Join(p.Roles, ",")
 	headers[TrustedHeaderScopes] = strings.Join(p.Scopes, ",")
+
+	// Also write the Envoy claim-header names so downstream services that only
+	// understand the OIDC-only Gateway contract can consume the same principal.
+	headers[GatewayClaimHeaderExternalSub] = p.ExternalID
+	if headers[GatewayClaimHeaderExternalSub] == "" {
+		headers[GatewayClaimHeaderExternalSub] = p.SubjectID
+	}
+	headers[GatewayClaimHeaderExternalIssuer] = p.Issuer
+	headers[GatewayClaimHeaderExternalEmail] = p.Email
+	headers[GatewayClaimHeaderExternalName] = firstNonEmpty(p.Name, p.Username)
+	headers[GatewayClaimHeaderExternalUsername] = p.Username
+	headers[GatewayClaimHeaderPrincipal] = p.SubjectID
+	headers[GatewayClaimHeaderUserID] = p.SubjectID
+	headers[GatewayClaimHeaderOrgID] = p.OrgID
+	headers[GatewayClaimHeaderProjectID] = p.ProjectID
+	headers[GatewayClaimHeaderRoles] = strings.Join(p.Roles, ",")
+	headers[GatewayClaimHeaderGroups] = strings.Join(p.Groups, ",")
+	headers[GatewayClaimHeaderScopes] = strings.Join(p.Scopes, ",")
 }
 
 // PrincipalFromTrustedHeaders reconstructs a Principal that was already
 // verified by Gateway. It must only be used on traffic that cannot bypass the
 // trusted Gateway boundary.
 func PrincipalFromTrustedHeaders(headers map[string]string) (Principal, bool) {
-	if !strings.EqualFold(headerValue(headers, TrustedHeaderVerified), "true") {
-		return Principal{}, false
+	if strings.EqualFold(headerValue(headers, TrustedHeaderVerified), "true") {
+		return principalFromExplicitTrustedHeaders(headers)
 	}
+	return principalFromGatewayClaimHeaders(headers)
+}
+
+func principalFromExplicitTrustedHeaders(headers map[string]string) (Principal, bool) {
 	p := Principal{
 		SubjectID:   headerValue(headers, TrustedHeaderSubject),
 		SubjectType: headerValue(headers, TrustedHeaderSubjectType),
@@ -120,6 +177,43 @@ func PrincipalFromTrustedHeaders(headers map[string]string) (Principal, bool) {
 		Scopes:      splitCSV(headerValue(headers, TrustedHeaderScopes)),
 		AuthMethod:  AuthMethodJWT,
 	}.Normalize()
+	return p, p.IsAuthenticated()
+}
+
+func principalFromGatewayClaimHeaders(headers map[string]string) (Principal, bool) {
+	externalSub := headerValue(headers, GatewayClaimHeaderExternalSub)
+	principalID := headerValue(headers, GatewayClaimHeaderPrincipal)
+	userID := headerValue(headers, GatewayClaimHeaderUserID)
+	subjectID := firstNonEmpty(principalID, userID, externalSub)
+	if subjectID == "" {
+		return Principal{}, false
+	}
+
+	p := Principal{
+		SubjectID:   subjectID,
+		SubjectType: SubjectTypeUser,
+		Provider:    firstNonEmpty(headerValue(headers, GatewayClaimHeaderProvider), headerValue(headers, TrustedHeaderProvider), "gateway"),
+		ExternalID:  externalSub,
+		Issuer:      headerValue(headers, GatewayClaimHeaderExternalIssuer),
+		TenantID:    headerValue(headers, GatewayClaimHeaderOrgID),
+		OrgID:       headerValue(headers, GatewayClaimHeaderOrgID),
+		ProjectID:   headerValue(headers, GatewayClaimHeaderProjectID),
+		Username:    headerValue(headers, GatewayClaimHeaderExternalUsername),
+		Name:        headerValue(headers, GatewayClaimHeaderExternalName),
+		Email:       headerValue(headers, GatewayClaimHeaderExternalEmail),
+		Groups:      splitCSV(headerValue(headers, GatewayClaimHeaderGroups)),
+		Roles:       splitCSV(headerValue(headers, GatewayClaimHeaderRoles)),
+		Scopes:      splitCSV(headerValue(headers, GatewayClaimHeaderScopes)),
+		AuthMethod:  AuthMethodOIDC,
+		Attributes: AttributeSet{
+			"gateway.external_sub": externalSub,
+			"gateway.principal":    principalID,
+			"gateway.user_id":      userID,
+		},
+	}.Normalize()
+	if p.ExternalID == "" {
+		p.ExternalID = p.SubjectID
+	}
 	return p, p.IsAuthenticated()
 }
 
