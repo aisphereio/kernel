@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -250,4 +249,3 @@ func cloneAttributeSet(in AttributeSet) AttributeSet {
 }
 
 var _ TokenService = (*idempotentTokenService)(nil)
-var _ = errors.Is
