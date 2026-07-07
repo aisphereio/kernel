@@ -83,6 +83,15 @@
 
 `authz.Relationship` 是 ReBAC/Zanzibar 查询投影，适合 SpiceDB/OpenFGA 高性能权限判断。写入路径应先落控制面事实，再通过 outbox/projector 投影到 `authz` 后端。
 
+### Envoy Gateway + Casdoor OIDC Authn
+
+第一阶段 Authn 入口采用：Casdoor 作为 OIDC Provider，Envoy Gateway 做 OIDC/JWT/claimToHeaders，IAM ExtAuth 生成 Aisphere principal，Kernel generator 根据 proto access policy 生成 public/authn/protected routes。
+
+主线文档：
+
+- [docs/security/envoy-casdoor-oidc-gateway.md](docs/security/envoy-casdoor-oidc-gateway.md)
+- [docs/contracts/authn-gateway-generation.md](docs/contracts/authn-gateway-generation.md)
+
 ## 8. 依赖关系图
 
 ```text
