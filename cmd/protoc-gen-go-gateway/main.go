@@ -19,7 +19,7 @@ var showVersion = flag.Bool("version", false, "print version and exit")
 func main() {
 	flag.Parse()
 	if *showVersion {
-		fmt.Printf("protoc-gen-go-gateway %s (generates github.com/aisphereio/kernel/gatewayx route manifests)\n", release)
+		fmt.Printf("protoc-gen-go-gateway %s\n", release)
 		return
 	}
 	protogen.Options{ParamFunc: flag.CommandLine.Set}.Run(func(gen *protogen.Plugin) error {
@@ -45,8 +45,6 @@ type routeSpec struct {
 	Exposure        int32
 	Audience        string
 	Protocol        string
-	Profiles        []string
-	Tags            []string
 	PathVars        []pathVar
 }
 
@@ -99,9 +97,6 @@ func collectGatewayRoutes(file *protogen.File) map[string][]routeSpec {
 			if !ok {
 				continue
 			}
-			if access.Gateway.Publish == protooptions.GatewayPublishDisabled {
-				continue
-			}
 			all := append([]*annotations.HttpRule{}, rule.AdditionalBindings...)
 			all = append(all, rule)
 			for _, r := range all {
@@ -109,25 +104,8 @@ func collectGatewayRoutes(file *protogen.File) map[string][]routeSpec {
 				if path == "" {
 					continue
 				}
-				spec := routeSpec{
-					ServiceFullName: string(svc.Desc.FullName()),
-					ServiceGoName:   svc.GoName,
-					MethodGoName:    m.GoName,
-					MethodName:      string(m.Desc.Name()),
-					InputGoIdent:    m.Input.GoIdent,
-					FullMethod:      "/" + string(svc.Desc.FullName()) + "/" + string(m.Desc.Name()),
-					HTTPMethod:      method,
-					Path:            path,
-					Exposure:        access.Exposure,
-					Audience:        strings.TrimSpace(access.Authz.Audience),
-					Protocol:        "grpc",
-					Profiles:        cleanStrings(access.Gateway.Profiles),
-					Tags:            cleanStrings(access.Gateway.Tags),
-					PathVars:        resolvePathVars(path, m.Input),
-				}
-				if spec.Exposure == 0 {
-					spec.Exposure = 3
-				}
+				spec := routeSpec{ServiceFullName: string(svc.Desc.FullName()), ServiceGoName: svc.GoName, MethodGoName: m.GoName, MethodName: string(m.Desc.Name()), InputGoIdent: m.Input.GoIdent, FullMethod: "/" + string(svc.Desc.FullName()) + "/" + string(m.Desc.Name()), HTTPMethod: method, Path: path, Exposure: access.Exposure, Audience: strings.TrimSpace(access.Authz.Audience), Protocol: "grpc", PathVars: resolvePathVars(path, m.Input)}
+				if spec.Exposure == 0 { spec.Exposure = 3 }
 				out[svc.GoName] = append(out[svc.GoName], spec)
 			}
 		}
@@ -137,34 +115,24 @@ func collectGatewayRoutes(file *protogen.File) map[string][]routeSpec {
 
 func accessPolicy(m *protogen.Method) (protooptions.AccessPolicy, bool) {
 	unknown := m.Desc.Options().ProtoReflect().GetUnknown()
-	if payload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtAccess); ok {
-		return protooptions.ParseAccessPolicy(payload), true
-	}
+	if payload, ok := protooptions.LastExtensionPayload(unknown, protooptions.ExtAccess); ok { return protooptions.ParseAccessPolicy(payload), true }
 	return protooptions.AccessPolicy{}, false
 }
 
 func httpBinding(rule *annotations.HttpRule) (string, string) {
 	switch p := rule.Pattern.(type) {
-	case *annotations.HttpRule_Get:
-		return http.MethodGet, p.Get
-	case *annotations.HttpRule_Put:
-		return http.MethodPut, p.Put
-	case *annotations.HttpRule_Post:
-		return http.MethodPost, p.Post
-	case *annotations.HttpRule_Delete:
-		return http.MethodDelete, p.Delete
-	case *annotations.HttpRule_Patch:
-		return http.MethodPatch, p.Patch
-	case *annotations.HttpRule_Custom:
-		return strings.ToUpper(p.Custom.Kind), p.Custom.Path
-	default:
-		return http.MethodPost, ""
+	case *annotations.HttpRule_Get: return http.MethodGet, p.Get
+	case *annotations.HttpRule_Put: return http.MethodPut, p.Put
+	case *annotations.HttpRule_Post: return http.MethodPost, p.Post
+	case *annotations.HttpRule_Delete: return http.MethodDelete, p.Delete
+	case *annotations.HttpRule_Patch: return http.MethodPatch, p.Patch
+	case *annotations.HttpRule_Custom: return strings.ToUpper(p.Custom.Kind), p.Custom.Path
+	default: return http.MethodPost, ""
 	}
 }
 
 func genServiceManifest(g *protogen.GeneratedFile, gatewayxPkg, accessv1Pkg protogen.GoImportPath, svc *protogen.Service, routes []routeSpec) {
 	fn := svc.GoName + "GatewayManifest"
-	g.P("// ", fn, " returns the generated Gateway route manifest for ", svc.Desc.FullName(), ".")
 	g.P("func ", fn, "() ", gatewayxPkg.Ident("Manifest"), " {")
 	g.P("return ", gatewayxPkg.Ident("Manifest"), "{")
 	g.P("Service: ", fmt.Sprintf("%q", defaultServiceName(string(svc.Desc.FullName()))), ",")
@@ -172,15 +140,13 @@ func genServiceManifest(g *protogen.GeneratedFile, gatewayxPkg, accessv1Pkg prot
 	g.P("Routes: []", gatewayxPkg.Ident("GatewayRoute"), "{")
 	for _, rt := range routes {
 		svcName := rt.Audience
-		if svcName == "" {
-			svcName = defaultServiceName(rt.ServiceFullName)
-		}
+		if svcName == "" { svcName = defaultServiceName(rt.ServiceFullName) }
 		g.P("{")
 		g.P("ID: ", fmt.Sprintf("%q", defaultRouteID(rt)), ",")
 		g.P("Method: ", fmt.Sprintf("%q", rt.HTTPMethod), ",")
 		g.P("Path: ", fmt.Sprintf("%q", rt.Path), ",")
 		g.P("Upstream: ", gatewayxPkg.Ident("UpstreamRef"), "{Service: ", fmt.Sprintf("%q", svcName), ", Namespace: ", fmt.Sprintf("%q", "aisphere"), ", Protocol: ", fmt.Sprintf("%q", rt.Protocol), ", Operation: ", fmt.Sprintf("%q", rt.FullMethod), "},")
-		g.P("Gateway: ", gatewayxPkg.Ident("GatewayPolicy"), "{Exposure: ", accessv1Pkg.Ident(exposureIdent(rt.Exposure)), ", AuthnMode: ", gatewayxPkg.Ident(authnModeIdent(rt.Exposure)), ", ForwardAuthorization: ", forwardAuth(rt.Exposure), ", Profiles: ", formatStringSlice(rt.Profiles), ", Tags: ", formatStringSlice(rt.Tags), "},")
+		g.P("Gateway: ", gatewayxPkg.Ident("GatewayPolicy"), "{Exposure: ", accessv1Pkg.Ident(exposureIdent(rt.Exposure)), ", AuthnMode: ", gatewayxPkg.Ident(authnModeIdent(rt.Exposure)), ", ForwardAuthorization: ", forwardAuth(rt.Exposure), "},")
 		g.P("},")
 	}
 	g.P("},")
@@ -190,31 +156,23 @@ func genServiceManifest(g *protogen.GeneratedFile, gatewayxPkg, accessv1Pkg prot
 }
 
 func genServiceBindings(g *protogen.GeneratedFile, gatewayxPkg protogen.GoImportPath, svc *protogen.Service, routes []routeSpec) {
-	if len(routes) == 0 {
-		return
-	}
+	if len(routes) == 0 { return }
 	strconvPkg := protogen.GoImportPath("strconv")
 	for _, rt := range routes {
 		bindName := svc.GoName + "GatewayBind" + rt.MethodGoName
-		g.P("// ", bindName, " binds the matched HTTP Gateway request to the gRPC request for ", rt.FullMethod, ".")
 		g.P("func ", bindName, "(req ", gatewayxPkg.Ident("DispatchRequest"), ", match ", gatewayxPkg.Ident("RouteMatch"), ") (*", rt.InputGoIdent, ", error) {")
 		g.P("out := &", rt.InputGoIdent, "{}")
 		g.P("if v, ok := req.Body.(*", rt.InputGoIdent, "); ok && v != nil { out = v }")
 		g.P("if v, ok := req.Body.(", rt.InputGoIdent, "); ok { out = &v }")
-		for _, pv := range rt.PathVars {
-			genPathVarAssignment(g, strconvPkg, pv)
-		}
+		for _, pv := range rt.PathVars { genPathVarAssignment(g, strconvPkg, pv) }
 		g.P("return out, nil")
 		g.P("}")
 		g.P()
 	}
 	regName := "Register" + svc.GoName + "GatewayInvokers"
 	clientType := svc.GoName + "Client"
-	g.P("// ", regName, " registers generated Gateway -> gRPC operation invokers for ", svc.Desc.FullName(), ".")
 	g.P("func ", regName, "(registry *", gatewayxPkg.Ident("InvokerRegistry"), ", client ", clientType, ") error {")
-	for _, rt := range routes {
-		g.P("if err := registry.Register(", fmt.Sprintf("%q", rt.FullMethod), ", ", gatewayxPkg.Ident("GRPCUnaryInvoker"), "(", svc.GoName, "GatewayBind", rt.MethodGoName, ", client.", rt.MethodGoName, ")); err != nil { return err }")
-	}
+	for _, rt := range routes { g.P("if err := registry.Register(", fmt.Sprintf("%q", rt.FullMethod), ", ", gatewayxPkg.Ident("GRPCUnaryInvoker"), "(", svc.GoName, "GatewayBind", rt.MethodGoName, ", client.", rt.MethodGoName, ")); err != nil { return err }") }
 	g.P("return nil")
 	g.P("}")
 	g.P()
@@ -222,163 +180,33 @@ func genServiceBindings(g *protogen.GeneratedFile, gatewayxPkg protogen.GoImport
 
 func resolvePathVars(path string, input *protogen.Message) []pathVar {
 	names := extractPathVars(path)
-	if len(names) == 0 || input == nil {
-		return nil
-	}
+	if len(names) == 0 || input == nil { return nil }
 	fields := map[string]*protogen.Field{}
-	for _, f := range input.Fields {
-		fields[string(f.Desc.Name())] = f
-		fields[f.Desc.JSONName()] = f
-	}
+	for _, f := range input.Fields { fields[string(f.Desc.Name())] = f; fields[f.Desc.JSONName()] = f }
 	out := make([]pathVar, 0, len(names))
-	for _, name := range names {
-		field := strings.Split(name, "=")[0]
-		if f := fields[field]; f != nil {
-			pv := pathVar{Name: field, FieldGoName: f.GoName, Kind: f.Desc.Kind(), MessageField: f.Message != nil}
-			if f.Enum != nil {
-				pv.EnumGoIdent = f.Enum.GoIdent
-			}
-			out = append(out, pv)
-		}
-	}
+	for _, name := range names { field := strings.Split(name, "=")[0]; if f := fields[field]; f != nil { pv := pathVar{Name: field, FieldGoName: f.GoName, Kind: f.Desc.Kind(), MessageField: f.Message != nil}; if f.Enum != nil { pv.EnumGoIdent = f.Enum.GoIdent }; out = append(out, pv) } }
 	return out
 }
 
 func genPathVarAssignment(g *protogen.GeneratedFile, strconvPkg protogen.GoImportPath, pv pathVar) {
-	param := fmt.Sprintf("%q", pv.Name)
-	field := "out." + pv.FieldGoName
+	param := fmt.Sprintf("%q", pv.Name); field := "out." + pv.FieldGoName
 	switch pv.Kind {
-	case protoreflect.StringKind:
-		g.P("if v := match.Params[", param, "]; v != \"\" { ", field, " = v }")
-	case protoreflect.BoolKind:
-		g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseBool"), "(v); if err != nil { return nil, err }; ", field, " = parsed }")
-	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
-		g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseInt"), "(v, 10, 32); if err != nil { return nil, err }; ", field, " = int32(parsed) }")
-	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
-		g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseInt"), "(v, 10, 64); if err != nil { return nil, err }; ", field, " = parsed }")
-	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
-		g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseUint"), "(v, 10, 32); if err != nil { return nil, err }; ", field, " = uint32(parsed) }")
-	case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
-		g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseUint"), "(v, 10, 64); if err != nil { return nil, err }; ", field, " = parsed }")
-	case protoreflect.FloatKind:
-		g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseFloat"), "(v, 32); if err != nil { return nil, err }; ", field, " = float32(parsed) }")
-	case protoreflect.DoubleKind:
-		g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseFloat"), "(v, 64); if err != nil { return nil, err }; ", field, " = parsed }")
-	case protoreflect.EnumKind:
-		if pv.EnumGoIdent.GoName != "" {
-			g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseInt"), "(v, 10, 32); if err != nil { return nil, err }; ", field, " = ", pv.EnumGoIdent, "(parsed) }")
-		}
+	case protoreflect.StringKind: g.P("if v := match.Params[", param, "]; v != \"\" { ", field, " = v }")
+	case protoreflect.BoolKind: g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseBool"), "(v); if err != nil { return nil, err }; ", field, " = parsed }")
+	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind: g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseInt"), "(v, 10, 32); if err != nil { return nil, err }; ", field, " = int32(parsed) }")
+	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind: g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseInt"), "(v, 10, 64); if err != nil { return nil, err }; ", field, " = parsed }")
+	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind: g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseUint"), "(v, 10, 32); if err != nil { return nil, err }; ", field, " = uint32(parsed) }")
+	case protoreflect.Uint64Kind, protoreflect.Fixed64Kind: g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseUint"), "(v, 10, 64); if err != nil { return nil, err }; ", field, " = parsed }")
+	case protoreflect.FloatKind: g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseFloat"), "(v, 32); if err != nil { return nil, err }; ", field, " = float32(parsed) }")
+	case protoreflect.DoubleKind: g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseFloat"), "(v, 64); if err != nil { return nil, err }; ", field, " = parsed }")
+	case protoreflect.EnumKind: if pv.EnumGoIdent.GoName != "" { g.P("if v := match.Params[", param, "]; v != \"\" { parsed, err := ", strconvPkg.Ident("ParseInt"), "(v, 10, 32); if err != nil { return nil, err }; ", field, " = ", pv.EnumGoIdent, "(parsed) }") }
 	}
 }
 
-func extractPathVars(path string) []string {
-	var out []string
-	for {
-		start := strings.Index(path, "{")
-		if start < 0 {
-			break
-		}
-		path = path[start+1:]
-		end := strings.Index(path, "}")
-		if end < 0 {
-			break
-		}
-		name := strings.TrimSpace(path[:end])
-		if name != "" {
-			out = append(out, name)
-		}
-		path = path[end+1:]
-	}
-	return out
-}
-
-func defaultServiceName(full string) string {
-	full = strings.TrimSpace(full)
-	if full == "" {
-		return "service"
-	}
-	parts := strings.Split(full, ".")
-	name := parts[len(parts)-1]
-	name = strings.TrimSuffix(name, "Service")
-	if name == "" {
-		name = parts[len(parts)-1]
-	}
-	return strings.ToLower(kebab(name)) + "-service"
-}
-
-func defaultRouteID(rt routeSpec) string {
-	svc := strings.TrimSuffix(rt.ServiceGoName, "Service")
-	return strings.ToLower(kebab(svc + "." + rt.MethodName))
-}
-
-func kebab(s string) string {
-	var b strings.Builder
-	for i, r := range s {
-		if r == '.' || r == '_' || r == ' ' {
-			b.WriteByte('.')
-			continue
-		}
-		if r >= 'A' && r <= 'Z' {
-			if i > 0 {
-				b.WriteByte('.')
-			}
-			b.WriteRune(r + ('a' - 'A'))
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return strings.ReplaceAll(strings.Trim(b.String(), "."), "..", ".")
-}
-
-func exposureIdent(exposure int32) string {
-	switch exposure {
-	case 1:
-		return "Exposure_PUBLIC"
-	case 2:
-		return "Exposure_AUTHENTICATED"
-	case 3:
-		return "Exposure_AUTHORIZED"
-	case 4:
-		return "Exposure_INTERNAL"
-	case 5:
-		return "Exposure_SYSTEM"
-	default:
-		return "Exposure_AUTHORIZED"
-	}
-}
-
-func authnModeIdent(exposure int32) string {
-	switch exposure {
-	case 1, 5:
-		return "AuthnModeNone"
-	default:
-		return "AuthnModePassive"
-	}
-}
-
+func extractPathVars(path string) []string { var out []string; for { start := strings.Index(path, "{"); if start < 0 { break }; path = path[start+1:]; end := strings.Index(path, "}"); if end < 0 { break }; name := strings.TrimSpace(path[:end]); if name != "" { out = append(out, name) }; path = path[end+1:] }; return out }
+func defaultServiceName(full string) string { full = strings.TrimSpace(full); if full == "" { return "service" }; parts := strings.Split(full, "."); name := strings.TrimSuffix(parts[len(parts)-1], "Service"); if name == "" { name = parts[len(parts)-1] }; return strings.ToLower(kebab(name)) + "-service" }
+func defaultRouteID(rt routeSpec) string { svc := strings.TrimSuffix(rt.ServiceGoName, "Service"); return strings.ToLower(kebab(svc + "." + rt.MethodName)) }
+func kebab(s string) string { var b strings.Builder; for i, r := range s { if r == '.' || r == '_' || r == ' ' { b.WriteByte('.'); continue }; if r >= 'A' && r <= 'Z' { if i > 0 { b.WriteByte('.') }; b.WriteRune(r + ('a' - 'A')); continue }; b.WriteRune(r) }; return strings.ReplaceAll(strings.Trim(b.String(), "."), "..", ".") }
+func exposureIdent(exposure int32) string { switch exposure { case 1: return "Exposure_PUBLIC"; case 2: return "Exposure_AUTHENTICATED"; case 3: return "Exposure_AUTHORIZED"; case 4: return "Exposure_INTERNAL"; case 5: return "Exposure_SYSTEM"; default: return "Exposure_AUTHORIZED" } }
+func authnModeIdent(exposure int32) string { switch exposure { case 1, 5: return "AuthnModeNone"; default: return "AuthnModePassive" } }
 func forwardAuth(exposure int32) bool { return exposure == 2 || exposure == 3 || exposure == 4 }
-
-func cleanStrings(in []string) []string {
-	out := make([]string, 0, len(in))
-	seen := map[string]bool{}
-	for _, v := range in {
-		v = strings.TrimSpace(v)
-		if v == "" || seen[v] {
-			continue
-		}
-		seen[v] = true
-		out = append(out, v)
-	}
-	return out
-}
-
-func formatStringSlice(values []string) string {
-	if len(values) == 0 {
-		return "nil"
-	}
-	parts := make([]string, 0, len(values))
-	for _, v := range values {
-		parts = append(parts, fmt.Sprintf("%q", v))
-	}
-	return "[]string{" + strings.Join(parts, ", ") + "}"
-}
