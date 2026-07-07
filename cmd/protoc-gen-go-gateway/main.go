@@ -99,9 +99,6 @@ func collectGatewayRoutes(file *protogen.File) map[string][]routeSpec {
 			if !ok {
 				continue
 			}
-			if access.Gateway.Publish == protooptions.GatewayPublishDisabled {
-				continue
-			}
 			all := append([]*annotations.HttpRule{}, rule.AdditionalBindings...)
 			all = append(all, rule)
 			for _, r := range all {
