@@ -30,24 +30,16 @@ enum Exposure {
   SYSTEM = 5;
 }
 
-// Gateway controls whether and where an RPC is published into generated
-// gateway route manifests. It is intentionally separate from exposure:
-// exposure describes security semantics, while gateway.publish/profiles
-// describe publication to public/internal/ops gateway profiles.
+// Gateway carries optional routing metadata for gateway generators and runtime
+// route manifests. It must not be used to suppress publication of a method. The
+// decision about whether a route is externally published belongs to generator
+// policy derived from exposure, deployment profile, and concrete gateway target.
 message Gateway {
-  GatewayPublish publish = 1;
+  reserved 1;
+  reserved "publish";
+
   repeated string profiles = 2;
   repeated string tags = 3;
-}
-
-// GatewayPublish is tri-state so omitted policy fields can keep safe defaults.
-// UNSPECIFIED means generators include the route and deployment-time filters
-// decide which gateway profile publishes it. DISABLED means the route is never
-// generated into GatewayManifest even when google.api.http is present.
-enum GatewayPublish {
-  GATEWAY_PUBLISH_UNSPECIFIED = 0;
-  ENABLED = 1;
-  DISABLED = 2;
 }
 
 message Authz {

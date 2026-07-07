@@ -26,12 +26,6 @@ const (
 	ExtAccess protowire.Number = 51010
 )
 
-const (
-	GatewayPublishUnspecified int32 = 0
-	GatewayPublishEnabled     int32 = 1
-	GatewayPublishDisabled    int32 = 2
-)
-
 type AuthzRule struct {
 	Action   string
 	Resource string
@@ -82,7 +76,6 @@ type AccessBreaker struct {
 }
 
 type AccessGateway struct {
-	Publish  int32
 	Profiles []string
 	Tags     []string
 }
@@ -510,15 +503,6 @@ func ParseAccessGateway(b []byte) AccessGateway {
 		}
 		b = b[n:]
 		switch num {
-		case 1:
-			if typ == protowire.VarintType {
-				v, n := protowire.ConsumeVarint(b)
-				if n >= 0 {
-					o.Publish = int32(v)
-					b = b[n:]
-					continue
-				}
-			}
 		case 2:
 			if typ == protowire.BytesType {
 				v, n := protowire.ConsumeString(b)
