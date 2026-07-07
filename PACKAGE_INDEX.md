@@ -85,7 +85,7 @@
 
 ### Envoy Gateway + Casdoor OIDC Authn
 
-第一阶段 Authn 入口采用：Casdoor 作为 OIDC Provider，Envoy Gateway 做 OIDC/JWT/claimToHeaders，IAM ExtAuth 生成 Aisphere principal，Kernel generator 根据 proto access policy 生成 public/authn/protected routes。
+第一阶段 Authn 入口采用 OIDC-only：Casdoor 作为 OIDC Provider，Envoy Gateway 做 OIDC/JWT/claimToHeaders/header sanitize，Kernel generator 根据 proto access policy 生成 public/authn/protected routes。该阶段不生成 Gateway ExternalAuth，不注入 `x-aisphere-principal`，也不注入 `x-aisphere-internal-jwt`。
 
 主线文档：
 
