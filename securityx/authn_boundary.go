@@ -22,6 +22,11 @@ const (
 	// AuthnModeOIDCJWT is the provider-neutral spelling of casdoor_jwt.
 	AuthnModeOIDCJWT = "oidc_jwt"
 
+	// AuthnModePrincipalJWT verifies an IAM-issued Principal assertion JWT from
+	// X-Aisphere-Principal-JWT. This is the preferred backend mode when Envoy
+	// Gateway ExternalAuth delegates external authentication to IAM.
+	AuthnModePrincipalJWT = "principal_jwt"
+
 	// AuthnModeGatewayTrusted trusts Principal headers injected by Gateway, but
 	// only after validating the Gateway -> backend internal-service-token.
 	AuthnModeGatewayTrusted = "gateway_trusted"
@@ -50,6 +55,10 @@ type AuthnBoundaryConfig struct {
 
 	OIDC oidcx.Config `json:"oidc" yaml:"oidc"`
 
+	// PrincipalJWT verifies IAM-issued Gateway -> backend identity assertions.
+	// Business services only need mode=principal_jwt plus this shared secret.
+	PrincipalJWT authn.PrincipalJWTConfig `json:"principal_jwt" yaml:"principal_jwt"`
+
 	// InternalCall is required in gateway_trusted mode and is injected by
 	// Gateway before forwarding requests to backend services.
 	InternalCall authn.InternalServiceTokenConfig `json:"internal_call" yaml:"internal_call"`
@@ -76,6 +85,7 @@ func (c AuthnBoundaryConfig) Normalized() AuthnBoundaryConfig {
 	}
 	c.Mode = strings.ToLower(c.Mode)
 	c.InternalCall = c.InternalCall.Normalized()
+	c.PrincipalJWT = c.PrincipalJWT.Normalized()
 	c.OIDC = c.OIDC.Normalized()
 	return c
 }
@@ -95,9 +105,10 @@ func (r AuthnBoundaryRuntime) Enabled() bool {
 }
 
 // ServerMiddleware returns the complete AuthN middleware for backend services.
-// In gateway_trusted mode it automatically validates internal-service-token and
-// restores Principal from Gateway trusted headers. In casdoor_jwt mode it
-// verifies bearer/cookie-forwarded JWTs with OIDC/JWKS.
+// In principal_jwt mode it verifies IAM-issued Principal JWTs. In
+// gateway_trusted mode it validates internal-service-token and restores Principal
+// from trusted headers. In casdoor_jwt mode it verifies bearer/cookie-forwarded
+// JWTs with OIDC/JWKS.
 func (r AuthnBoundaryRuntime) ServerMiddleware() []middleware.Middleware {
 	if !r.Enabled() || r.Authenticator == nil {
 		return nil
@@ -130,6 +141,9 @@ func NewAuthnBoundaryRuntime(ctx context.Context, cfg AuthnBoundaryConfig, cache
 		}
 		rt.Authenticator = a
 		rt.CredentialExtractor = authnmw.BearerExtractor
+	case AuthnModePrincipalJWT:
+		rt.Authenticator = authn.PrincipalJWTAuthenticator{Config: cfg.PrincipalJWT}
+		rt.CredentialExtractor = authnmw.HeaderExtractor(cfg.PrincipalJWT.Header, authn.CredentialPrincipalJWT)
 	case AuthnModeGatewayTrusted:
 		rt.Authenticator = authn.TrustedHeaderAuthenticator{InternalToken: cfg.InternalCall}
 		rt.CredentialExtractor = authnmw.GatewayTrustedExtractor(cfg.InternalCall.Header())
