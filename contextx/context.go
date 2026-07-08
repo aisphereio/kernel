@@ -2,6 +2,8 @@ package contextx
 
 import (
 	"context"
+	"strings"
+	"time"
 
 	"github.com/aisphereio/kernel/logx"
 )
@@ -68,25 +70,81 @@ func TraceIDFromContext(ctx context.Context) string {
 // Principal
 // ============================================================================
 
+// AttributeSet carries provider-specific claims or request identity metadata.
+// Values should be JSON-serializable when they are persisted or sent to remote
+// systems.
+type AttributeSet map[string]any
+
 // Principal carries the authenticated identity for the current request.
-// It is intentionally a struct (not interface) for stable field access.
-// Transport middleware (httpx / grpcx) populates this from authn results.
+//
+// authn.PrincipalFromContext(ctx) remains the authoritative authn entrypoint for
+// new business code. contextx.Principal is a lossless, request-context mirror for
+// generic framework packages and older contextx-aware business code.
 type Principal struct {
-	// SubjectID is the authenticated user/service ID (e.g. "u_123", "svc:agentkit").
-	SubjectID string
-	// TenantID is the multi-tenant tenant ID (e.g. "t_acme"). Empty for single-tenant.
-	TenantID string
-	// Roles are the roles assigned to the subject (e.g. ["admin", "viewer"]).
-	Roles []string
-	// Scopes are OAuth scopes if applicable (e.g. ["skill:read", "skill:write"]).
+	SubjectID   string
+	SubjectType string
+
+	Provider   string
+	ExternalID string
+	Issuer     string
+	Audience   []string
+
+	TenantID  string
+	OrgID     string
+	AppID     string
+	ProjectID string
+
+	Username string
+	Name     string
+	Email    string
+	Phone    string
+
+	Roles  []string
+	Groups []string
 	Scopes []string
-	// AuthMethod is how the subject authenticated: "oauth", "apikey", "mtls", "dev_token".
+
 	AuthMethod string
+
+	Attributes AttributeSet
+	IssuedAt   time.Time
+	ExpiresAt  time.Time
 }
 
-// IsAuthenticated reports whether SubjectID is non-empty.
+// Normalize returns a copy of p with stable string fields trimmed and defaulted.
+func (p Principal) Normalize() Principal {
+	p.SubjectID = strings.TrimSpace(p.SubjectID)
+	p.SubjectType = strings.TrimSpace(p.SubjectType)
+	if p.SubjectType == "" {
+		p.SubjectType = "user"
+	}
+	p.Provider = strings.TrimSpace(p.Provider)
+	p.ExternalID = strings.TrimSpace(p.ExternalID)
+	p.Issuer = strings.TrimSpace(p.Issuer)
+	p.TenantID = strings.TrimSpace(p.TenantID)
+	p.OrgID = strings.TrimSpace(p.OrgID)
+	p.AppID = strings.TrimSpace(p.AppID)
+	p.ProjectID = strings.TrimSpace(p.ProjectID)
+	p.Username = strings.TrimSpace(p.Username)
+	p.Name = strings.TrimSpace(p.Name)
+	p.Email = strings.TrimSpace(p.Email)
+	p.Phone = strings.TrimSpace(p.Phone)
+	p.AuthMethod = strings.TrimSpace(p.AuthMethod)
+	return p
+}
+
+// IsAuthenticated reports whether the principal represents an authenticated
+// caller.
 func (p *Principal) IsAuthenticated() bool {
-	return p != nil && p.SubjectID != ""
+	if p == nil {
+		return false
+	}
+	n := p.Normalize()
+	return n.SubjectID != "" && n.SubjectType != "anonymous"
+}
+
+// IsAnonymous reports whether the principal is absent or unauthenticated.
+func (p *Principal) IsAnonymous() bool {
+	return !p.IsAuthenticated()
 }
 
 // HasRole reports whether the principal has the given role.
@@ -97,6 +155,20 @@ func (p *Principal) HasRole(role string) bool {
 	}
 	for _, r := range p.Roles {
 		if r == role {
+			return true
+		}
+	}
+	return false
+}
+
+// HasGroup reports whether the principal belongs to the given group.
+// Returns false if p is nil.
+func (p *Principal) HasGroup(group string) bool {
+	if p == nil {
+		return false
+	}
+	for _, g := range p.Groups {
+		if g == group {
 			return true
 		}
 	}
@@ -117,10 +189,30 @@ func (p *Principal) HasScope(scope string) bool {
 	return false
 }
 
+// Attribute returns a provider-specific attribute value.
+func (p *Principal) Attribute(key string) any {
+	if p == nil || p.Attributes == nil {
+		return nil
+	}
+	return p.Attributes[key]
+}
+
+// Expired reports whether the principal has an ExpiresAt timestamp in the past.
+func (p *Principal) Expired(now time.Time) bool {
+	if p == nil {
+		return false
+	}
+	return !p.ExpiresAt.IsZero() && !now.Before(p.ExpiresAt)
+}
+
 // WithPrincipal attaches a Principal to ctx. Pass nil to clear.
 func WithPrincipal(ctx context.Context, p *Principal) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if p != nil {
+		normalized := p.Normalize()
+		p = &normalized
 	}
 	return context.WithValue(ctx, keyPrincipal, p)
 }
@@ -160,8 +252,8 @@ func WithTenant(ctx context.Context, tenantID string) context.Context {
 }
 
 // TenantFromContext returns the tenant ID attached via WithTenant.
-// Falls back to PrincipalFromContext(ctx).TenantID if no explicit tenant.
-// Returns "" if neither is set. Never panics.
+// Falls back to PrincipalFromContext(ctx).TenantID and then OrgID if no explicit
+// tenant is attached. Returns "" if neither is set. Never panics.
 func TenantFromContext(ctx context.Context) string {
 	if ctx != nil {
 		if v, _ := ctx.Value(keyTenant).(string); v != "" {
@@ -169,7 +261,10 @@ func TenantFromContext(ctx context.Context) string {
 		}
 	}
 	if p := PrincipalFromContext(ctx); p != nil {
-		return p.TenantID
+		if p.TenantID != "" {
+			return p.TenantID
+		}
+		return p.OrgID
 	}
 	return ""
 }
