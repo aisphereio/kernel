@@ -6,7 +6,7 @@
 
 | 分类 | 包 | 边界 |
 |---|---|---|
-| 基础设施 | `errorx`, `logx`, `configx`, `metricsx`, `contextx` | 错误、日志、配置、指标、请求上下文主线 |
+| 基础设施 | `errorx`, `logx`, `configx`, `metricsx`, `contextx` | 错误、日志、配置、指标、请求上下文主线；`contextx.Principal` 是 `authn.Principal` 的无损镜像 |
 | 服务装配 | `serverx`, `bootx`, `securityx` | 服务启动、治理校验、安全 runtime 构造；中间件链仍由 `serverx` / `middleware/autowire` 统一装配 |
 | Transport | `transportx/http`, `transportx/grpc`, `requestx` | HTTP/gRPC transport 与请求元信息主线 |
 | 安全 | `authn`, `authz`, `accessx`, `auditx` | `authn` 只回答“是谁”，`authz` 只回答“能不能”，`accessx` 编排 authn + authz + audit，`auditx` 只记录审计事实 |
@@ -85,11 +85,20 @@
 
 ### Envoy Gateway + Casdoor OIDC Authn
 
-第一阶段 Authn 入口采用 OIDC-only：Casdoor 作为 OIDC Provider，Envoy Gateway 做 OIDC/JWT/claimToHeaders/header sanitize，Kernel generator 根据 proto access policy 生成 public/authn/protected routes。该阶段不生成 Gateway ExternalAuth，不注入 `x-aisphere-principal`，也不注入 `x-aisphere-internal-jwt`。
+Authn 入口采用 Envoy Gateway + Casdoor OIDC/JWT。Envoy 负责验签、claimToHeaders 和 header sanitize；Kernel middleware 负责从可信 header 重建 `authn.Principal`，同时无损镜像到 `contextx.Principal`。资源级授权仍由服务端 `accessx` / IAM client / SpiceDB 完成。
+
+业务读取身份的推荐入口：
+
+```go
+p, ok := authn.PrincipalFromContext(ctx)
+```
+
+`contextx.PrincipalFromContext(ctx)` 只作为通用请求上下文和旧代码兼容入口，不再允许精度损失。
 
 主线文档：
 
 - [docs/security/envoy-casdoor-oidc-gateway.md](docs/security/envoy-casdoor-oidc-gateway.md)
+- [docs/contracts/contextx.md](docs/contracts/contextx.md)
 - [docs/contracts/authn-gateway-generation.md](docs/contracts/authn-gateway-generation.md)
 
 ## 8. 依赖关系图

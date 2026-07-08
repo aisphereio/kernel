@@ -40,6 +40,38 @@ func TestPrincipalFromGatewayClaimHeaders(t *testing.T) {
 	}
 }
 
+func TestPrincipalFromGatewayClaimHeadersCasdoorProfileClaims(t *testing.T) {
+	p, ok := PrincipalFromTrustedHeaders(map[string]string{
+		"x-aisphere-external-sub":          "496333c7-7acc-4717-8596-056544fc0a68",
+		"x-aisphere-external-id":           "496333c7-7acc-4717-8596-056544fc0a68",
+		"x-aisphere-external-issuer":       "https://casdoor.weagent.cc:30723",
+		"x-aisphere-external-email":        "l2ov7s@example.com",
+		"x-aisphere-external-name":         "admin",
+		"x-aisphere-external-display-name": "管理员",
+		"x-aisphere-external-phone":        "46192823473",
+		"x-aisphere-external-owner":        "aisphere",
+		"x-aisphere-external-scope":        "openid profile email",
+	})
+	if !ok {
+		t.Fatal("expected principal from casdoor gateway claim headers")
+	}
+	if p.SubjectID != "496333c7-7acc-4717-8596-056544fc0a68" {
+		t.Fatalf("unexpected subject id: %q", p.SubjectID)
+	}
+	if p.ExternalID != "496333c7-7acc-4717-8596-056544fc0a68" {
+		t.Fatalf("unexpected external id: %q", p.ExternalID)
+	}
+	if p.TenantID != "aisphere" || p.OrgID != "aisphere" {
+		t.Fatalf("owner should populate tenant/org: %#v", p)
+	}
+	if p.Username != "admin" || p.Name != "管理员" || p.Phone != "46192823473" {
+		t.Fatalf("profile claims not preserved: %#v", p)
+	}
+	if !p.HasScope("openid") || !p.HasScope("profile") || !p.HasScope("email") {
+		t.Fatalf("space-separated oauth scopes not parsed: %#v", p.Scopes)
+	}
+}
+
 func TestPrincipalFromGatewayClaimHeadersPrefersInternalProjection(t *testing.T) {
 	p, ok := PrincipalFromTrustedHeaders(map[string]string{
 		"x-aisphere-external-sub": "casdoor/admin",

@@ -130,10 +130,11 @@ func GatewayTrustedExtractor(internalTokenHeader string) CredentialExtractor {
 		if value := strings.TrimSpace(h.Get(rootauthn.InternalServiceTokenHeader)); value != "" {
 			metadata[rootauthn.InternalServiceTokenHeader] = value
 		}
-		if _, ok := rootauthn.PrincipalFromTrustedHeaders(metadata); !ok {
+		principal, ok := rootauthn.PrincipalFromTrustedHeaders(metadata)
+		if !ok {
 			return rootauthn.Credential{}, false
 		}
-		return rootauthn.Credential{Scheme: rootauthn.CredentialGatewayTrusted, Token: metadata[rootauthn.TrustedHeaderSubject], Metadata: metadata}, true
+		return rootauthn.Credential{Scheme: rootauthn.CredentialGatewayTrusted, Token: principal.SubjectID, Metadata: metadata}, true
 	}
 }
 
@@ -157,6 +158,8 @@ func withPrincipal(ctx context.Context, p rootauthn.Principal) context.Context {
 		ctx = contextx.WithAuthnPrincipal(ctx, p)
 		if p.TenantID != "" {
 			ctx = contextx.WithTenant(ctx, p.TenantID)
+		} else if p.OrgID != "" {
+			ctx = contextx.WithTenant(ctx, p.OrgID)
 		}
 	}
 	return ctx
