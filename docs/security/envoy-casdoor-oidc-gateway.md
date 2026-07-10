@@ -2,15 +2,16 @@
 
 本文定义 Kernel 侧对接 Envoy Gateway + Casdoor OIDC 的入口认证、header 投影和业务读取规则。
 
-## 1. 阶段目标
+## 1. 总体定位
 
-当前阶段不要求 Gateway ExternalAuth。认证由 Envoy Gateway 基于 Casdoor OIDC/JWT 完成，资源级授权仍由后端 Kernel `accessx` / IAM client / SpiceDB 完成。
+认证由 Envoy Gateway 基于 Casdoor OIDC/JWT 完成，资源级授权由后端 Kernel `accessx` / IAM / SpiceDB 完成。
 
 ```text
-Casdoor = OIDC Provider
-Envoy Gateway = OIDC/JWT 验签、claimToHeaders、header sanitize、路由转发
-Kernel = header trusted extraction、Principal 自动注入、accessx/authz/audit 编排
-IAM = 后端目录/授权服务；当前不作为 Gateway ExternalAuth 必选组件
+Casdoor = OIDC Provider / 身份目录
+Envoy Gateway = 平台唯一外部 Authn 边界
+                OIDC 登录、JWT 验签、claimToHeaders、header sanitize、路由转发
+Kernel = 从可信 header 重建 authn.Principal、自动注入 Context、accessx/authz/audit 编排
+IAM = 后端目录/授权服务；不负责浏览器 OAuth 登录流程
 ```
 
 关键目标：
@@ -18,31 +19,29 @@ IAM = 后端目录/授权服务；当前不作为 Gateway ExternalAuth 必选组
 ```text
 1. Browser 访问受保护页面时由 Envoy Gateway 触发 Casdoor OIDC 登录。
 2. CLI/Agent/API Client 直接携带 Bearer token，由 Envoy Gateway 通过 Casdoor JWKS 验签。
-3. Gateway 将已验证 JWT 的有限 claim 转成 x-aisphere-external-* header。
-4. Gateway 可以同时投影 x-aisphere-principal / x-aisphere-user-id / x-aisphere-org-id 等内部读取 header。
-5. Gateway 必须清理客户端伪造的 x-aisphere-* / x-internal-* header。
-6. 后端 Kernel middleware 自动从可信 header 重建 authn.Principal 并注入 ctx。
-7. AUTHZ 方法仍由服务端 Kernel access chain 做资源级授权。
+3. Envoy Gateway 将已验证 JWT 的有限 claim 转成 x-aisphere-external-* header。
+4. Envoy Gateway 必须清理客户端伪造的 x-aisphere-* / x-internal-* header。
+5. 后端 Kernel middleware 自动从可信 header 重建 authn.Principal 并注入 ctx。
+6. AUTHZ 方法仍由服务端 Kernel access chain 做资源级授权。
 ```
 
 ## 2. 安全分级
 
 Kernel/proto 中的接口统一分为三类：
 
-| 模式 | Gateway 认证 | Gateway 授权 | 后端要求 | 典型接口 |
-|---|---:|---:|---|---|
-| `AUTH_NONE` | 否 | 否 | 不要求 principal | `/healthz`、`/readyz`、`/openapi.json`、`/api/v1/public/*` |
-| `AUTHN_ONLY` | 是 | 否 | 可读取 Principal | `/api/v1/me`、`/api/v1/profile` |
-| `AUTHZ` | 是 | 否 | 后端 `accessx` / IAM client / SpiceDB 做业务授权 | 业务资源接口 |
+| 模式 | Envoy Gateway 认证 | 后端要求 | 典型接口 |
+|---|---|---|---|
+| `AUTH_NONE` | 否 | 不要求 principal | `/healthz`、`/readyz`、`/openapi.json` |
+| `AUTHN_ONLY` | 是（OIDC/JWT） | 可读取 Principal | `/api/v1/me`、`/api/v1/profile` |
+| `AUTHZ` | 是（OIDC/JWT） | 后端 `accessx` / IAM / SpiceDB 做业务授权 | 业务资源接口 |
 
 约束：
 
 ```text
-1. 不把 Casdoor OIDC SecurityPolicy 挂到 Gateway 全局。
+1. 不把 Casdoor OIDC SecurityPolicy 挂到 Envoy Gateway 全局。
 2. public route 不挂 OIDC/JWT SecurityPolicy。
 3. authn/authz route 都挂 OIDC/JWT SecurityPolicy。
 4. 所有 route 都必须执行 header sanitize。
-5. 当前阶段不要求 Gateway ExternalAuth。
 ```
 
 ## 3. Header 规范

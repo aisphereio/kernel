@@ -1,4 +1,4 @@
-# AuthN Full Flow: Casdoor JWT -> Gateway JWKS -> gRPC Backend
+# AuthN Full Flow: Casdoor JWT -> Envoy Gateway JWKS -> Backend
 
 ## Decision
 
@@ -9,18 +9,16 @@ The standard request path is:
 ```text
 Browser / CLI
   -> Authorization: Bearer <Casdoor access_token JWT>
-Gateway
+Envoy Gateway
   -> OIDC discovery + JWKS verification
   -> validate issuer / audience / expiry / owner / algorithm
   -> strip spoofable X-Aisphere-* headers
-  -> inject trusted Principal headers / gRPC metadata
-  -> forward to backend gRPC service
+  -> inject trusted Principal headers
+  -> forward to backend service
 Backend service
-  -> either trust Gateway Principal or re-verify the same JWT with Kernel oidcx
+  -> trust Envoy Gateway Principal (gateway_trusted mode)
   -> execute business logic
 ```
-
-For the current full-flow authn test, authorization can be short-circuited with `dev_allow_all` or route-level SkipAuthz. The goal is to verify that authentication is correct from edge to backend.
 
 ## JWKS and caching
 
@@ -31,33 +29,55 @@ Kernel provides two caches:
 1. In-process JWKS cache in `authn/oidcx`. It caches public keys by `kid` and refreshes from `jwks_uri` after `jwks_cache_ttl_ns`.
 2. Optional token verification-result cache via `authn.NewCachedAuthenticator`. It stores a normalized `Principal` keyed by `sha256(token)`, never by raw token. TTL is capped by `min(cache_ttl, token.exp-now)`, so an expired token is never served from cache.
 
-Redis is optional. It is useful for high-QPS Gateways where repeated JWT verification becomes expensive. It is not required for correctness.
+Redis is optional. It is useful for high-QPS scenarios where repeated JWT verification becomes expensive. It is not required for correctness.
 
 Do not cache raw access tokens, private keys, client secrets, or decrypted data. JWTs here are signed, not encrypted.
 
-## Gateway config
+## Envoy Gateway SecurityPolicy config
 
 ```yaml
-security:
-  authn:
-    enabled: true
-    provider: casdoor
-    cache_ttl_ns: 300000000000
-    oidc:
-      provider: casdoor
-      issuer: https://casdoor.example.com
-      discovery_url: https://casdoor.example.com/.well-known/openid-configuration
-      jwks_url: https://casdoor.example.com/.well-known/jwks
-      audience: [aisphere-web]
-      allowed_owners: [aisphere]
-      allowed_algs: [RS256]
-      jwks_cache_ttl_ns: 600000000000
-      clock_skew_ns: 60000000000
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: myapp-oidc
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: myapp-route
+  oidc:
+    provider:
+      issuer: https://casdoor.weagent.cc
+    clientID: myapp-web
+    clientSecret:
+      name: casdoor-myapp-oidc
+    redirectURL: https://myapp.weagent.cc/oauth2/callback
+    logoutPath: /logout
+    scopes: [openid, profile, email]
+    refreshToken: true
+    forwardAccessToken: true
+    passThroughAuthHeader: true
+  jwt:
+    providers:
+      - name: casdoor
+        issuer: "https://casdoor.weagent.cc"
+        audiences: ["myapp-web"]
+        remoteJWKS:
+          uri: "https://casdoor.weagent.cc/.well-known/jwks"
+        claimToHeaders:
+          - claim: sub
+            header: x-aisphere-external-sub
+          - claim: email
+            header: x-aisphere-external-email
+          - claim: name
+            header: x-aisphere-external-name
+          - claim: preferred_username
+            header: x-aisphere-external-username
 ```
 
 ## Backend mode
 
-Backend services can choose one of two modes:
+Backend services use `gateway_trusted` mode:
 
 ```yaml
 security:
@@ -65,19 +85,11 @@ security:
     mode: gateway_trusted
 ```
 
-Trust Gateway-injected principal. This requires network policy / mTLS so clients cannot bypass Gateway.
-
-```yaml
-security:
-  authn:
-    mode: casdoor_jwt
-```
-
-Re-verify the same Casdoor JWT locally with Kernel `authn/oidcx`. This is useful for high-sensitivity services or during the full-flow authn test.
+Trust Envoy Gateway-injected principal. This requires NetworkPolicy so clients cannot bypass Envoy Gateway.
 
 ## Validation checklist
 
-Gateway must validate:
+Envoy Gateway must validate:
 
 - JWT signature using JWKS public key selected by `kid`
 - `alg` is in allowlist
@@ -85,6 +97,5 @@ Gateway must validate:
 - `aud` contains configured audience
 - `exp` is not expired
 - `nbf` and `iat` are valid within clock skew
-- Casdoor `owner` is in `allowed_owners`, when configured
 
-Gateway must remove inbound `X-Aisphere-*` headers before injecting trusted identity headers.
+Envoy Gateway must remove inbound `X-Aisphere-*` headers before injecting trusted identity headers via `ClientTrafficPolicy`.

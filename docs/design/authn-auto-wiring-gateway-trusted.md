@@ -1,4 +1,4 @@
-# AuthN Auto Wiring: Casdoor JWT at Gateway, Gateway-Trusted Backends
+# AuthN Auto Wiring: Envoy Gateway OIDC, Gateway-Trusted Backends
 
 ## Final boundary
 
@@ -6,18 +6,17 @@ The platform uses one clear AuthN chain:
 
 ```text
 Client Casdoor JWT
-  -> Gateway verifies JWT with OIDC Discovery/JWKS
-  -> Gateway strips spoofable identity/internal headers
-  -> Gateway injects X-Aisphere-* Principal headers
-  -> Gateway injects X-Aisphere-Internal-Token
+  -> Envoy Gateway verifies JWT with OIDC Discovery/JWKS
+  -> Envoy Gateway strips spoofable identity/internal headers
+  -> Envoy Gateway injects X-Aisphere-* Principal headers
+  -> Envoy Gateway injects X-Aisphere-Internal-Token
   -> Backend service verifies internal token
   -> Backend restores Principal from trusted headers
   -> middleware/access consumes Principal for authz/audit
   -> Business handler reads authn.PrincipalFromContext(ctx)
 ```
 
-Casdoor remains the only login/session/token issuer. Kernel does not issue JWTs,
-store passwords, or store sessions.
+Casdoor remains the only login/session/token issuer. Kernel does not issue JWTs, store passwords, or store sessions.
 
 ## Framework API
 
@@ -29,8 +28,7 @@ Services should not manually construct these pieces:
 - internal-service-token header checks
 - authn/access middleware order
 
-Instead they use the canonical `security` subtree and build a provider-neutral
-runtime:
+Instead they use the canonical `security` subtree and build a provider-neutral runtime:
 
 ```go
 securityRuntime, err := securityx.NewRuntime(ctx, securityx.Config{
@@ -62,36 +60,11 @@ middlewares := serverx.ServerMiddlewareFromProviders(ctx, serverx.RuntimeProvide
 })
 ```
 
-`securityx` builds runtime values from config. `serverx/autowire` remains the
-only middleware assembly layer and owns the middleware order.
+`securityx` builds runtime values from config. `serverx/autowire` remains the only middleware assembly layer and owns the middleware order.
 
-## Modes
+## Mode: gateway_trusted (default)
 
-### `casdoor_jwt`
-
-Used by Gateway and optionally by high-security services.
-
-```yaml
-security:
-  authn:
-    enabled: true
-    mode: casdoor_jwt
-    provider: casdoor
-    oidc:
-      issuer: "https://casdoor.example.com"
-      discovery_url: "https://casdoor.example.com/.well-known/openid-configuration"
-      jwks_url: "https://casdoor.example.com/.well-known/jwks"
-      audience: ["hub-web"]
-      allowed_owners: ["aisphere"]
-      allowed_algs: ["RS256"]
-```
-
-The verifier validates signature, issuer, audience, `exp`, `nbf`, `iat`,
-algorithm and optional Casdoor owner.
-
-### `gateway_trusted`
-
-Default backend mode.
+Default backend mode for all services behind Envoy Gateway.
 
 ```yaml
 security:
@@ -111,33 +84,21 @@ security:
       - CreateOrganization
 ```
 
-The backend validates the internal token, requires
-`X-Aisphere-Auth-Verified=true`, restores the trusted Principal and puts it into
-`context.Context`.
+The backend validates the internal token, requires `X-Aisphere-Auth-Verified=true`, restores the trusted Principal and puts it into `context.Context`.
 
-### `hybrid`
+## Envoy Gateway behavior
 
-Migration/debug mode. It first accepts bearer JWTs, otherwise falls back to
-Gateway trusted headers. Do not use it as the long-term production default.
+Envoy Gateway owns the edge behavior:
 
-## Gateway behavior
-
-`gatewayx.Dispatcher` owns the edge behavior:
-
-1. Strip all incoming `X-Aisphere-*` trusted headers.
-2. Strip incoming `X-Aisphere-Internal-Token`.
-3. Verify the external Casdoor/OIDC bearer JWT for protected routes.
-4. Inject trusted Principal headers.
-5. Inject Gateway-to-backend internal token.
-6. Forward to the selected upstream.
-
-Business Gateway code only supplies the configured `Authenticator` and
-`InternalServiceTokenConfig` to the dispatcher.
+1. Strip all incoming `X-Aisphere-*` trusted headers via `ClientTrafficPolicy`.
+2. Verify the external Casdoor/OIDC bearer JWT for protected routes via `SecurityPolicy`.
+3. Inject trusted Principal headers via `claimToHeaders`.
+4. Inject Gateway-to-backend internal token.
+5. Forward to the selected upstream.
 
 ## Access behavior
 
-`accessx` does not own the normal authentication flow. The normal request chain
-is:
+`accessx` does not own the normal authentication flow. The normal request chain is:
 
 ```text
 middleware/authn
@@ -150,9 +111,7 @@ middleware/access
 business handler
 ```
 
-`SkipAuthz` still requires an authenticated Principal and records audit.
-`SkipAll` skips authn/authz for public endpoints but still records audit with an
-anonymous actor.
+`SkipAuthz` still requires an authenticated Principal and records audit. `SkipAll` skips authn/authz for public endpoints but still records audit with an anonymous actor.
 
 ## Business usage
 
@@ -165,5 +124,4 @@ if !ok || !principal.IsAuthenticated() {
 }
 ```
 
-Handlers must not parse Authorization headers, trusted headers, JWKS, or
-internal-service-token values directly.
+Handlers must not parse Authorization headers, trusted headers, JWKS, or internal-service-token values directly.

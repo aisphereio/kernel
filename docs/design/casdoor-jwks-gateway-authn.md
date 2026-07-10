@@ -1,4 +1,4 @@
-# Casdoor JWKS + Gateway AuthN Boundary
+# Casdoor JWKS + Envoy Gateway AuthN Boundary
 
 ## Decision
 
@@ -6,8 +6,8 @@ Kernel standardizes the following model:
 
 ```text
 Casdoor signs OAuth/OIDC access tokens as JWTs.
-Gateway verifies those JWTs locally with OIDC Discovery + JWKS.
-Gateway injects trusted Principal headers for internal services.
+Envoy Gateway verifies those JWTs locally with OIDC Discovery + JWKS.
+Envoy Gateway injects trusted Principal headers for internal services.
 Internal services default to gateway_trusted mode.
 IAM does not sign a second platform JWT.
 ```
@@ -25,7 +25,7 @@ The secret is the private key stored by Casdoor. Publishing JWKS is the standard
 
 ## Verification requirements
 
-A valid Gateway verifier must check:
+A valid Envoy Gateway verifier must check:
 
 - JWT signature against a configured Casdoor JWKS.
 - `alg` is in an allow-list.
@@ -38,27 +38,23 @@ Never derive the JWKS URL from an untrusted token at request time. Discovery/JWK
 
 ## Header trust rule
 
-Gateway must strip inbound `X-Aisphere-*` identity headers before injection. After JWT verification it may inject:
+Envoy Gateway must strip inbound `X-Aisphere-*` identity headers before injection via `ClientTrafficPolicy`. After JWT verification it injects via `claimToHeaders`:
 
 ```text
-X-Aisphere-Auth-Verified
-X-Aisphere-Subject
-X-Aisphere-Subject-Type
-X-Aisphere-Provider
-X-Aisphere-External-ID
-X-Aisphere-Owner
-X-Aisphere-Username
-X-Aisphere-Email
-X-Aisphere-Groups
-X-Aisphere-Roles
-X-Aisphere-Scopes
+x-aisphere-external-sub
+x-aisphere-external-email
+x-aisphere-external-name
+x-aisphere-external-username
+x-aisphere-external-issuer
+x-aisphere-external-owner
+x-aisphere-external-id
 ```
 
-Services may use `authn.TrustedHeaderAuthenticator` only when traffic cannot bypass Gateway.
+Services use `authn.TrustedHeaderAuthenticator` only when traffic cannot bypass Envoy Gateway.
 
 ## Kernel packages
 
 - `authn/casdoor`: supports static cert fallback and OIDC/JWKS verification.
 - `authn`: defines trusted identity header constants and mapping helpers.
 - `middleware/authn`: provides `TrustedHeaderExtractor` for internal services.
-- `gatewayx`: verifies external JWTs when configured with `WithAuthenticator`, strips spoofed trusted headers, and injects verified Principal headers.
+- `gatewayx`: route manifest generation and route registry structures.

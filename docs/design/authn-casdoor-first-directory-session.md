@@ -14,11 +14,11 @@ Kernel and IAM must not implement a second local account system. In particular:
 
 ## Runtime authentication
 
-Gateway verifies Casdoor JWTs with Casdoor OIDC Discovery/JWKS. After a token is verified, Gateway injects a trusted `authn.Principal` into HTTP headers or gRPC metadata. Internal services normally run in `gateway_trusted` mode and do not perform login/session handling.
+Envoy Gateway verifies Casdoor JWTs with Casdoor OIDC Discovery/JWKS. After a token is verified, Envoy Gateway injects a trusted `authn.Principal` into HTTP headers via `claimToHeaders`. Internal services normally run in `gateway_trusted` mode and do not perform login/session handling.
 
 ```text
-Client -> Gateway gwauthn -> Casdoor JWT verify -> Principal
-Gateway -> AccessX/AuthZ -> backend service
+Client -> Envoy Gateway OIDC/JWT -> Casdoor JWT verify -> Principal
+Envoy Gateway -> Backend service (gateway_trusted)
 ```
 
 ## Identity management
