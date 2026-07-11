@@ -1,46 +1,46 @@
 go test ./authn ./authz ./accessx ./serverx ./gatewayx ./requestx ./middleware/... ./cmd/...
-ok  	github.com/aisphereio/kernel/authn	0.006s
-ok  	github.com/aisphereio/kernel/authz	0.011s
-ok  	github.com/aisphereio/kernel/accessx	0.006s
-ok  	github.com/aisphereio/kernel/serverx	0.020s
+ok  	github.com/aisphereio/kernel/authn	0.011s
+ok  	github.com/aisphereio/kernel/authz	0.009s
+ok  	github.com/aisphereio/kernel/accessx	0.018s
+ok  	github.com/aisphereio/kernel/serverx	0.022s
 ok  	github.com/aisphereio/kernel/gatewayx	0.009s
-ok  	github.com/aisphereio/kernel/requestx	0.007s
+ok  	github.com/aisphereio/kernel/requestx	0.011s
 ok  	github.com/aisphereio/kernel/middleware	0.003s
-ok  	github.com/aisphereio/kernel/middleware/access	0.005s
-ok  	github.com/aisphereio/kernel/middleware/authn	0.005s
-ok  	github.com/aisphereio/kernel/middleware/autowire	0.007s
+ok  	github.com/aisphereio/kernel/middleware/access	0.007s
+ok  	github.com/aisphereio/kernel/middleware/authn	0.007s
+ok  	github.com/aisphereio/kernel/middleware/autowire	0.013s
 ok  	github.com/aisphereio/kernel/middleware/circuitbreaker	0.003s
-ok  	github.com/aisphereio/kernel/middleware/ctxinject	0.005s
-ok  	github.com/aisphereio/kernel/middleware/logging	0.006s
+ok  	github.com/aisphereio/kernel/middleware/ctxinject	0.006s
+ok  	github.com/aisphereio/kernel/middleware/logging	0.007s
 ok  	github.com/aisphereio/kernel/middleware/metadata	0.006s
 ok  	github.com/aisphereio/kernel/middleware/recovery	0.003s
 ok  	github.com/aisphereio/kernel/middleware/requestinfo	0.006s
 ok  	github.com/aisphereio/kernel/middleware/retry	0.003s
-ok  	github.com/aisphereio/kernel/middleware/selector	0.004s
+ok  	github.com/aisphereio/kernel/middleware/selector	0.005s
 ok  	github.com/aisphereio/kernel/middleware/timeout	0.003s
-ok  	github.com/aisphereio/kernel/middleware/validate	0.004s
-ok  	github.com/aisphereio/kernel/cmd/buf-check-aisphere	0.004s
+ok  	github.com/aisphereio/kernel/middleware/validate	0.003s
+ok  	github.com/aisphereio/kernel/cmd/buf-check-aisphere	0.005s
 ?   	github.com/aisphereio/kernel/cmd/kernel	[no test files]
-ok  	github.com/aisphereio/kernel/cmd/kernel/internal/base	0.047s
+ok  	github.com/aisphereio/kernel/cmd/kernel/internal/base	0.044s
 ok  	github.com/aisphereio/kernel/cmd/kernel/internal/change	0.004s
 --- FAIL: TestResolveLayoutDefaultsToLocalLayout (0.00s)
-    layout_test.go:35: expected local layout "/tmp/TestResolveLayoutDefaultsToLocalLayout1975898003/001/layout", got "https://github.com/aisphereio/kernel-layout.git"
+    layout_test.go:35: expected local layout "/tmp/TestResolveLayoutDefaultsToLocalLayout2946982997/001/layout", got "https://github.com/aisphereio/kernel-layout.git"
 FAIL
-FAIL	github.com/aisphereio/kernel/cmd/kernel/internal/project	0.007s
+FAIL	github.com/aisphereio/kernel/cmd/kernel/internal/project	0.008s
 ?   	github.com/aisphereio/kernel/cmd/kernel/internal/project/templates	[no test files]
 ?   	github.com/aisphereio/kernel/cmd/kernel/internal/proto	[no test files]
-ok  	github.com/aisphereio/kernel/cmd/kernel/internal/proto/add	0.004s
+ok  	github.com/aisphereio/kernel/cmd/kernel/internal/proto/add	0.011s
 ?   	github.com/aisphereio/kernel/cmd/kernel/internal/proto/client	[no test files]
-ok  	github.com/aisphereio/kernel/cmd/kernel/internal/proto/server	0.004s
-?   	github.com/aisphereio/kernel/cmd/kernel/internal/run	[no test files]
-?   	github.com/aisphereio/kernel/cmd/kernel/internal/upgrade	[no test files]
 # github.com/aisphereio/kernel/cmd/protoc-gen-aisphere-gateway
 cmd/protoc-gen-aisphere-gateway/main.go:106:21: access.Gateway undefined (type protooptions.AccessPolicy has no field or method Gateway)
 cmd/protoc-gen-aisphere-gateway/main.go:106:53: undefined: protooptions.GatewayPublishDisabled
+ok  	github.com/aisphereio/kernel/cmd/kernel/internal/proto/server	0.006s
+?   	github.com/aisphereio/kernel/cmd/kernel/internal/run	[no test files]
+?   	github.com/aisphereio/kernel/cmd/kernel/internal/upgrade	[no test files]
 FAIL	github.com/aisphereio/kernel/cmd/protoc-gen-aisphere-gateway [build failed]
-ok  	github.com/aisphereio/kernel/cmd/protoc-gen-go-authz	0.004s
+ok  	github.com/aisphereio/kernel/cmd/protoc-gen-go-authz	0.006s
 ?   	github.com/aisphereio/kernel/cmd/protoc-gen-go-deploy	[no test files]
-ok  	github.com/aisphereio/kernel/cmd/protoc-gen-go-errors	0.003s
+ok  	github.com/aisphereio/kernel/cmd/protoc-gen-go-errors	0.004s
 ?   	github.com/aisphereio/kernel/cmd/protoc-gen-go-errors/errors	[no test files]
 ok  	github.com/aisphereio/kernel/cmd/protoc-gen-go-gateway	0.004s
 ok  	github.com/aisphereio/kernel/cmd/protoc-gen-go-http	0.006s
