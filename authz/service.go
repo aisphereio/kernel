@@ -32,6 +32,19 @@ type RelationshipStore interface {
 	RelationshipReader
 }
 
+// RuntimeService is the complete authorization data-plane surface used by
+// business services at request time. It intentionally excludes schema
+// administration so services can delegate checks, lookups, and relationship
+// projection to an IAM authorization service without receiving permission to
+// publish or replace the shared authorization model.
+type RuntimeService interface {
+	Authorizer
+	BatchAuthorizer
+	ResourceLookup
+	SubjectLookup
+	RelationshipStore
+}
+
 // SchemaManager is implemented by engines like SpiceDB that own an explicit
 // authorization schema.
 type SchemaManager interface {
@@ -40,14 +53,11 @@ type SchemaManager interface {
 	ValidateSchema(ctx context.Context, schema Schema) error
 }
 
-// Service is the complete authorization surface. Business hot paths usually
-// need only Authorizer; admin/provisioning paths need relationship/schema APIs.
+// Service is the complete authorization control-plane surface. Business hot
+// paths normally depend on RuntimeService; IAM/admin provisioning paths that
+// own the authorization model may depend on Service.
 type Service interface {
-	Authorizer
-	BatchAuthorizer
-	ResourceLookup
-	SubjectLookup
-	RelationshipStore
+	RuntimeService
 	SchemaManager
 }
 
