@@ -40,14 +40,21 @@ type SchemaManager interface {
 	ValidateSchema(ctx context.Context, schema Schema) error
 }
 
-// Service is the complete authorization surface. Business hot paths usually
-// need only Authorizer; admin/provisioning paths need relationship/schema APIs.
-type Service interface {
+// RuntimeService is the authorization surface exposed by IAM to business
+// services. It intentionally excludes schema management: only IAM owns and
+// publishes the backing authorization engine schema.
+type RuntimeService interface {
 	Authorizer
 	BatchAuthorizer
 	ResourceLookup
 	SubjectLookup
 	RelationshipStore
+}
+
+// Service is the complete authorization-engine surface. It is implemented by
+// providers such as SpiceDB and must only be constructed inside IAM.
+type Service interface {
+	RuntimeService
 	SchemaManager
 }
 
