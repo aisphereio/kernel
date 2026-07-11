@@ -61,7 +61,9 @@ jobs:
         run: make vuln
 
       - name: Commit final Kernel repair
+        shell: bash
         run: |
+          set -euxo pipefail
           git checkout origin/master -- .github/workflows/verify.yml
           python3 - <<'PY'
           from pathlib import Path
@@ -74,6 +76,9 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
+          git status --short
           git diff --cached --stat
-          git commit -m "fix: stabilize Kernel authz contract verification"
+          if ! git diff --cached --quiet; then
+            git commit -m "fix: stabilize Kernel authz contract verification"
+          fi
           git push origin HEAD:fix/authz-runtime-service-contract
