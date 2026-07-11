@@ -1,0 +1,22 @@
+=== Symbol Results ===
+
+Vulnerability #1: GO-2026-5856
+    Invoking Encrypted Client Hello privacy leak in crypto/tls
+  More info: https://pkg.go.dev/vuln/GO-2026-5856
+  Standard library
+    Found in: crypto/tls@go1.25.11
+    Fixed in: crypto/tls@go1.25.12
+    Example traces found:
+      #1: transportx/grpc/server.go:262:16: grpc.Server.Start calls grpc.Server.Serve, which eventually calls tls.Conn.Handshake
+      #2: transportx/http/server.go:375:16: http.Server.Start calls http.Server.Serve, which eventually calls tls.Conn.HandshakeContext
+      #3: transportx/http/context.go:150:19: http.wrapper.Stream calls io.Copy, which eventually calls tls.Conn.Read
+      #4: errorx/error.go:239:22: errorx.Error.Format calls fmt.Fprintf, which calls tls.Conn.Write
+      #5: cachex/redis/redis.go:297:29: redis.Subscribe calls redis.PubSub.Unsubscribe, which eventually calls tls.DialWithDialer
+      #6: authn/casdoor/observability.go:65:32: casdoor.casdoorRoundTripper.RoundTrip calls http.Transport.RoundTrip, which eventually calls tls.Dialer.DialContext
+
+Your code is affected by 1 vulnerability from the Go standard library.
+This scan also found 1 vulnerability in packages you import and 14
+vulnerabilities in modules you require, but your code doesn't appear to call
+these vulnerabilities.
+Use '-show verbose' for more details.
+make: *** [Makefile:171: vuln] Error 3
