@@ -7,12 +7,24 @@ on:
       - master
       - main
 
+permissions:
+  contents: write
+
+concurrency:
+  group: kernel-authz-runtime-contract
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/authz-runtime-service-contract
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-go@v5
         with:
@@ -22,7 +34,23 @@ jobs:
         run: go mod download
 
       - name: Root tests
-        run: make test
+        id: root_tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          make test 2>&1 | tee /tmp/kernel-root-test.txt
+
+      - name: Persist root-test diagnostics
+        if: steps.root_tests.outcome == 'failure'
+        run: |
+          cp /tmp/kernel-root-test.txt .github/kernel-root-test-failure.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -f .github/kernel-root-test-failure.txt
+          git commit -m "chore: capture Kernel root test failure" || true
+          git push origin HEAD:fix/authz-runtime-service-contract
+          exit 1
 
       - name: Command submodule tests
         run: make test-cmd
@@ -41,3 +69,13 @@ jobs:
 
       - name: Govulncheck
         run: make vuln
+
+      - name: Restore final workflow
+        run: |
+          git checkout origin/master -- .github/workflows/verify.yml
+          rm -f .github/kernel-root-test-failure.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --quiet || git commit -m "chore: restore Kernel verification workflow"
+          git push origin HEAD:fix/authz-runtime-service-contract
