@@ -30,6 +30,12 @@ jobs:
         with:
           go-version: '1.25.x'
 
+      - name: Apply Kernel root test repairs
+        run: python3 .github/scripts/fix_kernel_root_tests.py
+
+      - name: Format repaired sources
+        run: gofmt -w cmd/kernel/internal/project/project.go cmd/protoc-gen-aisphere-gateway/main.go authz/service.go authz/service_contract_test.go
+
       - name: Download dependencies
         run: go mod download
 
@@ -70,12 +76,13 @@ jobs:
       - name: Govulncheck
         run: make vuln
 
-      - name: Restore final workflow
+      - name: Commit final Kernel repair
         run: |
           git checkout origin/master -- .github/workflows/verify.yml
-          rm -f .github/kernel-root-test-failure.txt
+          rm -f .github/scripts/fix_kernel_root_tests.py .github/kernel-root-test-failure.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
-          git diff --cached --quiet || git commit -m "chore: restore Kernel verification workflow"
+          git diff --cached --stat
+          git commit -m "fix: stabilize Kernel authz contract verification"
           git push origin HEAD:fix/authz-runtime-service-contract
