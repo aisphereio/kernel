@@ -40,23 +40,7 @@ jobs:
         run: go mod download
 
       - name: Root tests
-        id: root_tests
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -o pipefail
-          make test 2>&1 | tee /tmp/kernel-root-test.txt
-
-      - name: Persist root-test diagnostics
-        if: steps.root_tests.outcome == 'failure'
-        run: |
-          cp /tmp/kernel-root-test.txt .github/kernel-root-test-failure.txt
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -f .github/kernel-root-test-failure.txt
-          git commit -m "chore: capture Kernel root test failure" || true
-          git push origin HEAD:fix/authz-runtime-service-contract
-          exit 1
+        run: make test
 
       - name: Command submodule tests
         run: make test-cmd
@@ -74,12 +58,28 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Govulncheck
-        run: make vuln
+        id: vuln
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          make vuln 2>&1 | tee /tmp/kernel-govulncheck.txt
+
+      - name: Persist vulnerability diagnostics
+        if: steps.vuln.outcome == 'failure'
+        run: |
+          cp /tmp/kernel-govulncheck.txt .github/kernel-govulncheck-failure.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -f .github/kernel-govulncheck-failure.txt
+          git commit -m "chore: capture Kernel vulnerability scan failure" || true
+          git push origin HEAD:fix/authz-runtime-service-contract
+          exit 1
 
       - name: Commit final Kernel repair
         run: |
           git checkout origin/master -- .github/workflows/verify.yml
-          rm -f .github/scripts/fix_kernel_root_tests.py .github/kernel-root-test-failure.txt
+          rm -f .github/scripts/fix_kernel_root_tests.py .github/kernel-root-test-failure.txt .github/kernel-govulncheck-failure.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
