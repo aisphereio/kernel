@@ -60,19 +60,10 @@ jobs:
       - name: Govulncheck
         run: make vuln
 
-      - name: Commit final Kernel repair
+      - name: Commit validated Kernel product changes
         shell: bash
         run: |
           set -euxo pipefail
-          git checkout origin/master -- .github/workflows/verify.yml
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('.github/workflows/verify.yml')
-          content = path.read_text(encoding='utf-8')
-          content = content.replace("go-version: '1.25.x'", "go-version: '1.25.12'")
-          path.write_text(content, encoding='utf-8')
-          PY
-          rm -f .github/scripts/fix_kernel_root_tests.py .github/kernel-root-test-failure.txt .github/kernel-govulncheck-failure.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
