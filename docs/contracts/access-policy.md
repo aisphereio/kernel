@@ -123,9 +123,9 @@ Rate-limit policy has two levels:
 | multiple Kubernetes replicas | `REDIS` or `EXTERNAL` required | limit state must be shared across pods |
 | gateway-level global limit | `EXTERNAL` | delegated to Envoy/APISIX/cloud gateway |
 
-The current Kernel `middleware/ratelimit` implementation is process-local. It is
-valid for local demos and single-replica services. Multi-replica production must
-wire a distributed provider, typically Redis or gateway/external rate limiting.
+The current Kernel `ratelimitx` implementation supports both process-local and
+distributed backends. Use `backend: MEMORY` for local demos and single-replica
+services. Multi-replica production must use `backend: REDIS` or `backend: EXTERNAL`.
 Boot-time validation should reject `backend: MEMORY` when configured replicas are
 greater than one.
 
