@@ -5,33 +5,46 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/aisphereio/kernel/taskx"
 	daprclient "github.com/dapr/go-sdk/client"
 	"github.com/dapr/go-sdk/service/common"
 	daprgrpc "github.com/dapr/go-sdk/service/grpc"
-	"github.com/aisphereio/kernel/taskx"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/anypb"
 )
+
+// Client is the subset of the Dapr Go client used by taskx.
+type Client interface {
+	ScheduleJob(context.Context, *daprclient.Job) error
+	GetJob(context.Context, string) (*daprclient.Job, error)
+	DeleteJob(context.Context, string) error
+	Close()
+}
+
+// CallbackRegistrar registers handlers on Dapr's AppCallback gRPC service.
+type CallbackRegistrar interface {
+	AddJobEventHandler(string, common.JobEventHandler) error
+}
 
 // Runtime implements taskx.Runtime using the Dapr Jobs gRPC API. The Dapr
 // Scheduler persists definitions in etcd and dispatches due jobs to one sidecar
 // replica for the application ID.
 type Runtime struct {
-	client    daprclient.Client
-	callbacks common.Service
+	client    Client
+	callbacks CallbackRegistrar
 	owned     bool
 }
 
 var _ taskx.Runtime = (*Runtime)(nil)
 
-// New creates a Dapr runtime from an existing Dapr client and callback service.
-// This constructor is useful for tests and advanced boot wiring.
-func New(client daprclient.Client, callbacks common.Service) (*Runtime, error) {
+// New creates a Dapr runtime from an existing Dapr client and callback
+// registrar. This constructor is useful for tests and advanced boot wiring.
+func New(client Client, callbacks CallbackRegistrar) (*Runtime, error) {
 	if client == nil {
 		return nil, errors.New("taskx/dapr: client is required")
 	}
 	if callbacks == nil {
-		return nil, errors.New("taskx/dapr: callback service is required")
+		return nil, errors.New("taskx/dapr: callback registrar is required")
 	}
 	return &Runtime{client: client, callbacks: callbacks}, nil
 }
@@ -52,7 +65,7 @@ func Attach(server *grpc.Server) (*Runtime, error) {
 }
 
 // AttachWithClient is the explicit-client variant of Attach.
-func AttachWithClient(server *grpc.Server, client daprclient.Client) (*Runtime, error) {
+func AttachWithClient(server *grpc.Server, client Client) (*Runtime, error) {
 	if server == nil {
 		return nil, errors.New("taskx/dapr: grpc server is required")
 	}
@@ -94,13 +107,14 @@ func (r *Runtime) Schedule(ctx context.Context, spec taskx.ManagedJob) error {
 	if spec.FailurePolicy != nil {
 		switch spec.FailurePolicy.Mode {
 		case taskx.DeliveryFailureConstant:
-			job.FailurePolicy = &daprclient.JobFailurePolicyConstant{
+			policy := &daprclient.JobFailurePolicyConstant{
 				MaxRetries: cloneUint32(spec.FailurePolicy.MaxRetries),
 			}
 			if spec.FailurePolicy.Interval > 0 {
 				interval := spec.FailurePolicy.Interval
-				job.FailurePolicy.(*daprclient.JobFailurePolicyConstant).Interval = &interval
+				policy.Interval = &interval
 			}
+			job.FailurePolicy = policy
 		case taskx.DeliveryFailureDrop:
 			job.FailurePolicy = &daprclient.JobFailurePolicyDrop{}
 		}
@@ -176,12 +190,15 @@ func (r *Runtime) RegisterHandler(name string, handler taskx.EventHandler) error
 	if handler == nil {
 		return fmt.Errorf("%w: handler is required for %q", taskx.ErrInvalidJob, name)
 	}
-	return r.callbacks.AddJobEventHandler(name, func(ctx context.Context, event *common.JobEvent) error {
+	if err := r.callbacks.AddJobEventHandler(name, func(ctx context.Context, event *common.JobEvent) error {
 		return handler(ctx, taskx.TriggerEvent{
 			Name: event.JobType,
 			Data: append([]byte(nil), event.Data...),
 		})
-	})
+	}); err != nil {
+		return fmt.Errorf("taskx/dapr: register handler %q: %w", name, err)
+	}
+	return nil
 }
 
 // Close releases a client created by Attach. It does not stop the shared Kernel
