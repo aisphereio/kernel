@@ -2,12 +2,15 @@ name: verify
 
 on:
   pull_request:
+  push:
+    branches:
+      - master
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: kernel-authz-runtime-final
+  group: verify-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -15,26 +18,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout final branch
+      - name: Checkout source
         uses: actions/checkout@v4
         with:
-          ref: fix/authz-runtime-final
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up patched Go
+      - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.12'
-
-      - name: Apply validated Kernel source changes
-        run: |
-          git checkout origin/fix/authz-runtime-service-contract -- \
-            authz/service.go \
-            authz/service_contract_test.go \
-            cmd/kernel/internal/project/project.go \
-            cmd/protoc-gen-aisphere-gateway/main.go
-          gofmt -w authz/service.go authz/service_contract_test.go cmd/kernel/internal/project/project.go cmd/protoc-gen-aisphere-gateway/main.go
+          go-version-file: go.mod
+          cache: true
 
       - name: Download dependencies
         run: go mod download
@@ -42,11 +35,17 @@ jobs:
       - name: Root tests
         run: make test
 
+      - name: Taskx tests
+        run: go test ./taskx
+
       - name: Command submodule tests
         run: make test-cmd
 
       - name: Race tests
         run: make test-race
+
+      - name: Taskx race tests
+        run: go test -race ./taskx
 
       - name: Vet
         run: make vet
@@ -54,22 +53,11 @@ jobs:
       - name: Coverage
         run: make cover
 
+      - name: Taskx coverage
+        run: go test ./taskx -coverprofile taskx-coverage.out
+
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Govulncheck
         run: make vuln
-
-      - name: Commit validated Kernel product changes
-        shell: bash
-        run: |
-          set -euxo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A
-          git status --short
-          git diff --cached --stat
-          if ! git diff --cached --quiet; then
-            git commit -m "fix: define Kernel runtime authorization contract"
-          fi
-          git push origin HEAD:fix/authz-runtime-final
