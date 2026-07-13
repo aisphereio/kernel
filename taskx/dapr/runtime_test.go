@@ -20,10 +20,15 @@ type fakeClient struct {
 	closed    bool
 }
 
+func (f *fakeClient) ScheduleJob(_ context.Context, job *daprclient.Job) error {
+	f.scheduled = job
+	return f.err
+}
+
 func (f *fakeClient) ScheduleJobAlpha1(_ context.Context, job *daprclient.Job) error {
-		f.scheduled = job
-		return f.err
-	}
+	f.scheduled = job
+	return f.err
+}
 
 func (f *fakeClient) GetJob(context.Context, string) (*daprclient.Job, error) {
 	if f.err != nil {

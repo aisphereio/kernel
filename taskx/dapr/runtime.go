@@ -15,15 +15,26 @@ import (
 )
 
 // Client is the subset of the Dapr Go client used by taskx.
+// It matches daprclient.GRPCClient exactly so any Dapr Go SDK version
+// that implements these methods satisfies the interface.
 type Client interface {
-	// ScheduleJobAlpha1 is used instead of ScheduleJob for compatibility with
-	// Dapr Runtime < 1.18. The stable ScheduleJob method was introduced in
-	// Dapr 1.18; on 1.17.x the sidecar does not recognize it and routes the
-	// request to the transparent proxy, causing "dapr-callee-app-id not found".
-	ScheduleJobAlpha1(context.Context, *daprclient.Job) error
+	ScheduleJob(context.Context, *daprclient.Job) error
 	GetJob(context.Context, string) (*daprclient.Job, error)
 	DeleteJob(context.Context, string) error
 	Close()
+}
+
+// scheduleJobAlpha1 calls ScheduleJobAlpha1 on the client if available
+// (Dapr Go SDK v1.15+), otherwise falls back to ScheduleJob.
+// ScheduleJobAlpha1 is needed for Dapr Runtime < 1.18 which does not
+// recognize the stable ScheduleJob gRPC method.
+func scheduleJobAlpha1(client Client, ctx context.Context, job *daprclient.Job) error {
+	if c, ok := client.(interface {
+		ScheduleJobAlpha1(context.Context, *daprclient.Job) error
+	}); ok {
+		return c.ScheduleJobAlpha1(ctx, job)
+	}
+	return client.ScheduleJob(ctx, job)
 }
 
 // CallbackRegistrar registers handlers on Dapr's AppCallback gRPC service.
@@ -142,11 +153,11 @@ func (r *Runtime) Schedule(ctx context.Context, spec taskx.ManagedJob) error {
 		}
 	}
 
-// Use ScheduleJobAlpha1 for compatibility with Dapr Runtime < 1.18.
-		// The stable ScheduleJob API was introduced in Dapr 1.18; on 1.17.x
-		// the sidecar does not recognize the stable method and routes it to
-		// the transparent proxy, causing "dapr-callee-app-id not found".
-		if err := r.client.ScheduleJobAlpha1(ctx, job); err != nil {
+// Use ScheduleJobAlpha1 when available (Dapr Runtime < 1.18 compat).
+		// Dapr 1.17.x does not recognize the stable ScheduleJob gRPC method
+		// and routes it to the transparent proxy, causing
+		// "dapr-callee-app-id not found".
+		if err := scheduleJobAlpha1(r.client, ctx, job); err != nil {
 			return fmt.Errorf("taskx/dapr: schedule job %q: %w", spec.Name, err)
 		}
 		return nil
