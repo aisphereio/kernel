@@ -1,36 +1,36 @@
 # CLAUDE.md
 
 This file is loaded automatically by Claude Code at the start of every session.
-Keep it short ‚Ä?full rules live in AGENTS.md and docs/ai/errorx.md.
+Keep it short ÔøΩ?full rules live in AGENTS.md and docs/ai/errorx.md.
 
 ## Prime directive
 
-You are working inside **Aisphere Kernel** ‚Ä?an AI-native Go application kernel.
+You are working inside **Aisphere Kernel** ÔøΩ?an AI-native Go application kernel.
 **Do not invent infrastructure.** Use Kernel APIs only.
 
 Before writing any business code (handler/service/repository/worker), read:
-- `AGENTS.md` ‚Ä?full project rules
-- `docs/ai/errorx.md` ‚Ä?errorx AI recipe (10 scenarios + forbidden patterns)
+- `AGENTS.md` ÔøΩ?full project rules
+- `docs/ai/errorx.md` ÔøΩ?errorx AI recipe (10 scenarios + forbidden patterns)
 
 ## Hard rules (violations will fail CI)
 
-### 1. Error handling ‚Ä?use errorx, never raw errors
+### 1. Error handling ÔøΩ?use errorx, never raw errors
 
 In `handler/`, `service/`, `repository/`, `worker/` code:
 
 ```go
-// ‚ù?FORBIDDEN
+// ÔøΩ?FORBIDDEN
 return errors.New("skill not found")
 return fmt.Errorf("create failed: %w", err)
 return nil, err
 panic(err)
 
-// ‚ú?REQUIRED
+// ÔøΩ?REQUIRED
 return errorx.NotFound("AIHUB_SKILL_NOT_FOUND", "ÊäÄËÉΩ‰∏çÂ≠òÂú®",
     errorx.WithMetadata("skill_id", id),
 )
 return errorx.Wrap(err, "AIHUB_SKILL_CREATE_FAILED",
-    errorx.WithMessage("ÂàõÂª∫ÊäÄËÉΩÂ§±Ë¥?),
+    errorx.WithMessage("ÂàõÂª∫ÊäÄËÉΩÂ§±ÔøΩ?),
 )
 ```
 
@@ -50,16 +50,16 @@ Constructor cheatsheet:
 Error code format: `{DOMAIN}_{RESOURCE}_{REASON}` (uppercase snake).
 Dynamic values go in `WithMetadata`, NEVER in the error code.
 
-### 2. Logging ‚Ä?use logx, never raw log
+### 2. Logging ÔøΩ?use logx, never raw log
 
 ```go
-// ‚ù?FORBIDDEN in business code
+// ÔøΩ?FORBIDDEN in business code
 log.Printf("...")
 fmt.Println("...")
 slog.Info("...")
 zap.L().Info("...")
 
-// ‚ú?REQUIRED
+// ÔøΩ?REQUIRED
 logger := logx.FromContext(ctx)
 logger.Info("skill created", logx.String("skill_id", id))
 ```
@@ -67,24 +67,24 @@ logger.Info("skill created", logx.String("skill_id", id))
 ### 3. Forbidden imports in business code
 
 ```text
-database/sql          ‚Ü?use kernel dbx
-net/http (server)     ‚Ü?use kernel httpx
-go-redis              ‚Ü?use kernel cache
-minio SDK             ‚Ü?use kernel objectstore
-casdoor SDK           ‚Ü?use kernel authn
-casbin enforcer       ‚Ü?use kernel authz
-os.Getenv             ‚Ü?use kernel configx
+database/sql          ÔøΩ?use kernel dbx
+net/http (server)     ÔøΩ?use kernel httpx
+go-redis              ÔøΩ?use kernel cache
+minio SDK             ÔøΩ?use kernel objectstore
+casdoor SDK           ÔøΩ?use kernel authn
+casbin enforcer       ÔøΩ?use kernel authz
+os.Getenv             ÔøΩ?use kernel configx
 ```
 
 ### 4. Standard flow
 
 ```text
-Handler   ‚Ü?bind input ‚Ü?call service ‚Ü?return response (or errorx)
-Service   ‚Ü?validate rules ‚Ü?check authz ‚Ü?call repo ‚Ü?record audit ‚Ü?return errorx
-Repository ‚Ü?use kernel dbx ‚Ü?no HTTP/auth/audit logic ‚Ü?return errorx
+Handler   ÔøΩ?bind input ÔøΩ?call service ÔøΩ?return response (or errorx)
+Service   ÔøΩ?validate rules ÔøΩ?check authz ÔøΩ?call repo ÔøΩ?record audit ÔøΩ?return errorx
+Repository ÔøΩ?use kernel dbx ÔøΩ?no HTTP/auth/audit logic ÔøΩ?return errorx
 ```
 
-## üìö Examples ‚Ä?find by scenario BEFORE writing code
+## üìö Examples ÔøΩ?find by scenario BEFORE writing code
 
 **Before writing errorx code, look up the matching Example.** Examples are
 runnable (`go test ./errorx -run=Example -v`) and show exact output.
@@ -181,7 +181,7 @@ runnable (`go test ./errorx -run=Example -v`) and show exact output.
 
 | Scenario | Example | Layer |
 |---|---|---|
-| Repository DB error ‚Ü?errorx | `ExampleBusiness_repositoryLayer` | repository |
+| Repository DB error ÔøΩ?errorx | `ExampleBusiness_repositoryLayer` | repository |
 | Service validation + authz + conflict | `ExampleBusiness_serviceLayer` | service |
 | Upstream model timeout | `ExampleBusiness_upstreamTimeout` | service |
 | Authz denied with metadata | `ExampleBusiness_authzDenied` | service |
@@ -224,10 +224,10 @@ golangci-lint run                   # depguard enforces import rules
 
 ## When unsure
 
-- Error handling? ‚Ü?`docs/ai/errorx.md` + `errorx/README.md` + Example table above
-- Logging? ‚Ü?`logx/README.md` + `docs/design/logx.md`
-- New module? ‚Ü?`docs/process/module-acceptance.md`
-- Anything else? ‚Ü?`AGENTS.md` + `docs/README.md`
+- Error handling? ÔøΩ?`docs/ai/errorx.md` + `errorx/README.md` + Example table above
+- Logging? ÔøΩ?`logx/README.md` + `docs/design/logx.md`
+- New module? ÔøΩ?`docs/process/module-acceptance.md`
+- Anything else? ÔøΩ?`AGENTS.md` + `docs/README.md`
 
 ## configx module rules
 
@@ -246,3 +246,13 @@ Use `github.com/aisphereio/kernel/configx` for all runtime configuration. Do not
 | Watch key | `ExampleConfig_Watch` | `configx/example_test.go` |
 | Layered file/env override | `Example_businessLayeredFileAndEnv` | `configx/example_business_test.go` |
 | Validate required config | `Example_businessValidateRequiredConfig` | `configx/example_business_test.go` |
+
+<!-- OPENWIKI:START -->
+
+## OpenWiki
+
+This repository uses OpenWiki for recurring code documentation. Start with `openwiki/quickstart.md`, then follow its links to architecture, workflows, domain concepts, operations, integrations, testing guidance, and source maps.
+
+The scheduled OpenWiki GitHub Actions workflow refreshes the repository wiki. Do not hand-edit generated OpenWiki pages unless explicitly asked; prefer updating source code/docs and letting OpenWiki regenerate.
+
+<!-- OPENWIKI:END -->

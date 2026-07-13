@@ -160,3 +160,13 @@ AuthN 全流程的业务服务示例、生成项目配置和 layout 文档归属
 ```bash
 go test ./cmd/protoc-gen-go-kernel ./cmd/protoc-gen-go-authz ./serverx ./requestx ./accessx
 ```
+
+<!-- OPENWIKI:START -->
+
+## OpenWiki
+
+This repository uses OpenWiki for recurring code documentation. Start with `openwiki/quickstart.md`, then follow its links to architecture, workflows, domain concepts, operations, integrations, testing guidance, and source maps.
+
+The scheduled OpenWiki GitHub Actions workflow refreshes the repository wiki. Do not hand-edit generated OpenWiki pages unless explicitly asked; prefer updating source code/docs and letting OpenWiki regenerate.
+
+<!-- OPENWIKI:END -->

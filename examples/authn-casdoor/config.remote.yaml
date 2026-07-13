@@ -1,0 +1,30 @@
+log:
+  service_name: "check-principal"
+  env: "dev"
+  version: "dev"
+  level: "debug"
+  format: "console"
+  output: "stdout"
+  add_source: true
+  redact:
+    enabled: true
+    keys:
+      - "client_secret"
+      - "access_token"
+      - "refresh_token"
+      - "id_token"
+      - "certificate"
+      - "jwt_certificate"
+    value: "***"
+
+casdoor:
+  endpoint: "http://36.137.200.194:30082"
+  client_id: "869aff97ab0408cbbd1c"
+  client_secret: "dbd4c663c6dbd947da0d23616cddaf532dcee7be"
+  organization: "aisphere"
+  application: "aisphere-iam"
+  http_timeout: "15s"
+  default_scope: "openid profile email"
+
+authn_example:
+  password: "123456"

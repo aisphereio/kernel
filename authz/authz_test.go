@@ -7,6 +7,21 @@ import (
 	"github.com/aisphereio/kernel/auditx"
 )
 
+func TestRuntimeServiceDoesNotRequireSchemaManagement(t *testing.T) {
+	var runtime RuntimeService = runtimeServiceWithoutSchema{}
+	if runtime == nil {
+		t.Fatal("runtime authz service must be assignable without schema management")
+	}
+}
+
+type runtimeServiceWithoutSchema struct {
+	Authorizer
+	BatchAuthorizer
+	ResourceLookup
+	SubjectLookup
+	RelationshipStore
+}
+
 func TestMemoryRelationshipStoreAndAuthorizer(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryRelationshipStore()
