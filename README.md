@@ -54,7 +54,7 @@ selectorx registry encodingx
 
 `securityx` 负责把 `config.yaml` 的安全配置构造成 provider-neutral runtime，不是新的 middleware 装配层；中间件装配仍统一走 `serverx` / `middleware/autowire`。
 
-`taskx` 定义 provider-neutral 任务运行时契约。生产服务通过 `taskx/dapr` 把 Dapr Jobs callback 注册到现有 Kernel gRPC Server；业务 handler 不直接依赖 Dapr SDK。
+`taskx` 定义 provider-neutral 任务运行时契约。`taskx/dapr.NewStandalone` 提供独立、受 sidecar token 保护的 callback gRPC Server，并实现 Kernel `transport.Server` 生命周期；已明确配置可信 callback 中间件时，也可使用 `AttachTransport` 挂载到现有 Kernel gRPC Server。业务 handler 不直接依赖 Dapr SDK。
 
 ## Development tooling
 
