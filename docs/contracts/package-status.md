@@ -54,6 +54,7 @@
 | `cachex` | optional | Cache 主线 |
 | `objectstorex` | optional | Object store 主线 |
 | `dtmx` | optional | 分布式事务主线 |
+| `taskx` | optional | 周期任务和 reconciliation 主线；多副本安全任务必须配置分布式 Locker，Handler 必须幂等 |
 | `selectorx` | optional | selector 主线 |
 | `registry` | optional | 服务注册发现主线 |
 | `encodingx` | optional | encoding 主线 |
@@ -111,6 +112,7 @@
 | `authn.IdentityAdmin` vs `iamx.Directory` | `IdentityAdmin` manages external IdP projections; `Directory` stores Kernel IAM facts |
 | `authz.AuditedAuthorizer` vs `accessx.Guard` | decorator only for direct authorizer checks; normal HTTP/gRPC path audits through `accessx.Guard` |
 | `resourcex.Grant` vs `authz.Relationship` | Grant is control-plane fact; Relationship is query-optimized authorization projection |
+| `taskx` vs Asynq/River | `taskx` handles service-local scheduling and reconciliation; persistent payload queues remain optional providers or independent workers |
 
 ## Rule
 
