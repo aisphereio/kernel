@@ -20,7 +20,9 @@
 | 缓存 | `cachex` | Redis/内存等缓存能力 |
 | 对象存储 | `objectstorex` | S3/MinIO 兼容对象存储 |
 | 分布式事务 | `dtmx` | DTM Saga/TCC 等分布式事务封装 |
-| 后台任务 | `taskx` | 周期任务、启动补偿、超时重试、进程内防重、Redis 分布式租约和执行观测 |
+| 后台任务 | `taskx` | provider-neutral durable task runtime；业务只依赖 Job/Handler 契约 |
+| 后台任务 Provider | `taskx/dapr` | 生产默认：Dapr Jobs gRPC、Scheduler 持久化与多副本分发；挂载现有 Kernel gRPC Server |
+| 本地任务 Provider | `taskx.Scheduler`, `RedisLocker` | 本地、测试、单机和应急降级；不作为生产任务中心主线 |
 | 注册发现/负载均衡 | `registry`, `selectorx` | 服务注册发现和节点选择 |
 | 编解码 | `encodingx` | JSON/Proto/XML/YAML/Form 编解码注册 |
 | IAM 领域 | `iamx` | Kernel IAM 控制面领域模型和 Directory facade，不是外部 IdP SDK |
@@ -42,11 +44,12 @@
 | `cmd/protoc-gen-*` | 代码生成器；业务禁止 import |
 | `cmd/buf-check-*` | proto contract checker；业务禁止 import |
 
-## 5. External layout / examples
+## 5. External layout / runtime / examples
 
 | 路径 | 规则 |
 |---|---|
 | `aisphereio/kernel-layout` | 生成服务模板、生成服务 Makefile、deploy 模板、layout 文档和 smoke tests 的归属仓库 |
+| Dapr Runtime / Scheduler | `taskx/dapr` 的生产外部运行时；平台层统一安装、HA、etcd、mTLS、备份与观测 |
 | `examples/*` | 示例和契约输入；没有明确 README 的示例默认不承诺可独立运行 |
 
 ## 6. 废弃 / 不在主线
@@ -84,9 +87,19 @@
 
 `authz.Relationship` 是 ReBAC/Zanzibar 查询投影，适合 SpiceDB/OpenFGA 高性能权限判断。写入路径应先落控制面事实，再通过 outbox/projector 投影到 `authz` 后端。
 
-### `taskx` vs 持久化任务队列
+### `taskx.Runtime` vs local `Scheduler`
 
-`taskx` 负责服务内周期协调、启动补偿和小规模后台 reconciliation。它不持久化任务 payload，也不提供死信队列。大量离散异步任务应使用 Asynq、River 等 provider 或独立 worker 服务；业务仍应依赖 Kernel 抽象而不是第三方 API。
+`taskx.Runtime` 是生产 durable task-center contract。业务通过 `Schedule/Get/Delete/RegisterHandler` 声明任务，不感知 Dapr 类型。
+
+`taskx/dapr` 是默认生产 provider：Dapr Scheduler 持久化 Job 并把到期事件经 gRPC callback 分发给一个可用应用副本。
+
+现有 `taskx.Scheduler`、`Every`、`At`、`RedisLocker` 是 local provider，只用于开发、测试、单机和应急降级。禁止 Dapr 与 local scheduler 对同一个 Job 同时启用。
+
+### Dapr Jobs vs Workflow / queue
+
+Dapr Jobs 回答“什么时候触发一次 handler”；跨服务多步骤、等待、补偿和长时间状态机使用 Dapr Workflow。
+
+Jobs 不等同于离散 payload 队列。大量邮件、转码、文件处理等队列 workload 使用 Asynq、River 或独立 worker provider；业务仍应依赖 Kernel 抽象而不是第三方 API。
 
 ### Envoy Gateway + Casdoor OIDC Authn
 
@@ -117,9 +130,16 @@ proto contract
   -> authn + authz + auditx providers
   -> business service
 
-taskx
-  -> optional cachex/Redis lease
-  -> business reconciliation handler
+taskx.Runtime
+  -> taskx/dapr
+  -> Dapr sidecar gRPC
+  -> Dapr Scheduler + etcd
+  -> AppCallback on existing Kernel gRPC Server
+  -> business idempotent reconciliation handler
+
+taskx local Scheduler
+  -> optional Redis lease
+  -> local/test/fallback handler
 
 kernel-layout
   -> generated service Makefile / deploy template / service skeleton
