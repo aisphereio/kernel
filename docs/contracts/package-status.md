@@ -54,7 +54,9 @@
 | `cachex` | optional | Cache 主线 |
 | `objectstorex` | optional | Object store 主线 |
 | `dtmx` | optional | 分布式事务主线 |
-| `taskx` | optional | 周期任务和 reconciliation 主线；多副本安全任务必须配置分布式 Locker，Handler 必须幂等 |
+| `taskx` | optional | provider-neutral 任务运行时契约；Handler 必须幂等，执行语义为 at-least-once |
+| `taskx/dapr` | optional | 生产默认 provider；使用 Dapr Jobs gRPC 和现有 Kernel gRPC Server 回调 |
+| `taskx.Scheduler` / `RedisLocker` | optional | local provider；仅用于本地、测试、单机或应急降级，不得与 Dapr 对同一 Job 双开 |
 | `selectorx` | optional | selector 主线 |
 | `registry` | optional | 服务注册发现主线 |
 | `encodingx` | optional | encoding 主线 |
@@ -75,6 +77,7 @@
 | Path | Status | Rule |
 |---|---:|---|
 | `aisphereio/kernel-layout` | external | 生成服务模板、生成服务 Makefile、deploy 模板、layout 文档和 smoke tests 的归属仓库 |
+| Dapr Runtime / Scheduler | external | `taskx/dapr` 的生产运行时；K8s 由平台层统一部署和治理 |
 | `examples/*` | scenario | 示例和 proto/generator 输入；没有明确 README 的示例默认不承诺可独立运行 |
 
 ## Tooling only
@@ -112,7 +115,9 @@
 | `authn.IdentityAdmin` vs `iamx.Directory` | `IdentityAdmin` manages external IdP projections; `Directory` stores Kernel IAM facts |
 | `authz.AuditedAuthorizer` vs `accessx.Guard` | decorator only for direct authorizer checks; normal HTTP/gRPC path audits through `accessx.Guard` |
 | `resourcex.Grant` vs `authz.Relationship` | Grant is control-plane fact; Relationship is query-optimized authorization projection |
-| `taskx` vs Asynq/River | `taskx` handles service-local scheduling and reconciliation; persistent payload queues remain optional providers or independent workers |
+| `taskx.Runtime` vs local `Scheduler` | Runtime is the production durable task-center contract; Scheduler is a process-local fallback provider |
+| Dapr Jobs vs Dapr Workflow | Jobs answer “when to trigger one handler”; Workflow owns durable multi-step state machines, waits and compensations |
+| Dapr Jobs vs Asynq/River | Jobs schedule callbacks; Asynq/River process large volumes of discrete queued payloads |
 
 ## Rule
 

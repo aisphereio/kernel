@@ -1,0 +1,44 @@
+name: taskx
+
+on:
+  pull_request:
+    paths:
+      - 'taskx/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/taskx.yml'
+  push:
+    branches:
+      - master
+    paths:
+      - 'taskx/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/taskx.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: taskx-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Download dependencies
+        run: go mod download
+      - name: Unit tests
+        run: go test ./taskx/...
+      - name: Race tests
+        run: go test -race ./taskx/...
+      - name: Vet
+        run: go vet ./taskx/...

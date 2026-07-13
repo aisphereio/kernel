@@ -1,148 +1,245 @@
-# taskx 后台任务与周期协调契约
+# taskx 后台任务与运行时任务中心契约
 
 ## 1. 定位
 
-`taskx` 是 Kernel 的后台任务生命周期与周期协调能力，适用于：
+`taskx` 提供两层能力：
 
-- 数据库事实与外部投影之间的周期 reconciliation；
-- 权限、订阅、租约、会话等到期状态回收；
-- 周期清理、补偿、健康巡检和小规模后台维护任务；
-- 需要在服务启动时立即补偿一次、之后按固定间隔运行的任务。
+1. **Managed Runtime**：由外部运行时持久化 Job、协调多副本并通过 gRPC 回调业务服务。生产默认 provider 是 `taskx/dapr`。
+2. **Local Scheduler**：进程内周期调度、Redis lease、重试和指标。仅用于单机、本地开发、测试和无法部署 Dapr 的降级场景。
 
-`taskx` **不是**消息队列，也不承诺 exactly-once。Handler 必须幂等，执行语义是 at-least-once。
+业务代码只依赖 `taskx.Runtime`、`taskx.ManagedJob` 和 `taskx.EventHandler`，不得直接依赖 Dapr SDK 类型。
 
-## 2. 为什么不直接在业务中启动 goroutine
+典型场景：
 
-业务自行启动 `time.Ticker` 或 goroutine 会产生以下问题：
+- Grant、订阅、租约、会话等到期回收；
+- 数据库控制面事实与 SpiceDB、搜索索引等外部投影之间的 reconciliation；
+- 周期清理、补偿和健康巡检；
+- 延时执行的一次性任务；
+- 需要跨服务状态机、等待、补偿或人工审批时，升级为 Dapr Workflow，而不是把逻辑继续堆进单个 Job handler。
 
-1. 多副本服务会重复执行；
-2. 服务停机期间错过的工作不会在恢复后补偿；
-3. 缺少统一超时、重试、panic recovery 和优雅停机；
-4. 缺少统一指标和执行事件；
-5. 分布式锁容易出现误释放其他实例锁的安全问题。
+所有 provider 均按 **at-least-once** 设计，Handler 必须幂等。
 
-`taskx` 统一解决这些横切能力。业务只注册 Job 和 Handler。
+## 2. 为什么生产主线选择 Dapr Jobs
 
-## 3. Go 生态选型
+Dapr Jobs 由独立 Scheduler control-plane 服务管理：
 
-| 方案 | 特点 | Kernel 结论 |
-|---|---|---|
-| `robfig/cron/v3` | 成熟、轻量、进程内 cron | 不提供持久化或分布式协调，不足以单独解决多副本安全任务 |
-| `go-co-op/gocron/v2` | 调度 API 完整，支持 elector/locker、监听器与监控扩展 | 适合作为未来 cron provider；不直接暴露给业务，避免 Kernel API 与第三方绑定 |
-| `hibiken/asynq` | Redis 持久化队列、重试、定时任务、Web UI | 适合邮件、文件处理等离散异步任务；当前仍是 v0，且部分 Lua 对 Redis Cluster 有兼容限制 |
-| `riverqueue/river` | PostgreSQL 持久化、事务入队、唯一任务、强类型 worker | 可靠性强，适合 PG 主导的异步任务；不应让所有 Kernel 服务强制依赖 PostgreSQL |
-| Kernel `taskx` | provider-neutral Job/Schedule/Locker/Observer；内置轻量 scheduler 与 Redis lease | 当前主线，优先解决 reconciliation 和到期回收；后续可增加 Asynq/River provider |
+- Job 定义持久化在 Scheduler 的 etcd；
+- Scheduler 多副本之间分配触发事件，不依赖 IAM 自己选主；
+- 同一 app-id 的 Job 到期后，只会路由到其中一个可用 sidecar/应用副本；
+- 应用暂时不可用时，Job 会进入 Scheduler staging queue，待 sidecar 可用后再次投递；
+- 支持 schedule、due time、repeats、TTL、overwrite 和失败重试策略；
+- 管理面可通过 Dapr CLI list/get/delete/export/import；
+- gRPC 是生产推荐协议，避免 HTTP JSON 编解码开销。
 
-## 4. 核心语义
+Dapr Jobs 是“调度中心”，不是执行器。真正的数据库扫描、SpiceDB 删除和审计写入仍在 IAM handler 内执行。
 
-### 4.1 周期
+## 3. 方案对比
 
-- `Every(duration)`：固定周期；服务停机或运行过慢造成的历史 tick 会被跳过，不会形成追赶风暴。
-- `At(time)`：单次执行。
-- `ScheduleFunc`：允许框架 provider 或业务基础设施层扩展 cron 等日历调度。
-- `RunOnStart`：服务启动后立即执行一次，用于补偿停机期间已到期的数据。
+| 方案 | 持久化与 HA | 任务执行模型 | 适用范围 | Kernel 结论 |
+|---|---|---|---|---|
+| `time.Ticker` / `robfig/cron` | 无 | 当前进程执行 | 单机脚本 | 不进入生产主线 |
+| Kernel local scheduler + Redis lease | 调度定义不持久化；Redis 只做互斥 | 当前服务副本执行 | 本地、测试、降级 | 保留为 local provider |
+| `go-co-op/gocron` | 依赖外部 elector/locker | 当前进程执行 | 进程内 cron | 不作为运行时中心 |
+| Asynq | Redis 队列持久化，worker 拉取 | 离散 payload 队列 | 邮件、转码、文件处理 | 未来可作为 queue provider，不替代 Jobs |
+| River | PostgreSQL 持久化，可事务入队 | worker 拉取 | PG 主导的离散异步任务 | 可选 provider，不强制所有服务绑定 PG |
+| **Dapr Jobs** | Scheduler + etcd，K8s HA | Scheduler 到期后 gRPC 回调一个 app 副本 | 周期任务、一次性延时任务、reconciliation | **生产默认** |
+| Dapr Workflow | 状态持久化、长时间运行、恢复与补偿 | Workflow/Activity | 跨服务业务流程 | 复杂流程升级目标 |
 
-### 4.2 并发
+## 4. Provider-neutral API
 
-- 默认同一进程内不允许同一 Job 重叠执行；重叠 tick 被跳过。
-- `AllowOverlap=true` 只适合明确允许并行的无共享状态任务。
-- `Lease.Enabled=true` 后，通过 `Locker` 保证多个服务副本中最多一个实例执行该次任务。
-
-### 4.3 Redis lease
-
-`RedisLocker` 使用：
-
-- `SET key token NX PX ttl` 获取租约；
-- 所有权 token 校验后的 Lua `PEXPIRE` 续期；
-- 所有权 token 校验后的 Lua `DEL` 释放。
-
-不得使用无 token 的 `DEL key`，否则旧实例可能误删新实例已获得的租约。
-
-### 4.4 重试和超时
-
-- `Timeout` 是每次 attempt 的超时；
-- `RetryPolicy.MaxAttempts` 包含首次执行；
-- 默认不重试；启用重试后使用有上限的指数退避；
-- panic 会转换为 error 并进入相同重试路径；
-- 分布式租约在整个 run（包括重试退避）期间持有并续期。
-
-### 4.5 可观测性
-
-`Observer` 接收 scheduled、started、retrying、succeeded、failed、skipped 事件。
-
-Kernel 内置 `PrometheusObserver`，导出：
-
-- `kernel_taskx_runs_total`；
-- `kernel_taskx_skips_total`；
-- `kernel_taskx_retries_total`；
-- `kernel_taskx_run_duration_seconds`；
-- `kernel_taskx_last_success_unixtime`。
-
-业务可通过组合 Observer 把同一事件写入 `logx`、OTel trace 或 `auditx`。
-
-## 5. GRANT-006 推荐实现
-
-Grant 数据库记录是控制面事实，SpiceDB relationship 是查询投影。过期任务必须按以下顺序实现幂等 reconciliation：
-
-1. 分页领取 `expires_at <= now AND status = active` 的 Grant；
-2. 将 Grant 原子推进到 `expiring`，或使用数据库行锁/claim token 防止重复处理；
-3. 删除 SpiceDB relationship；删除不存在的 relationship 也视为成功；
-4. 将 Grant 更新为 `expired`；
-5. 写入审计记录；
-6. 单条失败保留为可重试状态，不能阻断整批其他 Grant。
-
-仅使用 Redis lease 不能替代数据库级 claim。Redis lease 负责“同一周期任务尽量只有一个副本运行”，数据库状态机负责进程崩溃后的恢复和逐条幂等。
+### 4.1 Runtime
 
 ```go
-redisLocker := taskx.NewRedisLocker(redisClient, "iam:task:")
-metricsObserver, err := taskx.NewPrometheusObserver(prometheus.DefaultRegisterer)
+type Runtime interface {
+    Schedule(context.Context, ManagedJob) error
+    Get(context.Context, string) (ManagedJob, error)
+    Delete(context.Context, string) error
+    RegisterHandler(string, EventHandler) error
+}
+```
+
+### 4.2 ManagedJob
+
+```go
+type ManagedJob struct {
+    Name          string
+    Schedule      string
+    DueTime       string
+    Repeats       *uint32
+    TTL           string
+    Data          []byte
+    DataTypeURL   string
+    Overwrite     bool
+    FailurePolicy *DeliveryFailurePolicy
+}
+```
+
+Kernel 采用的 canonical schedule 格式与 Dapr Jobs 一致：
+
+- `@every 5m`
+- `@hourly` / `@daily` / `@weekly` / `@monthly` / `@yearly`
+- 六字段 cron：`秒 分 时 日 月 星期`
+- `DueTime`、`TTL` 支持 RFC3339 或 Go duration 字符串
+
+### 4.3 Delivery failure policy
+
+Delivery policy 只描述“Dapr Scheduler 向应用回调失败后的投递重试”，不等于业务内部逐条 Grant 重试。
+
+- `constant`：固定间隔重试，可配置 max retries；
+- `drop`：首次回调失败后放弃；
+- 未设置时使用 Dapr 运行时默认策略。
+
+安全敏感任务不建议使用 `drop`。
+
+## 5. gRPC 集成模式
+
+Dapr sidecar 通过应用 gRPC `AppCallback` 服务投递 Job。Kernel 提供两种模式。
+
+### 5.1 独立 callback Server：生产默认
+
+IAM 主 gRPC Server 通常带有用户认证、内部调用认证和资源授权中间件。Dapr sidecar callback 不应伪装成普通业务调用，也不应因为缺少用户 JWT 被拒绝。因此默认使用独立 callback 端口：
+
+```go
+runtime, callbackServer, err := taskxdapr.NewStandalone(":9001")
+if err != nil {
+    return err
+}
+defer runtime.Close()
+
+// callbackServer implements transportx.Server.
+app := kernel.New(
+    kernel.Server(httpServer, grpcServer, callbackServer),
+)
+```
+
+该模式下：
+
+- `DAPR_GRPC_ENDPOINT` 或 `DAPR_GRPC_PORT` 用于 IAM 调用本 Pod sidecar；
+- `:9001` 用于 sidecar 回调 IAM；
+- callback Server 由 Kernel 与 HTTP/gRPC Server 一起启动、优雅停止；
+- Dapr SDK 使用 `APP_API_TOKEN` / `dapr-api-token` 验证 sidecar callback；
+- NetworkPolicy 只允许同 Pod sidecar 或本地回环访问 callback 端口。
+
+### 5.2 挂载现有 Kernel gRPC Server：可选
+
+只有当服务的全局中间件明确允许 Dapr callback 方法，并且已配置可信 sidecar 校验时，才使用同端口挂载：
+
+```go
+runtime, err := taskxdapr.AttachTransport(grpcServer)
+if err != nil {
+    return err
+}
+defer runtime.Close()
+```
+
+`AttachTransport` 把 Dapr AppCallback 服务注册到 `transportx/grpc.Server` 内嵌的 `grpc.Server`。必须在 `Start/Serve` 之前调用；同一个 gRPC Server 只能注册一次 Dapr AppCallback。
+
+禁止为了省一个端口而直接绕过 IAM 全局认证。无法证明 callback 中间件策略正确时，使用独立 callback Server。
+
+## 6. GRANT-006 推荐实现
+
+### 6.1 Boot 注册
+
+```go
+const grantExpirationJob = "grant-expiration-reconciler"
+
+runtime, callbackServer, err := taskxdapr.NewStandalone(":9001")
+if err != nil {
+    return err
+}
+defer runtime.Close()
+
+err = runtime.RegisterHandler(grantExpirationJob,
+    func(ctx context.Context, event taskx.TriggerEvent) error {
+        return grantService.ExpireDueGrants(ctx)
+    },
+)
 if err != nil {
     return err
 }
 
-scheduler := taskx.NewScheduler(
-    taskx.WithLocker(redisLocker),
-    taskx.WithObserver(metricsObserver),
-)
-
-err = scheduler.Register(taskx.Job{
-    Name:       "grant-expiration-reconciler",
-    Schedule:   taskx.Every(5 * time.Minute),
-    RunOnStart: true,
-    Timeout:    2 * time.Minute,
-    Retry: taskx.RetryPolicy{
-        MaxAttempts:    3,
-        InitialBackoff: 2 * time.Second,
-        MaxBackoff:     15 * time.Second,
+maxRetries := uint32(5)
+err = runtime.Schedule(ctx, taskx.ManagedJob{
+    Name:        grantExpirationJob,
+    Schedule:    "@every 5m",
+    Overwrite:   true,
+    Data:        []byte(`{"batch_size":100}`),
+    DataTypeURL: "application/json",
+    FailurePolicy: &taskx.DeliveryFailurePolicy{
+        Mode:       taskx.DeliveryFailureConstant,
+        MaxRetries: &maxRetries,
+        Interval:   5 * time.Second,
     },
-    Lease: taskx.LeaseOptions{
-        Enabled: true,
-        Key:     "grant-expiration-reconciler",
-        TTL:     3 * time.Minute,
-    },
-    Handler: grantService.ExpireDueGrants,
 })
 if err != nil {
     return err
 }
 
-if err := scheduler.Start(appContext); err != nil {
-    return err
-}
+app := kernel.New(
+    kernel.Server(httpServer, grpcServer, callbackServer),
+)
 ```
 
-服务退出时必须调用：
+所有 IAM 副本都可以在启动时用同一个 name 注册 Job，并设置 `Overwrite=true`。Scheduler 只保存一份 app-id/name 对应的定义，触发时只选择一个 IAM 副本。
 
-```go
-shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-defer cancel()
-_ = scheduler.Shutdown(shutdownCtx)
+### 6.2 Handler 内部状态机
+
+Dapr 解决的是调度持久化和回调分发，不能替代数据库级幂等。Grant handler 必须：
+
+1. 分页查找 `expires_at <= now AND status IN (active, expiring)`；
+2. 通过行锁、claim token 或条件更新把一批 Grant 原子推进到 `expiring`；
+3. 删除 SpiceDB relationship；relationship 不存在视为成功；
+4. 更新 Grant 为 `expired`；
+5. 写审计记录；
+6. 单条失败保留可重试状态，不阻断整批；
+7. handler 只有在本轮存在不可接受的系统性失败时返回 error，让 Dapr 重新投递。
+
+Job 可能重复投递，因此不能依赖“该任务只执行一次”。
+
+## 7. Local Scheduler 边界
+
+现有 `NewScheduler`、`Every`、`At`、`RedisLocker` 和 `PrometheusObserver` 保留，但重新定位为：
+
+- 单元测试和集成测试；
+- 本地无 Dapr 环境；
+- 单机工具；
+- 应急降级。
+
+生产 IAM 不再同时启用 Dapr Runtime 和 local scheduler 执行同一个 Job，否则会产生双重触发。
+
+## 8. Kubernetes 部署要求
+
+独立 callback Server 模式下，Dapr `app-port` 指向 callback 端口，而 IAM 对外 gRPC 端口保持不变：
+
+```yaml
+metadata:
+  annotations:
+    dapr.io/enabled: "true"
+    dapr.io/app-id: "aisphere-iam"
+    dapr.io/app-port: "9001"
+    dapr.io/app-protocol: "grpc"
 ```
 
-## 6. 部署边界
+容器仍可同时暴露：
 
-- IAM 多副本场景必须启用 Redis lease；
-- Redis 故障时任务本次执行失败，不允许无锁降级运行；
-- `RunOnStart=true` 保证服务恢复后立即扫描所有已到期 Grant；
-- 对安全敏感到期任务，应针对 `last_success_unixtime` 设置告警；
-- 如果未来任务量变为大量离散任务、需要持久化 payload、死信队列或独立扩缩容，应切换到 Asynq/River provider 或独立 worker deployment，而不是继续扩大进程内 scheduler。
+- `8000`：IAM HTTP API；
+- `9000`：IAM 业务 gRPC API；
+- `9001`：Dapr callback gRPC，仅供 sidecar 使用。
+
+生产建议：
+
+- Dapr control plane 使用 HA 安装；
+- Scheduler 数据卷使用高可靠块存储；
+- 需要自由扩缩 Scheduler 副本时使用 external etcd；嵌入式 etcd 模式下不要随意修改 Scheduler replica 数量；
+- 定期执行 `dapr scheduler export -k`，并按 RPO 保存备份；
+- 监控 Scheduler etcd metrics、Job callback 错误率、IAM handler 时延及最后成功时间；
+- 设置 `APP_API_TOKEN`，启用 Dapr mTLS，并用 NetworkPolicy 限制 callback 端口；
+- readiness 必须覆盖 sidecar 与 callback Server 是否可用。
+
+## 9. 版本基线
+
+- Kernel Go：`1.26.4`
+- Dapr Go SDK：`v1.15.0`
+- Dapr Runtime / Scheduler：`v1.18.x`
+
+该组合使用稳定 `ScheduleJob/GetJob/DeleteJob` gRPC RPC，并在 SDK 内兼容回退到旧 Alpha RPC。禁止新代码直接调用 `ScheduleJobAlpha1`。

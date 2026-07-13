@@ -34,7 +34,8 @@ make verify
 | `authz` vs `accessx` | `authz` 是 provider contract；`accessx` 是 request-time guard/orchestrator |
 | `authn.IdentityAdmin` vs `iamx.Directory` | `IdentityAdmin` 管外部 IdP 投影；`Directory` 管 Kernel IAM 控制面事实 |
 | `resourcex` vs `authz` | `resourcex.Grant` 是控制面事实；`authz.Relationship` 是查询投影 |
-| `taskx` vs 持久化任务队列 | `taskx` 管周期 reconciliation；大量离散异步任务使用 Asynq/River provider 或独立 worker |
+| `taskx` runtime vs local scheduler | 生产周期任务依赖 `taskx.Runtime`，默认使用 `taskx/dapr`；进程内 `Scheduler` 仅用于本地、测试和降级 |
+| `taskx` vs 持久化任务队列 | Dapr Jobs 管“何时触发”；大量离散 payload 队列仍使用 Asynq/River provider 或独立 worker |
 | `layout/` | 已移到 `aisphereio/kernel-layout` |
 | `validation/` | 已从 runtime tree 移除；场景验证应放到独立验证仓库、CI 临时生成目录或 generated service tests |
 
@@ -47,11 +48,13 @@ errorx logx configx metricsx serverx securityx bootx contextx
 transportx/http transportx/grpc
 requestx accessx authn authz auditx
 gatewayx admissionx ratelimitx clientpolicyx
-dbx cachex objectstorex dtmx taskx
+dbx cachex objectstorex dtmx taskx taskx/dapr
 selectorx registry encodingx
 ```
 
 `securityx` 负责把 `config.yaml` 的安全配置构造成 provider-neutral runtime，不是新的 middleware 装配层；中间件装配仍统一走 `serverx` / `middleware/autowire`。
+
+`taskx` 定义 provider-neutral 任务运行时契约。`taskx/dapr.NewStandalone` 提供独立、受 sidecar token 保护的 callback gRPC Server，并实现 Kernel `transport.Server` 生命周期；已明确配置可信 callback 中间件时，也可使用 `AttachTransport` 挂载到现有 Kernel gRPC Server。业务 handler 不直接依赖 Dapr SDK。
 
 ## Development tooling
 
