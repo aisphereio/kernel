@@ -1,0 +1,37 @@
+name: taskx-dapr-deps
+
+on:
+  push:
+    branches:
+      - feat/taskx-dapr-runtime
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/taskx-dapr-runtime
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+      - name: Normalize and tidy modules
+        run: |
+          sed -i 's#github.com/mgutz/ansi v0.0.0-20180428030007-95032a82bc51#github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d#' go.mod
+          sed -i 's#github.com/munnerz/goautoneg v0.0.0-20191010093657-bacd9c7ef1dd#github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822#' go.mod
+          sed -i 's#github.com/pmezard/go-difflib v1.0.1-0.20181226103437-d8f796af33cc#github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2#' go.mod
+          gofmt -w taskx/runtime.go taskx/dapr/runtime.go
+          go mod tidy
+      - name: Commit dependency files
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add go.mod go.sum taskx/runtime.go taskx/dapr/runtime.go
+          if ! git diff --cached --quiet; then
+            git commit -m 'build: tidy Dapr runtime dependencies'
+            git push origin HEAD:feat/taskx-dapr-runtime
+          fi
