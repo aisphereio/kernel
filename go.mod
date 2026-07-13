@@ -1,6 +1,6 @@
 module github.com/aisphereio/kernel
 
-go 1.25.8
+go 1.26.4
 
 require (
 	buf.build/go/protovalidate v1.2.0
@@ -9,6 +9,7 @@ require (
 	github.com/authzed/authzed-go v1.10.0
 	github.com/casdoor/casdoor-go-sdk v1.46.0
 	github.com/charmbracelet/huh v1.0.0
+	github.com/dapr/go-sdk v1.15.0
 	github.com/dtm-labs/client v1.16.6
 	github.com/emicklei/proto v1.14.3
 	github.com/fatih/color v1.19.0
@@ -124,7 +125,7 @@ require (
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
 	github.com/mdelapenya/tlscert v0.2.0 // indirect
-	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
+	github.com/mgutz/ansi v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
@@ -138,17 +139,17 @@ require (
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/montanaflynn/stats v0.7.1 // indirect
-	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
+	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2d7 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
-	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/munnerz/goautoneg v0.0.0-20191010093657-bacd9c7ef1dd // indirect
 	github.com/natefinch/lumberjack v2.0.0+incompatible // indirect
 	github.com/onsi/gomega v1.34.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226103437-d8f796af33cc // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.67.5 // indirect
