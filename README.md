@@ -34,6 +34,7 @@ make verify
 | `authz` vs `accessx` | `authz` 是 provider contract；`accessx` 是 request-time guard/orchestrator |
 | `authn.IdentityAdmin` vs `iamx.Directory` | `IdentityAdmin` 管外部 IdP 投影；`Directory` 管 Kernel IAM 控制面事实 |
 | `resourcex` vs `authz` | `resourcex.Grant` 是控制面事实；`authz.Relationship` 是查询投影 |
+| `taskx` vs 持久化任务队列 | `taskx` 管周期 reconciliation；大量离散异步任务使用 Asynq/River provider 或独立 worker |
 | `layout/` | 已移到 `aisphereio/kernel-layout` |
 | `validation/` | 已从 runtime tree 移除；场景验证应放到独立验证仓库、CI 临时生成目录或 generated service tests |
 
@@ -46,7 +47,7 @@ errorx logx configx metricsx serverx securityx bootx contextx
 transportx/http transportx/grpc
 requestx accessx authn authz auditx
 gatewayx admissionx ratelimitx clientpolicyx
-dbx cachex objectstorex dtmx
+dbx cachex objectstorex dtmx taskx
 selectorx registry encodingx
 ```
 
@@ -115,3 +116,4 @@ proto contract
 - [docs/contracts/runtime-api-boundary.md](docs/contracts/runtime-api-boundary.md)
 - [docs/contracts/proto-capability-matrix.md](docs/contracts/proto-capability-matrix.md)
 - [docs/contracts/cleanup-audit.md](docs/contracts/cleanup-audit.md)
+- [docs/contracts/taskx.md](docs/contracts/taskx.md)
