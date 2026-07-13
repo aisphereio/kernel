@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/aisphereio/kernel/taskx"
+	kgrpc "github.com/aisphereio/kernel/transportx/grpc"
 	daprclient "github.com/dapr/go-sdk/client"
 	"github.com/dapr/go-sdk/service/common"
 	daprgrpc "github.com/dapr/go-sdk/service/grpc"
@@ -49,8 +50,25 @@ func New(client Client, callbacks CallbackRegistrar) (*Runtime, error) {
 	return &Runtime{client: client, callbacks: callbacks}, nil
 }
 
+// AttachTransport registers Dapr callbacks on a Kernel transportx/grpc Server.
+// It must be called after the server is constructed and before Start/Serve.
+func AttachTransport(server *kgrpc.Server) (*Runtime, error) {
+	if server == nil || server.Server == nil {
+		return nil, errors.New("taskx/dapr: Kernel grpc server is required")
+	}
+	return Attach(server.Server)
+}
+
+// AttachTransportWithClient is the explicit-client variant of AttachTransport.
+func AttachTransportWithClient(server *kgrpc.Server, client Client) (*Runtime, error) {
+	if server == nil || server.Server == nil {
+		return nil, errors.New("taskx/dapr: Kernel grpc server is required")
+	}
+	return AttachWithClient(server.Server, client)
+}
+
 // Attach registers Dapr's AppCallback and Jobs callback services on an existing
-// Kernel gRPC server and creates a sidecar client using DAPR_GRPC_ENDPOINT or
+// gRPC server and creates a sidecar client using DAPR_GRPC_ENDPOINT or
 // DAPR_GRPC_PORT. Kernel remains responsible for starting and stopping server.
 func Attach(server *grpc.Server) (*Runtime, error) {
 	if server == nil {
@@ -191,6 +209,9 @@ func (r *Runtime) RegisterHandler(name string, handler taskx.EventHandler) error
 		return fmt.Errorf("%w: handler is required for %q", taskx.ErrInvalidJob, name)
 	}
 	if err := r.callbacks.AddJobEventHandler(name, func(ctx context.Context, event *common.JobEvent) error {
+		if event == nil {
+			return errors.New("taskx/dapr: nil job event")
+		}
 		return handler(ctx, taskx.TriggerEvent{
 			Name: event.JobType,
 			Data: append([]byte(nil), event.Data...),
