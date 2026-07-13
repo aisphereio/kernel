@@ -16,7 +16,11 @@ import (
 
 // Client is the subset of the Dapr Go client used by taskx.
 type Client interface {
-	ScheduleJob(context.Context, *daprclient.Job) error
+	// ScheduleJobAlpha1 is used instead of ScheduleJob for compatibility with
+	// Dapr Runtime < 1.18. The stable ScheduleJob method was introduced in
+	// Dapr 1.18; on 1.17.x the sidecar does not recognize it and routes the
+	// request to the transparent proxy, causing "dapr-callee-app-id not found".
+	ScheduleJobAlpha1(context.Context, *daprclient.Job) error
 	GetJob(context.Context, string) (*daprclient.Job, error)
 	DeleteJob(context.Context, string) error
 	Close()
