@@ -1,9 +1,16 @@
 package dapr
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/aisphereio/kernel/taskx"
 	kgrpc "github.com/aisphereio/kernel/transportx/grpc"
@@ -24,17 +31,98 @@ type Client interface {
 	Close()
 }
 
-// scheduleJobAlpha1 calls ScheduleJobAlpha1 on the client if available
-// (Dapr Go SDK v1.15+), otherwise falls back to ScheduleJob.
-// ScheduleJobAlpha1 is needed for Dapr Runtime < 1.18 which does not
-// recognize the stable ScheduleJob gRPC method.
+// scheduleJobAlpha1 tries the gRPC ScheduleJobAlpha1 first, then falls back
+// to the Dapr HTTP API (POST /v1.0/jobs/<name>). Dapr 1.17.x has the gRPC
+// proto definition for ScheduleJobAlpha1 but the runtime does not register
+// the handler, causing "failed to proxy request" errors.
 func scheduleJobAlpha1(client Client, ctx context.Context, job *daprclient.Job) error {
+	// Try gRPC ScheduleJobAlpha1 first (Dapr Go SDK v1.15+).
 	if c, ok := client.(interface {
 		ScheduleJobAlpha1(context.Context, *daprclient.Job) error
 	}); ok {
-		return c.ScheduleJobAlpha1(ctx, job)
+		err := c.ScheduleJobAlpha1(ctx, job)
+		if err == nil {
+			return nil
+		}
+		// If the error is not the transparent proxy error, return it.
+		// Otherwise fall through to HTTP API.
+		if !isProxyError(err) {
+			return err
+		}
 	}
-	return client.ScheduleJob(ctx, job)
+
+	// Fallback: use Dapr HTTP API (POST /v1.0/jobs/<name>).
+	return scheduleJobJSON(ctx, job)
+}
+
+// isProxyError checks if the error is the Dapr transparent proxy error
+// that occurs when the sidecar does not recognize the gRPC method.
+func isProxyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "failed to proxy request") ||
+		strings.Contains(msg, "dapr-callee-app-id") ||
+		strings.Contains(msg, "dapr-app-id not found")
+}
+
+// scheduleJobJSON calls the Dapr sidecar HTTP API to schedule a job.
+// Endpoint: POST http://localhost:<daprPort>/v1.0/jobs/<name>
+func scheduleJobJSON(ctx context.Context, job *daprclient.Job) error {
+	daprPort := os.Getenv("DAPR_HTTP_PORT")
+	if daprPort == "" {
+		daprPort = "3500"
+	}
+
+	// Build the request body matching Dapr Jobs HTTP API.
+	body := map[string]any{
+		"name":      job.Name,
+		"overwrite": job.Overwrite,
+	}
+	if job.Schedule != nil {
+		body["schedule"] = *job.Schedule
+	}
+	if job.DueTime != nil {
+		body["dueTime"] = *job.DueTime
+	}
+	if job.Repeats != nil {
+		body["repeats"] = *job.Repeats
+	}
+	if job.TTL != nil {
+		body["ttl"] = *job.TTL
+	}
+	if job.Data != nil {
+		body["data"] = job.Data.Value
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("taskx/dapr: marshal job: %w", err)
+	}
+
+	httpCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(httpCtx, "POST",
+		fmt.Sprintf("http://127.0.0.1:%s/v1.0/jobs/%s", daprPort, job.Name),
+		bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("taskx/dapr: create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("taskx/dapr: http call: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("taskx/dapr: HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
 }
 
 // CallbackRegistrar registers handlers on Dapr's AppCallback gRPC service.
