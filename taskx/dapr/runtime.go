@@ -138,10 +138,14 @@ func (r *Runtime) Schedule(ctx context.Context, spec taskx.ManagedJob) error {
 		}
 	}
 
-	if err := r.client.ScheduleJob(ctx, job); err != nil {
-		return fmt.Errorf("taskx/dapr: schedule job %q: %w", spec.Name, err)
-	}
-	return nil
+// Use ScheduleJobAlpha1 for compatibility with Dapr Runtime < 1.18.
+		// The stable ScheduleJob API was introduced in Dapr 1.18; on 1.17.x
+		// the sidecar does not recognize the stable method and routes it to
+		// the transparent proxy, causing "dapr-callee-app-id not found".
+		if err := r.client.ScheduleJobAlpha1(ctx, job); err != nil {
+			return fmt.Errorf("taskx/dapr: schedule job %q: %w", spec.Name, err)
+		}
+		return nil
 }
 
 func (r *Runtime) Get(ctx context.Context, name string) (taskx.ManagedJob, error) {
