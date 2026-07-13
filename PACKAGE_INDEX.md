@@ -20,6 +20,7 @@
 | 缓存 | `cachex` | Redis/内存等缓存能力 |
 | 对象存储 | `objectstorex` | S3/MinIO 兼容对象存储 |
 | 分布式事务 | `dtmx` | DTM Saga/TCC 等分布式事务封装 |
+| 后台任务 | `taskx` | 周期任务、启动补偿、超时重试、进程内防重、Redis 分布式租约和执行观测 |
 | 注册发现/负载均衡 | `registry`, `selectorx` | 服务注册发现和节点选择 |
 | 编解码 | `encodingx` | JSON/Proto/XML/YAML/Form 编解码注册 |
 | IAM 领域 | `iamx` | Kernel IAM 控制面领域模型和 Directory facade，不是外部 IdP SDK |
@@ -83,6 +84,10 @@
 
 `authz.Relationship` 是 ReBAC/Zanzibar 查询投影，适合 SpiceDB/OpenFGA 高性能权限判断。写入路径应先落控制面事实，再通过 outbox/projector 投影到 `authz` 后端。
 
+### `taskx` vs 持久化任务队列
+
+`taskx` 负责服务内周期协调、启动补偿和小规模后台 reconciliation。它不持久化任务 payload，也不提供死信队列。大量离散异步任务应使用 Asynq、River 等 provider 或独立 worker 服务；业务仍应依赖 Kernel 抽象而不是第三方 API。
+
 ### Envoy Gateway + Casdoor OIDC Authn
 
 Authn 入口采用 Envoy Gateway + Casdoor OIDC/JWT。Envoy 负责验签、claimToHeaders 和 header sanitize；Kernel middleware 负责从可信 header 重建 `authn.Principal`，同时无损镜像到 `contextx.Principal`。资源级授权仍由服务端 `accessx` / IAM client / SpiceDB 完成。
@@ -100,6 +105,7 @@ p, ok := authn.PrincipalFromContext(ctx)
 - [docs/security/envoy-casdoor-oidc-gateway.md](docs/security/envoy-casdoor-oidc-gateway.md)
 - [docs/contracts/contextx.md](docs/contracts/contextx.md)
 - [docs/contracts/authn-gateway-generation.md](docs/contracts/authn-gateway-generation.md)
+- [docs/contracts/taskx.md](docs/contracts/taskx.md)
 
 ## 8. 依赖关系图
 
@@ -110,6 +116,10 @@ proto contract
   -> serverx / middleware/autowire
   -> authn + authz + auditx providers
   -> business service
+
+taskx
+  -> optional cachex/Redis lease
+  -> business reconciliation handler
 
 kernel-layout
   -> generated service Makefile / deploy template / service skeleton
