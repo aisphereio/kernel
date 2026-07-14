@@ -56,7 +56,8 @@ func scheduleJobAlpha1(client Client, ctx context.Context, job *daprclient.Job) 
 }
 
 // isProxyError checks if the error is the Dapr transparent proxy error
-// that occurs when the sidecar does not recognize the gRPC method.
+// that occurs when the sidecar does not recognize the gRPC method or when
+// the request is misrouted as a service invocation (ERR_DIRECT_INVOKE).
 func isProxyError(err error) bool {
 	if err == nil {
 		return false
@@ -64,11 +65,16 @@ func isProxyError(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "failed to proxy request") ||
 		strings.Contains(msg, "dapr-callee-app-id") ||
-		strings.Contains(msg, "dapr-app-id not found")
+		strings.Contains(msg, "dapr-app-id not found") ||
+		strings.Contains(msg, "ERR_DIRECT_INVOKE") ||
+		strings.Contains(msg, "failed getting app id")
 }
 
 // scheduleJobJSON calls the Dapr sidecar HTTP API to schedule a job.
-// Endpoint: POST http://localhost:<daprPort>/v1.0/jobs/<name>
+// Dapr 1.17 exposes the Jobs API under the alpha1 prefix:
+// POST http://localhost:<daprPort>/v1.0-alpha1/jobs/<name>
+// Using /v1.0/jobs/<name> is interpreted as service invocation where "jobs"
+// is treated as the target app-id, causing ERR_DIRECT_INVOKE.
 func scheduleJobJSON(ctx context.Context, job *daprclient.Job) error {
 	daprPort := os.Getenv("DAPR_HTTP_PORT")
 	if daprPort == "" {
@@ -105,7 +111,7 @@ func scheduleJobJSON(ctx context.Context, job *daprclient.Job) error {
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(httpCtx, "POST",
-		fmt.Sprintf("http://127.0.0.1:%s/v1.0/jobs/%s", daprPort, job.Name),
+		fmt.Sprintf("http://127.0.0.1:%s/v1.0-alpha1/jobs/%s", daprPort, job.Name),
 		bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("taskx/dapr: create request: %w", err)
