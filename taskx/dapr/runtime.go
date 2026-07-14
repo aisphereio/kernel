@@ -82,8 +82,9 @@ func scheduleJobJSON(ctx context.Context, job *daprclient.Job) error {
 	}
 
 	// Build the request body matching Dapr Jobs HTTP API.
+	// Dapr 1.17 requires the job name in the URL path only; including it in
+	// the body causes DAPR_SCHEDULER_JOB_NAME error.
 	body := map[string]any{
-		"name":      job.Name,
 		"overwrite": job.Overwrite,
 	}
 	if job.Schedule != nil {
