@@ -324,7 +324,9 @@ func (c *Client) updateGroupMembership(req authn.AssignUserToGroupRequest, add b
 		return wrapBackend("casdoor update group membership returned not affected", nil)
 	}
 
-	user, err := sdk.GetUser(req.UserID)
+	// req.UserID is the Casdoor user UUID (userFromSDK sets ID from user.Id),
+	// not the login Name, so look it up by userId — GetUser(name) would miss.
+	user, err := sdk.GetUserByUserId(req.UserID)
 	if err != nil {
 		return wrapBackend("casdoor get user before membership update failed", err)
 	}
