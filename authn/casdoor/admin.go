@@ -325,14 +325,24 @@ func (c *Client) updateGroupMembership(req authn.AssignUserToGroupRequest, add b
 	}
 
 	user, err := sdk.GetUser(req.UserID)
-	if err == nil && user != nil {
-		if add && !slices.Contains(user.Groups, req.GroupID) {
-			user.Groups = append(user.Groups, req.GroupID)
-		}
-		if !add {
-			user.Groups = removeString(user.Groups, req.GroupID)
-		}
-		_, _ = sdk.UpdateUser(user)
+	if err != nil {
+		return wrapBackend("casdoor get user before membership update failed", err)
+	}
+	if user == nil {
+		return wrapBackend("casdoor user not found", nil)
+	}
+	if add && !slices.Contains(user.Groups, req.GroupID) {
+		user.Groups = append(user.Groups, req.GroupID)
+	}
+	if !add {
+		user.Groups = removeString(user.Groups, req.GroupID)
+	}
+	ok, err = sdk.UpdateUser(user)
+	if err != nil {
+		return wrapBackend("casdoor update user membership failed", err)
+	}
+	if !ok {
+		return wrapBackend("casdoor update user membership returned not affected", nil)
 	}
 	return nil
 }
