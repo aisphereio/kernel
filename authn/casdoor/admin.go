@@ -268,20 +268,46 @@ func (c *Client) ListGroups(ctx context.Context, filter authn.GroupFilter) ([]au
 
 func (c *Client) UpdateGroup(ctx context.Context, req authn.UpdateGroupRequest) (authn.Group, error) {
 	_ = ctx
+	sdk := c.adminSDK()
+	// Groups are always created under the SDK's OrganizationName (Casdoor
+	// overwrites Owner on insert).  The SDK's modifyGroup builds the lookup
+	// id from {group.Owner}/{group.Name} *before* overwriting Owner, so we
+	// must set both to the values Casdoor actually stored:
+	//   Owner = configured org (where CreateGroup put it)
+	//   Name  = group.ID (the current Casdoor Name, i.e. the old identifier)
+	//
+	// group.Name may carry a *new* slug (rename), but Casdoor's update-group
+	// locates the row by id and cannot change the Name pk via this endpoint.
+	// We preserve the requested new name in DisplayName so callers still see
+	// their intent; the Casdoor Name stays as the original slug.
+	lookupName := firstNonEmpty(req.Group.ID, req.Group.Name)
 	group := groupToSDK(req.Group)
-	ok, err := c.adminSDK().UpdateGroup(group)
+	group.Owner = c.cfg.OrganizationName
+	group.Name = lookupName
+	ok, err := sdk.UpdateGroup(group)
 	if err != nil {
 		return authn.Group{}, wrapBackend("casdoor update group failed", err)
 	}
 	if !ok {
 		return authn.Group{}, wrapBackend("casdoor update group returned not affected", nil)
 	}
-	return groupFromSDK(group), nil
+	// Re-read so the returned Group reflects what Casdoor actually stored
+	// (Name stays the old slug; other fields reflect the update).
+	stored, err := sdk.GetGroup(lookupName)
+	if err != nil || stored == nil {
+		return groupFromSDK(group), nil
+	}
+	return groupFromSDK(stored), nil
 }
 
 func (c *Client) DeleteGroup(ctx context.Context, req authn.DeleteGroupRequest) error {
 	_ = ctx
-	ok, err := c.adminSDK().DeleteGroup(&casdoorsdk.Group{Owner: req.OrgID, Name: req.GroupID})
+	// Same Owner asymmetry as UpdateGroup: groups live under the SDK org,
+	// not under req.OrgID.  Use the configured org for the lookup.
+	ok, err := c.adminSDK().DeleteGroup(&casdoorsdk.Group{
+		Owner: c.cfg.OrganizationName,
+		Name:  req.GroupID,
+	})
 	if err != nil {
 		return wrapBackend("casdoor delete group failed", err)
 	}
