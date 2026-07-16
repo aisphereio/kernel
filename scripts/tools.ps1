@@ -75,6 +75,7 @@ try {
     Install-LocalCommand -Name "protoc-gen-go-deploy" -Path (Join-Path $RepoRoot "cmd/protoc-gen-go-deploy")
     Install-LocalCommand -Name "protoc-gen-go-kernel" -Path (Join-Path $RepoRoot "cmd/protoc-gen-go-kernel")
     Install-LocalCommand -Name "buf-check-aisphere" -Path (Join-Path $RepoRoot "cmd/buf-check-aisphere")
+    Install-LocalCommand -Name "openapi-contract" -Path (Join-Path $RepoRoot "cmd/openapi-contract")
 
     Install-GoTool "google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11"
     Install-GoTool "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1"

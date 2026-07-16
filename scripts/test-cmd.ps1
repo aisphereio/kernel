@@ -12,7 +12,8 @@ $dirs = @(
     "cmd/protoc-gen-go-gateway",
     "cmd/protoc-gen-go-deploy",
     "cmd/protoc-gen-go-kernel",
-    "cmd/buf-check-aisphere"
+    "cmd/buf-check-aisphere",
+    "cmd/openapi-contract"
 )
 
 foreach ($dir in $dirs) {

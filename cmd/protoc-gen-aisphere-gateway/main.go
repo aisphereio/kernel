@@ -103,7 +103,7 @@ func collectRoutes(file *protogen.File) []routeSpec {
 		serviceName := defaultServiceName(string(svc.Desc.FullName()))
 		for _, method := range svc.Methods {
 			access, ok := accessPolicy(method)
-			if !ok || access.Gateway.Publish == protooptions.GatewayPublishDisabled {
+			if !ok {
 				continue
 			}
 			exposure := access.Exposure

@@ -48,6 +48,7 @@ desktop.ini
 *.log
 tmp/
 temp/
+.worktrees/
 
 # Certificates and keys
 *.cert
