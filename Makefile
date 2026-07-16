@@ -87,6 +87,7 @@ else
 	@if [ -d cmd/protoc-gen-go-deploy ]; then cd cmd/protoc-gen-go-deploy && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
 	@if [ -d cmd/protoc-gen-go-kernel ]; then cd cmd/protoc-gen-go-kernel && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
 	@if [ -d cmd/buf-check-aisphere ]; then cd cmd/buf-check-aisphere && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
+	@if [ -d cmd/openapi-contract ]; then cd cmd/openapi-contract && GOBIN=$(LOCAL_BIN) $(GO) install .; fi
 	@GOBIN=$(LOCAL_BIN) $(GO) install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
 	@GOBIN=$(LOCAL_BIN) $(GO) install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
 	@GOBIN=$(LOCAL_BIN) $(GO) install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.29.0
@@ -141,6 +142,7 @@ else
 	@if [ -d cmd/protoc-gen-go-deploy ]; then cd cmd/protoc-gen-go-deploy && $(GO) test ./...; fi
 	@if [ -d cmd/protoc-gen-go-kernel ]; then cd cmd/protoc-gen-go-kernel && $(GO) test ./...; fi
 	@if [ -d cmd/buf-check-aisphere ]; then cd cmd/buf-check-aisphere && $(GO) test ./...; fi
+	@if [ -d cmd/openapi-contract ]; then cd cmd/openapi-contract && $(GO) test ./...; fi
 endif
 
 test-race:
