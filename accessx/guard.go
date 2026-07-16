@@ -3,9 +3,10 @@ package accessx
 import (
 	"context"
 
-	"github.com/aisphereio/kernel/auditx"
-	"github.com/aisphereio/kernel/authn"
-	"github.com/aisphereio/kernel/authz"
+"github.com/aisphereio/kernel/auditx"
+		"github.com/aisphereio/kernel/authn"
+		"github.com/aisphereio/kernel/authz"
+		"github.com/aisphereio/kernel/errorx"
 )
 
 // AuthzMode controls whether the Guard performs a SpiceDB/ReBAC authorization
@@ -158,11 +159,11 @@ func (g Guard) Require(ctx context.Context, check Check) (authn.Principal, error
 		g.record(ctx, check, principal, auditx.ResultFailure, err)
 		return principal, err
 	}
-	if !decision.IsAllowed() {
-		err := authz.ErrPermissionDenied(decision.Reason)
-		g.record(ctx, check, principal, auditx.ResultDenied, err)
-		return principal, err
-	}
+if !decision.IsAllowed() {
+			err := errPermissionDeniedWith(decision)
+			g.record(ctx, check, principal, auditx.ResultDenied, err)
+			return principal, err
+		}
 	g.record(ctx, check, principal, auditx.ResultSuccess, nil)
 	return principal, nil
 }
@@ -299,4 +300,21 @@ func mergeAttrs(base, overlay authz.AttributeSet) authz.AttributeSet {
 		merged[k] = v
 	}
 	return merged
+}
+
+// errPermissionDeniedWith creates a permission denied error enriched with
+// decision metadata (reason, decision_id) so that transport encoders can
+// surface them in HTTP/gRPC error responses.
+func errPermissionDeniedWith(d authz.Decision) error {
+	message := d.Reason
+	if message == "" {
+		message = "permission denied"
+	}
+	opts := []errorx.Option{
+		errorx.WithPublicMetadata("reason", d.Reason),
+	}
+	if d.ConsistencyToken != "" {
+		opts = append(opts, errorx.WithPublicMetadata("decision_id", d.ConsistencyToken))
+	}
+	return errorx.Forbidden(authz.CodePermissionDenied, message, opts...)
 }

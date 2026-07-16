@@ -1,6 +1,10 @@
 package authz
 
-import "context"
+import (
+	"context"
+
+	"github.com/aisphereio/kernel/errorx"
+)
 
 // AuthorizerGuard adapts a simple Authorizer into the generated Guard contract.
 // It supports CHECK_ONLY flows. SCOPED_TOKEN requires an IAM implementation that
@@ -19,10 +23,27 @@ func (g AuthorizerGuard) Require(ctx context.Context, req CheckRequest) (Decisio
 	if err != nil {
 		return Decision{}, err
 	}
-	if !decision.IsAllowed() {
-		return decision, ErrPermissionDenied(decision.Reason)
-	}
+if !decision.IsAllowed() {
+			return decision, errPermissionDeniedWith(decision)
+		}
 	return decision, nil
+}
+
+// errPermissionDeniedWith creates a permission denied error enriched with
+// decision metadata (reason, decision_id) so that transport encoders can
+// surface them in HTTP/gRPC error responses.
+func errPermissionDeniedWith(d Decision) error {
+	message := d.Reason
+	if message == "" {
+		message = "permission denied"
+	}
+	opts := []errorx.Option{
+		errorx.WithPublicMetadata("reason", d.Reason),
+	}
+	if d.ConsistencyToken != "" {
+		opts = append(opts, errorx.WithPublicMetadata("decision_id", d.ConsistencyToken))
+	}
+	return errorx.Forbidden(CodePermissionDenied, message, opts...)
 }
 
 func (g AuthorizerGuard) RequireScopedToken(ctx context.Context, req ScopedTokenRequest) (string, Decision, error) {
