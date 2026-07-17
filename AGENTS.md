@@ -161,6 +161,10 @@ AuthN 全流程的业务服务示例、生成项目配置和 layout 文档归属
 go test ./cmd/protoc-gen-go-kernel ./cmd/protoc-gen-go-authz ./serverx ./requestx ./accessx
 ```
 
+## 8. 原生 HTTP 协议约束
+
+Git Smart HTTP、Git LFS、OCI Registry 等已有 wire protocol 必须通过 `transportx/http.HandleProtocol` 或 `HandleProtocolPrefix` 接入 Kernel middleware。协议 adapter 可以在 transport 边界解析 raw route，但必须产出结构化 payload；业务 resolver/service 禁止解析 raw path。管理 API 仍然必须 proto-first。
+
 <!-- OPENWIKI:START -->
 
 ## OpenWiki
