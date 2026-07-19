@@ -81,6 +81,55 @@ func (Exposure) EnumDescriptor() ([]byte, []int) {
 	return file_api_aisphere_access_v1_access_proto_rawDescGZIP(), []int{0}
 }
 
+type GatewayPublish int32
+
+const (
+	GatewayPublish_GATEWAY_PUBLISH_UNSPECIFIED GatewayPublish = 0
+	GatewayPublish_ENABLED                     GatewayPublish = 1
+	GatewayPublish_DISABLED                    GatewayPublish = 2
+)
+
+// Enum value maps for GatewayPublish.
+var (
+	GatewayPublish_name = map[int32]string{
+		0: "GATEWAY_PUBLISH_UNSPECIFIED",
+		1: "ENABLED",
+		2: "DISABLED",
+	}
+	GatewayPublish_value = map[string]int32{
+		"GATEWAY_PUBLISH_UNSPECIFIED": 0,
+		"ENABLED":                     1,
+		"DISABLED":                    2,
+	}
+)
+
+func (x GatewayPublish) Enum() *GatewayPublish {
+	p := new(GatewayPublish)
+	*p = x
+	return p
+}
+
+func (x GatewayPublish) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GatewayPublish) Descriptor() protoreflect.EnumDescriptor {
+	return file_api_aisphere_access_v1_access_proto_enumTypes[1].Descriptor()
+}
+
+func (GatewayPublish) Type() protoreflect.EnumType {
+	return &file_api_aisphere_access_v1_access_proto_enumTypes[1]
+}
+
+func (x GatewayPublish) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GatewayPublish.Descriptor instead.
+func (GatewayPublish) EnumDescriptor() ([]byte, []int) {
+	return file_api_aisphere_access_v1_access_proto_rawDescGZIP(), []int{1}
+}
+
 type Backend int32
 
 const (
@@ -117,11 +166,11 @@ func (x Backend) String() string {
 }
 
 func (Backend) Descriptor() protoreflect.EnumDescriptor {
-	return file_api_aisphere_access_v1_access_proto_enumTypes[1].Descriptor()
+	return file_api_aisphere_access_v1_access_proto_enumTypes[2].Descriptor()
 }
 
 func (Backend) Type() protoreflect.EnumType {
-	return &file_api_aisphere_access_v1_access_proto_enumTypes[1]
+	return &file_api_aisphere_access_v1_access_proto_enumTypes[2]
 }
 
 func (x Backend) Number() protoreflect.EnumNumber {
@@ -130,12 +179,58 @@ func (x Backend) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Backend.Descriptor instead.
 func (Backend) EnumDescriptor() ([]byte, []int) {
-	return file_api_aisphere_access_v1_access_proto_rawDescGZIP(), []int{1}
+	return file_api_aisphere_access_v1_access_proto_rawDescGZIP(), []int{2}
 }
 
-// AccessPolicy is Kernel's contract-level gateway policy for an exposed RPC.
-// Every externally exposed RPC should declare exactly one policy. Public and
-// system endpoints are explicit policies, not silent bypasses.
+type RateLimitScope int32
+
+const (
+	RateLimitScope_RATE_LIMIT_SCOPE_UNSPECIFIED RateLimitScope = 0
+	RateLimitScope_LOCAL_INSTANCE               RateLimitScope = 1
+	RateLimitScope_GLOBAL                       RateLimitScope = 2
+)
+
+// Enum value maps for RateLimitScope.
+var (
+	RateLimitScope_name = map[int32]string{
+		0: "RATE_LIMIT_SCOPE_UNSPECIFIED",
+		1: "LOCAL_INSTANCE",
+		2: "GLOBAL",
+	}
+	RateLimitScope_value = map[string]int32{
+		"RATE_LIMIT_SCOPE_UNSPECIFIED": 0,
+		"LOCAL_INSTANCE":               1,
+		"GLOBAL":                       2,
+	}
+)
+
+func (x RateLimitScope) Enum() *RateLimitScope {
+	p := new(RateLimitScope)
+	*p = x
+	return p
+}
+
+func (x RateLimitScope) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RateLimitScope) Descriptor() protoreflect.EnumDescriptor {
+	return file_api_aisphere_access_v1_access_proto_enumTypes[3].Descriptor()
+}
+
+func (RateLimitScope) Type() protoreflect.EnumType {
+	return &file_api_aisphere_access_v1_access_proto_enumTypes[3]
+}
+
+func (x RateLimitScope) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RateLimitScope.Descriptor instead.
+func (RateLimitScope) EnumDescriptor() ([]byte, []int) {
+	return file_api_aisphere_access_v1_access_proto_rawDescGZIP(), []int{3}
+}
+
 type AccessPolicy struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Exposure      Exposure               `protobuf:"varint,1,opt,name=exposure,proto3,enum=aisphere.access.v1.Exposure" json:"exposure,omitempty"`
@@ -144,6 +239,7 @@ type AccessPolicy struct {
 	RateLimit     *RateLimit             `protobuf:"bytes,4,opt,name=rate_limit,json=rateLimit,proto3" json:"rate_limit,omitempty"`
 	Breaker       *Breaker               `protobuf:"bytes,5,opt,name=breaker,proto3" json:"breaker,omitempty"`
 	Reason        string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	Gateway       *Gateway               `protobuf:"bytes,7,opt,name=gateway,proto3" json:"gateway,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -220,6 +316,86 @@ func (x *AccessPolicy) GetReason() string {
 	return ""
 }
 
+func (x *AccessPolicy) GetGateway() *Gateway {
+	if x != nil {
+		return x.Gateway
+	}
+	return nil
+}
+
+// Gateway contains publishing and routing hints for generated gateway
+// manifests. These hints do not grant authorization.
+type Gateway struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Publish  GatewayPublish         `protobuf:"varint,1,opt,name=publish,proto3,enum=aisphere.access.v1.GatewayPublish" json:"publish,omitempty"`
+	Profiles []string               `protobuf:"bytes,2,rep,name=profiles,proto3" json:"profiles,omitempty"`
+	Tags     []string               `protobuf:"bytes,3,rep,name=tags,proto3" json:"tags,omitempty"`
+	// upstream_service overrides the generated upstream service name when it
+	// cannot be derived from authz.audience (for example AUTHENTICATED methods
+	// that perform resource-level authorization inside the handler).
+	UpstreamService string `protobuf:"bytes,4,opt,name=upstream_service,json=upstreamService,proto3" json:"upstream_service,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *Gateway) Reset() {
+	*x = Gateway{}
+	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Gateway) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Gateway) ProtoMessage() {}
+
+func (x *Gateway) ProtoReflect() protoreflect.Message {
+	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Gateway.ProtoReflect.Descriptor instead.
+func (*Gateway) Descriptor() ([]byte, []int) {
+	return file_api_aisphere_access_v1_access_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Gateway) GetPublish() GatewayPublish {
+	if x != nil {
+		return x.Publish
+	}
+	return GatewayPublish_GATEWAY_PUBLISH_UNSPECIFIED
+}
+
+func (x *Gateway) GetProfiles() []string {
+	if x != nil {
+		return x.Profiles
+	}
+	return nil
+}
+
+func (x *Gateway) GetTags() []string {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
+func (x *Gateway) GetUpstreamService() string {
+	if x != nil {
+		return x.UpstreamService
+	}
+	return ""
+}
+
 type Authz struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Action        string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
@@ -232,7 +408,7 @@ type Authz struct {
 
 func (x *Authz) Reset() {
 	*x = Authz{}
-	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[1]
+	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -244,7 +420,7 @@ func (x *Authz) String() string {
 func (*Authz) ProtoMessage() {}
 
 func (x *Authz) ProtoReflect() protoreflect.Message {
-	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[1]
+	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -257,7 +433,7 @@ func (x *Authz) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Authz.ProtoReflect.Descriptor instead.
 func (*Authz) Descriptor() ([]byte, []int) {
-	return file_api_aisphere_access_v1_access_proto_rawDescGZIP(), []int{1}
+	return file_api_aisphere_access_v1_access_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Authz) GetAction() string {
@@ -299,7 +475,7 @@ type Audit struct {
 
 func (x *Audit) Reset() {
 	*x = Audit{}
-	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[2]
+	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -311,7 +487,7 @@ func (x *Audit) String() string {
 func (*Audit) ProtoMessage() {}
 
 func (x *Audit) ProtoReflect() protoreflect.Message {
-	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[2]
+	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -324,7 +500,7 @@ func (x *Audit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Audit.ProtoReflect.Descriptor instead.
 func (*Audit) Descriptor() ([]byte, []int) {
-	return file_api_aisphere_access_v1_access_proto_rawDescGZIP(), []int{2}
+	return file_api_aisphere_access_v1_access_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Audit) GetEnabled() bool {
@@ -355,13 +531,14 @@ type RateLimit struct {
 	Qps           float64                `protobuf:"fixed64,3,opt,name=qps,proto3" json:"qps,omitempty"`
 	Burst         int32                  `protobuf:"varint,4,opt,name=burst,proto3" json:"burst,omitempty"`
 	Backend       Backend                `protobuf:"varint,5,opt,name=backend,proto3,enum=aisphere.access.v1.Backend" json:"backend,omitempty"`
+	Scope         RateLimitScope         `protobuf:"varint,6,opt,name=scope,proto3,enum=aisphere.access.v1.RateLimitScope" json:"scope,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RateLimit) Reset() {
 	*x = RateLimit{}
-	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[3]
+	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -373,7 +550,7 @@ func (x *RateLimit) String() string {
 func (*RateLimit) ProtoMessage() {}
 
 func (x *RateLimit) ProtoReflect() protoreflect.Message {
-	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[3]
+	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -386,7 +563,7 @@ func (x *RateLimit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RateLimit.ProtoReflect.Descriptor instead.
 func (*RateLimit) Descriptor() ([]byte, []int) {
-	return file_api_aisphere_access_v1_access_proto_rawDescGZIP(), []int{3}
+	return file_api_aisphere_access_v1_access_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RateLimit) GetEnabled() bool {
@@ -424,6 +601,13 @@ func (x *RateLimit) GetBackend() Backend {
 	return Backend_BACKEND_UNSPECIFIED
 }
 
+func (x *RateLimit) GetScope() RateLimitScope {
+	if x != nil {
+		return x.Scope
+	}
+	return RateLimitScope_RATE_LIMIT_SCOPE_UNSPECIFIED
+}
+
 type Breaker struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Enabled       bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
@@ -434,7 +618,7 @@ type Breaker struct {
 
 func (x *Breaker) Reset() {
 	*x = Breaker{}
-	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[4]
+	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -446,7 +630,7 @@ func (x *Breaker) String() string {
 func (*Breaker) ProtoMessage() {}
 
 func (x *Breaker) ProtoReflect() protoreflect.Message {
-	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[4]
+	mi := &file_api_aisphere_access_v1_access_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -459,7 +643,7 @@ func (x *Breaker) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Breaker.ProtoReflect.Descriptor instead.
 func (*Breaker) Descriptor() ([]byte, []int) {
-	return file_api_aisphere_access_v1_access_proto_rawDescGZIP(), []int{4}
+	return file_api_aisphere_access_v1_access_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Breaker) GetEnabled() bool {
@@ -497,7 +681,7 @@ var File_api_aisphere_access_v1_access_proto protoreflect.FileDescriptor
 
 const file_api_aisphere_access_v1_access_proto_rawDesc = "" +
 	"\n" +
-	"#api/aisphere/access/v1/access.proto\x12\x12aisphere.access.v1\x1a#api/aisphere/options/v1/authz.proto\x1a google/protobuf/descriptor.proto\"\xb7\x02\n" +
+	"#api/aisphere/access/v1/access.proto\x12\x12aisphere.access.v1\x1a#api/aisphere/options/v1/authz.proto\x1a google/protobuf/descriptor.proto\"\xee\x02\n" +
 	"\fAccessPolicy\x128\n" +
 	"\bexposure\x18\x01 \x01(\x0e2\x1c.aisphere.access.v1.ExposureR\bexposure\x12/\n" +
 	"\x05authz\x18\x02 \x01(\v2\x19.aisphere.access.v1.AuthzR\x05authz\x12/\n" +
@@ -505,7 +689,13 @@ const file_api_aisphere_access_v1_access_proto_rawDesc = "" +
 	"\n" +
 	"rate_limit\x18\x04 \x01(\v2\x1d.aisphere.access.v1.RateLimitR\trateLimit\x125\n" +
 	"\abreaker\x18\x05 \x01(\v2\x1b.aisphere.access.v1.BreakerR\abreaker\x12\x16\n" +
-	"\x06reason\x18\x06 \x01(\tR\x06reason\"\x8b\x01\n" +
+	"\x06reason\x18\x06 \x01(\tR\x06reason\x125\n" +
+	"\agateway\x18\a \x01(\v2\x1b.aisphere.access.v1.GatewayR\agateway\"\xa2\x01\n" +
+	"\aGateway\x12<\n" +
+	"\apublish\x18\x01 \x01(\x0e2\".aisphere.access.v1.GatewayPublishR\apublish\x12\x1a\n" +
+	"\bprofiles\x18\x02 \x03(\tR\bprofiles\x12\x12\n" +
+	"\x04tags\x18\x03 \x03(\tR\x04tags\x12)\n" +
+	"\x10upstream_service\x18\x04 \x01(\tR\x0fupstreamService\"\x8b\x01\n" +
 	"\x05Authz\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x1a\n" +
 	"\bresource\x18\x02 \x01(\tR\bresource\x12\x1a\n" +
@@ -514,13 +704,14 @@ const file_api_aisphere_access_v1_access_proto_rawDesc = "" +
 	"\x05Audit\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x14\n" +
 	"\x05event\x18\x02 \x01(\tR\x05event\x12\x12\n" +
-	"\x04risk\x18\x03 \x01(\tR\x04risk\"\x96\x01\n" +
+	"\x04risk\x18\x03 \x01(\tR\x04risk\"\xd0\x01\n" +
 	"\tRateLimit\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x10\n" +
 	"\x03qps\x18\x03 \x01(\x01R\x03qps\x12\x14\n" +
 	"\x05burst\x18\x04 \x01(\x05R\x05burst\x125\n" +
-	"\abackend\x18\x05 \x01(\x0e2\x1b.aisphere.access.v1.BackendR\abackend\"7\n" +
+	"\abackend\x18\x05 \x01(\x0e2\x1b.aisphere.access.v1.BackendR\abackend\x128\n" +
+	"\x05scope\x18\x06 \x01(\x0e2\".aisphere.access.v1.RateLimitScopeR\x05scope\"7\n" +
 	"\aBreaker\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name*m\n" +
@@ -533,13 +724,22 @@ const file_api_aisphere_access_v1_access_proto_rawDesc = "" +
 	"AUTHORIZED\x10\x03\x12\f\n" +
 	"\bINTERNAL\x10\x04\x12\n" +
 	"\n" +
-	"\x06SYSTEM\x10\x05*G\n" +
+	"\x06SYSTEM\x10\x05*L\n" +
+	"\x0eGatewayPublish\x12\x1f\n" +
+	"\x1bGATEWAY_PUBLISH_UNSPECIFIED\x10\x00\x12\v\n" +
+	"\aENABLED\x10\x01\x12\f\n" +
+	"\bDISABLED\x10\x02*G\n" +
 	"\aBackend\x12\x17\n" +
 	"\x13BACKEND_UNSPECIFIED\x10\x00\x12\n" +
 	"\n" +
 	"\x06MEMORY\x10\x01\x12\t\n" +
 	"\x05REDIS\x10\x02\x12\f\n" +
-	"\bEXTERNAL\x10\x03:Z\n" +
+	"\bEXTERNAL\x10\x03*R\n" +
+	"\x0eRateLimitScope\x12 \n" +
+	"\x1cRATE_LIMIT_SCOPE_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0eLOCAL_INSTANCE\x10\x01\x12\n" +
+	"\n" +
+	"\x06GLOBAL\x10\x02:Z\n" +
 	"\x06policy\x12\x1e.google.protobuf.MethodOptions\x18\u008e\x03 \x01(\v2 .aisphere.access.v1.AccessPolicyR\x06policyB>Z<github.com/aisphereio/kernel/api/aisphere/access/v1;accessv1b\x06proto3"
 
 var (
@@ -554,34 +754,40 @@ func file_api_aisphere_access_v1_access_proto_rawDescGZIP() []byte {
 	return file_api_aisphere_access_v1_access_proto_rawDescData
 }
 
-var file_api_aisphere_access_v1_access_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_api_aisphere_access_v1_access_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_api_aisphere_access_v1_access_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_api_aisphere_access_v1_access_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_api_aisphere_access_v1_access_proto_goTypes = []any{
 	(Exposure)(0),                      // 0: aisphere.access.v1.Exposure
-	(Backend)(0),                       // 1: aisphere.access.v1.Backend
-	(*AccessPolicy)(nil),               // 2: aisphere.access.v1.AccessPolicy
-	(*Authz)(nil),                      // 3: aisphere.access.v1.Authz
-	(*Audit)(nil),                      // 4: aisphere.access.v1.Audit
-	(*RateLimit)(nil),                  // 5: aisphere.access.v1.RateLimit
-	(*Breaker)(nil),                    // 6: aisphere.access.v1.Breaker
-	(v1.AuthzMode)(0),                  // 7: aisphere.options.v1.AuthzMode
-	(*descriptorpb.MethodOptions)(nil), // 8: google.protobuf.MethodOptions
+	(GatewayPublish)(0),                // 1: aisphere.access.v1.GatewayPublish
+	(Backend)(0),                       // 2: aisphere.access.v1.Backend
+	(RateLimitScope)(0),                // 3: aisphere.access.v1.RateLimitScope
+	(*AccessPolicy)(nil),               // 4: aisphere.access.v1.AccessPolicy
+	(*Gateway)(nil),                    // 5: aisphere.access.v1.Gateway
+	(*Authz)(nil),                      // 6: aisphere.access.v1.Authz
+	(*Audit)(nil),                      // 7: aisphere.access.v1.Audit
+	(*RateLimit)(nil),                  // 8: aisphere.access.v1.RateLimit
+	(*Breaker)(nil),                    // 9: aisphere.access.v1.Breaker
+	(v1.AuthzMode)(0),                  // 10: aisphere.options.v1.AuthzMode
+	(*descriptorpb.MethodOptions)(nil), // 11: google.protobuf.MethodOptions
 }
 var file_api_aisphere_access_v1_access_proto_depIdxs = []int32{
-	0, // 0: aisphere.access.v1.AccessPolicy.exposure:type_name -> aisphere.access.v1.Exposure
-	3, // 1: aisphere.access.v1.AccessPolicy.authz:type_name -> aisphere.access.v1.Authz
-	4, // 2: aisphere.access.v1.AccessPolicy.audit:type_name -> aisphere.access.v1.Audit
-	5, // 3: aisphere.access.v1.AccessPolicy.rate_limit:type_name -> aisphere.access.v1.RateLimit
-	6, // 4: aisphere.access.v1.AccessPolicy.breaker:type_name -> aisphere.access.v1.Breaker
-	7, // 5: aisphere.access.v1.Authz.mode:type_name -> aisphere.options.v1.AuthzMode
-	1, // 6: aisphere.access.v1.RateLimit.backend:type_name -> aisphere.access.v1.Backend
-	8, // 7: aisphere.access.v1.policy:extendee -> google.protobuf.MethodOptions
-	2, // 8: aisphere.access.v1.policy:type_name -> aisphere.access.v1.AccessPolicy
-	9, // [9:9] is the sub-list for method output_type
-	9, // [9:9] is the sub-list for method input_type
-	8, // [8:9] is the sub-list for extension type_name
-	7, // [7:8] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	0,  // 0: aisphere.access.v1.AccessPolicy.exposure:type_name -> aisphere.access.v1.Exposure
+	6,  // 1: aisphere.access.v1.AccessPolicy.authz:type_name -> aisphere.access.v1.Authz
+	7,  // 2: aisphere.access.v1.AccessPolicy.audit:type_name -> aisphere.access.v1.Audit
+	8,  // 3: aisphere.access.v1.AccessPolicy.rate_limit:type_name -> aisphere.access.v1.RateLimit
+	9,  // 4: aisphere.access.v1.AccessPolicy.breaker:type_name -> aisphere.access.v1.Breaker
+	5,  // 5: aisphere.access.v1.AccessPolicy.gateway:type_name -> aisphere.access.v1.Gateway
+	1,  // 6: aisphere.access.v1.Gateway.publish:type_name -> aisphere.access.v1.GatewayPublish
+	10, // 7: aisphere.access.v1.Authz.mode:type_name -> aisphere.options.v1.AuthzMode
+	2,  // 8: aisphere.access.v1.RateLimit.backend:type_name -> aisphere.access.v1.Backend
+	3,  // 9: aisphere.access.v1.RateLimit.scope:type_name -> aisphere.access.v1.RateLimitScope
+	11, // 10: aisphere.access.v1.policy:extendee -> google.protobuf.MethodOptions
+	4,  // 11: aisphere.access.v1.policy:type_name -> aisphere.access.v1.AccessPolicy
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	11, // [11:12] is the sub-list for extension type_name
+	10, // [10:11] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_api_aisphere_access_v1_access_proto_init() }
@@ -594,8 +800,8 @@ func file_api_aisphere_access_v1_access_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_aisphere_access_v1_access_proto_rawDesc), len(file_api_aisphere_access_v1_access_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   5,
+			NumEnums:      4,
+			NumMessages:   6,
 			NumExtensions: 1,
 			NumServices:   0,
 		},

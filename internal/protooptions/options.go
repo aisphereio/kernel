@@ -52,6 +52,14 @@ type AccessPolicy struct {
 	RateLimit AccessRateLimit
 	Breaker   AccessBreaker
 	Reason    string
+	Gateway   AccessGateway
+}
+
+type AccessGateway struct {
+	Publish         int32
+	Profiles        []string
+	Tags            []string
+	UpstreamService string
 }
 
 type AccessAudit struct {
@@ -307,6 +315,70 @@ func ParseAccessPolicy(b []byte) AccessPolicy {
 				v, n := protowire.ConsumeString(b)
 				if n >= 0 {
 					o.Reason = v
+					b = b[n:]
+					continue
+				}
+			}
+		case 7:
+			if typ == protowire.BytesType {
+				v, n := protowire.ConsumeBytes(b)
+				if n >= 0 {
+					o.Gateway = ParseAccessGateway(v)
+					b = b[n:]
+					continue
+				}
+			}
+		}
+		n = protowire.ConsumeFieldValue(num, typ, b)
+		if n < 0 {
+			return o
+		}
+		b = b[n:]
+	}
+	return o
+}
+
+func ParseAccessGateway(b []byte) AccessGateway {
+	var o AccessGateway
+	for len(b) > 0 {
+		num, typ, n := protowire.ConsumeTag(b)
+		if n < 0 {
+			return o
+		}
+		b = b[n:]
+		switch num {
+		case 1:
+			if typ == protowire.VarintType {
+				v, n := protowire.ConsumeVarint(b)
+				if n >= 0 {
+					o.Publish = int32(v)
+					b = b[n:]
+					continue
+				}
+			}
+		case 2:
+			if typ == protowire.BytesType {
+				v, n := protowire.ConsumeString(b)
+				if n >= 0 {
+					o.Profiles = append(o.Profiles, v)
+					b = b[n:]
+					continue
+				}
+			}
+		case 3:
+			if typ == protowire.BytesType {
+				v, n := protowire.ConsumeString(b)
+				if n >= 0 {
+					o.Tags = append(o.Tags, v)
+					b = b[n:]
+					continue
+				}
+			}
+		case 4:
+			if typ == protowire.BytesType {
+				v, n := protowire.ConsumeString(b)
+				if n >= 0 {
+					o.UpstreamService = v
 					b = b[n:]
 					continue
 				}

@@ -17,3 +17,35 @@ func TestExtractPathVars(t *testing.T) {
 		t.Fatalf("vars=%v", vars)
 	}
 }
+
+func TestRouteUpstreamService(t *testing.T) {
+	tests := []struct {
+		name  string
+		route routeSpec
+		want  string
+	}{
+		{
+			name:  "explicit gateway target",
+			route: routeSpec{ServiceFullName: "skill.v1.SkillService", Audience: "legacy-service", UpstreamService: "hub-service"},
+			want:  "hub-service",
+		},
+		{
+			name:  "legacy authz audience",
+			route: routeSpec{ServiceFullName: "skill.v1.SkillService", Audience: "hub-service"},
+			want:  "hub-service",
+		},
+		{
+			name:  "service default",
+			route: routeSpec{ServiceFullName: "skill.v1.SkillService"},
+			want:  "skill-service",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := routeUpstreamService(tt.route); got != tt.want {
+				t.Fatalf("service=%q want=%q", got, tt.want)
+			}
+		})
+	}
+}

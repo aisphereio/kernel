@@ -287,7 +287,9 @@ func (s *Server) Handle(path string, h http.Handler) {
 	s.router.Handle(path, h)
 }
 
-// HandlePrefix registers a new route with a matcher for the URL path prefix.
+// HandlePrefix registers an infrastructure-only route with a matcher for the
+// URL path prefix. Business/native protocols that require Kernel request-info,
+// authn, authz, audit, or admission middleware must use HandleProtocolPrefix.
 func (s *Server) HandlePrefix(prefix string, h http.Handler) {
 	s.router.PathPrefix(prefix).Handler(h)
 }

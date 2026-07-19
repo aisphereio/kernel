@@ -290,3 +290,11 @@ SQL 写进 proto option
 ```
 
 如果任何一项答案不清楚，先回到 contract 和 Kernel 抽象，不要直接写业务 workaround。
+
+## 13. 原生 HTTP 协议
+
+当需求涉及 Git Smart HTTP、Git LFS、OCI Registry 等必须保持既有 wire protocol 的数据面时，不要用 JSON/protobuf handler 改写协议，也不要直接用 `HandlePrefix` 绕过 Kernel 中间件。
+
+必须使用 `transportx/http.HandleProtocol` 或 `HandleProtocolPrefix`：transport adapter 通过 `ProtocolDescriptor` 把 raw method/path/query 转换为稳定 operation 和结构化 payload，然后复用 requestinfo、authn、access/authz/audit、admission 链。业务 resolver 只能读取结构化 payload。
+
+管理面 API 仍然必须 proto-first；原生协议能力不是手写管理 API 的例外。

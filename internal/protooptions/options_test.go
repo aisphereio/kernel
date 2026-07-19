@@ -31,6 +31,23 @@ func TestParseAuthzAuditCapability(t *testing.T) {
 	}
 }
 
+func TestParseAccessPolicyGatewayUpstreamService(t *testing.T) {
+	var gateway []byte
+	gateway = protowire.AppendTag(gateway, 4, protowire.BytesType)
+	gateway = protowire.AppendString(gateway, "hub-service")
+
+	var payload []byte
+	payload = protowire.AppendTag(payload, 1, protowire.VarintType)
+	payload = protowire.AppendVarint(payload, 2)
+	payload = protowire.AppendTag(payload, 7, protowire.BytesType)
+	payload = protowire.AppendBytes(payload, gateway)
+
+	policy := ParseAccessPolicy(payload)
+	if policy.Exposure != 2 || policy.Gateway.UpstreamService != "hub-service" {
+		t.Fatalf("unexpected access policy: %#v", policy)
+	}
+}
+
 func mustLast(t *testing.T, unknown []byte, ext protowire.Number) []byte {
 	t.Helper()
 	b, ok := LastExtensionPayload(unknown, ext)
