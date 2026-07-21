@@ -32,6 +32,7 @@ requestx accessx authn authz auditx
 gatewayx admissionx ratelimitx clientpolicyx
 dbx cachex objectstorex dtmx
 selectorx registry encodingx
+kubernetesx
 ```
 
 工具包不是 runtime API，业务代码禁止 import：

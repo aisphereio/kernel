@@ -62,6 +62,8 @@
 | `encodingx` | optional | encoding 主线 |
 | `iamx` | optional | Kernel IAM 控制面模型和 Directory facade；不要把 authn provider 投影当 IAM 事实 |
 | `resourcex` | optional | 资源、角色模板和 Grant 控制面事实；authz relationships 是查询投影 |
+| `kubernetesx` | optional | Kubernetes 客户端主线；业务只依赖 `kubernetesx.Client`，不直接 import client-go/controller-runtime；第一阶段请求驱动，不启动 Manager/Cache |
+| `kubernetesx/fake` | helper | 纯 Go fake client，单元测试用；SSA 字段冲突与 CRD 真实语义用 envtest/Kind（后续 PR） |
 
 ## Framework assembly / helper packages
 
