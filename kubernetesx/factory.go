@@ -120,6 +120,19 @@ func resolveRESTConfig(cfg Config, o options) (*rest.Config, error) {
 		if cfg.InsecureSkipVerify {
 			restCfg.TLSClientConfig.Insecure = true
 		}
+		// Service-account credential: apply bearer token, CA cert and
+		// ServerName. Without these the client would be unauthenticated and
+		// (when Host is an IP) TLS would fail or skip verification. See
+		// Config.MergeCredential ServiceAccount branch.
+		if cfg.Token != "" {
+			restCfg.BearerToken = cfg.Token
+		}
+		if len(cfg.CACert) > 0 {
+			restCfg.CAData = cfg.CACert
+		}
+		if cfg.ServerName != "" {
+			restCfg.TLSClientConfig.ServerName = cfg.ServerName
+		}
 		return applyRESTDefaults(restCfg, cfg), nil
 	}
 

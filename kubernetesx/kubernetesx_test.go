@@ -196,6 +196,36 @@ func TestConfigMergeCredential_InClusterClearsHostAndKubeconfig(t *testing.T) {
 	}
 }
 
+// TestConfigMergeCredential_ServiceAccountCarriesTokenAndCA guards the
+// regression where the SA branch only copied Host onto Config, leaving the
+// factory to build an unauthenticated *rest.Config (Token/CA dropped). The
+// factory reads these from Config, so MergeCredential must populate them.
+func TestConfigMergeCredential_ServiceAccountCarriesTokenAndCA(t *testing.T) {
+	base := kubernetesx.Config{Host: "https://old:6443", Kubeconfig: []byte("payload")}
+	ca := []byte("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----")
+	out, err := base.MergeCredential(kubernetesx.Credential{
+		Kind:   kubernetesx.CredentialKindServiceAccount,
+		Host:   "https://10.0.0.1:6443",
+		Token:  "sa-token",
+		CACert: ca,
+	})
+	if err != nil {
+		t.Fatalf("merge failed: %v", err)
+	}
+	if out.Host != "https://10.0.0.1:6443" {
+		t.Fatalf("Host not applied: %q", out.Host)
+	}
+	if out.Token != "sa-token" {
+		t.Fatalf("Token not carried onto Config (factory would build unauthenticated client): %q", out.Token)
+	}
+	if string(out.CACert) != string(ca) {
+		t.Fatalf("CACert not carried onto Config: %q", out.CACert)
+	}
+	if len(out.Kubeconfig) != 0 || out.Context != "" {
+		t.Fatalf("SA merge must clear Kubeconfig/Context: %+v", out)
+	}
+}
+
 // -----------------------------------------------------------------------------
 // Scheme
 // -----------------------------------------------------------------------------

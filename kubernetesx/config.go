@@ -38,6 +38,17 @@ type Config struct {
 	// current-context of the kubeconfig.
 	Context string `json:"context"`
 
+	// Token is the bearer token used when authenticating with a
+	// CredentialKindServiceAccount credential. Populated by MergeCredential;
+	// ignored when Kubeconfig is non-empty. Like Kubeconfig, this field
+	// carries secret material and must not be logged.
+	Token string `json:"token,omitempty"`
+
+	// CACert is the PEM-encoded CA certificate used to verify the API server
+	// TLS certificate when authenticating with a service-account credential.
+	// Populated by MergeCredential; ignored when Kubeconfig is non-empty.
+	CACert []byte `json:"ca_cert,omitempty"`
+
 	// QPS is the API server request rate limit. Zero leaves the client-go
 	// default (5). Hub typically sets 50–100.
 	QPS float32 `json:"qps"`
@@ -147,9 +158,13 @@ func (c Config) MergeCredential(cred Credential) (Config, error) {
 		c.Host = cred.Host
 		c.Kubeconfig = nil
 		c.Context = ""
-		// Token and CACert are consumed by the factory when building the
-		// *rest.Config; they are not stored on Config directly to keep the
-		// type free of secret material in serialized form.
+		// Token and CACert are carried on Config so the factory can build a
+		// fully authenticated *rest.Config from Config alone (MergeCredential
+		// returns Config, not cred; without this the factory would construct
+		// an unauthenticated client). Like Kubeconfig, these are secret
+		// material on Config and must not be logged.
+		c.Token = cred.Token
+		c.CACert = cred.CACert
 		return c, nil
 	}
 	return Config{}, ErrCredentialInvalid

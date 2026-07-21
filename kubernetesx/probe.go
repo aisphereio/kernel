@@ -77,14 +77,20 @@ func probe(ctx context.Context, raw ctrlclient.Client, d discoveryClient, req Pr
 	// Namespace view: list namespaces. A forbidden response downgrades
 	// CanView but does not fail the probe — a cluster may legitimately
 	// restrict namespace listing while still allowing create.
-	result.NamespaceAccess.CanView = canListNamespaces(ctx, raw, req.Namespace)
+	// namespaces is cluster-scoped: do not scope the List to req.Namespace.
+	result.NamespaceAccess.CanView = canListNamespaces(ctx, raw)
 	if !result.NamespaceAccess.CanView {
 		result.Warnings = append(result.Warnings, "credential cannot list namespaces")
 	}
 
 	if !req.SkipAccessReview {
+		// namespaces is a cluster-scoped resource: SelfSubjectAccessReview
+		// ResourceAttributes.Namespace MUST be empty for cluster-scoped
+		// resources, otherwise kube-apiserver evaluates the permission under
+		// namespace-scoped semantics and the result is not trustworthy. Pass
+		// "" for all four verbs regardless of req.Namespace.
 		result.NamespaceAccess.CanCreate = canDo(ctx, raw, "create", "namespaces", "")
-		result.NamespaceAccess.CanUpdate = canDo(ctx, raw, "update", "namespaces", req.Namespace)
+		result.NamespaceAccess.CanUpdate = canDo(ctx, raw, "update", "namespaces", "")
 		result.NamespaceAccess.CanDelete = canDo(ctx, raw, "delete", "namespaces", "")
 	}
 	result.NamespaceAccess.ReadOnly = result.NamespaceAccess.CanView &&
@@ -109,14 +115,11 @@ func clusterUID(ctx context.Context, raw ctrlclient.Client) (string, string) {
 // canListNamespaces reports whether the credential can list namespaces. We
 // attempt an actual List limited to a single item; a forbidden/forbidden-style
 // error means no view permission. This avoids a SelfSubjectAccessReview round
-// trip for the common case.
-func canListNamespaces(ctx context.Context, raw ctrlclient.Client, namespace string) bool {
+// trip for the common case. namespaces is cluster-scoped, so no namespace
+// scoping is applied to the List.
+func canListNamespaces(ctx context.Context, raw ctrlclient.Client) bool {
 	list := &corev1.NamespaceList{}
-	opts := []ctrlclient.ListOption{ctrlclient.Limit(1)}
-	if namespace != "" {
-		opts = append(opts, ctrlclient.InNamespace(namespace))
-	}
-	if err := raw.List(ctx, list, opts...); err != nil {
+	if err := raw.List(ctx, list, ctrlclient.Limit(1)); err != nil {
 		return false
 	}
 	return true
