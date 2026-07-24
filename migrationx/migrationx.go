@@ -331,55 +331,5 @@ func execStatements(ctx context.Context, db *sql.DB, sqlText string) error {
 }
 
 func splitStatements(sqlText string) []string {
-	// P0 simple runner with goose-style StatementBegin/StatementEnd support.
-	// Complex PostgreSQL functions/triggers should be wrapped in:
-	//   -- +goose StatementBegin
-	//   ... semicolon rich SQL ...
-	//   -- +goose StatementEnd
-	// For production-grade dialect parsing, plug a real goose Migrator behind
-	// Kernel migrationx instead of hand-writing SQL splitting in business code.
-	var out []string
-	var current strings.Builder
-	inBlock := false
-	flush := func() {
-		stmt := strings.TrimSpace(current.String())
-		if stmt != "" {
-			out = append(out, stmt)
-		}
-		current.Reset()
-	}
-
-	for _, line := range strings.Split(sqlText, "\n") {
-		trimmed := strings.TrimSpace(line)
-		lower := strings.ToLower(trimmed)
-		switch lower {
-		case "-- +goose statementbegin":
-			flush()
-			inBlock = true
-			continue
-		case "-- +goose statementend":
-			inBlock = false
-			flush()
-			continue
-		}
-		if strings.HasPrefix(trimmed, "--") || trimmed == "" {
-			continue
-		}
-		if inBlock {
-			current.WriteString(line)
-			current.WriteByte('\n')
-			continue
-		}
-		parts := strings.Split(line, ";")
-		for i, part := range parts {
-			current.WriteString(part)
-			if i < len(parts)-1 {
-				flush()
-			} else {
-				current.WriteByte('\n')
-			}
-		}
-	}
-	flush()
-	return out
+	return splitSQLStatements(sqlText)
 }
