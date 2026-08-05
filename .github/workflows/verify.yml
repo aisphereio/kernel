@@ -14,6 +14,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  taskx:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout pull request HEAD
+        uses: actions/checkout@v4
+
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Unit tests
+        run: go test ./taskx/... -count=1
+
+      - name: Race tests
+        run: go test -race ./taskx/... -count=1
+
+      - name: Vet
+        run: go vet ./taskx/...
+
+      - name: Coverage
+        run: go test ./taskx/... -coverprofile=taskx-coverage.out -count=1
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 45
