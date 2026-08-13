@@ -54,7 +54,9 @@ jobs:
         run: |
           set -euxo pipefail
           rm -rf "$RUNNER_TEMP/kernel-layout" "$RUNNER_TEMP/kernel-generated"
-          git clone --depth 1 https://github.com/aisphereio/kernel-layout.git "$RUNNER_TEMP/kernel-layout"
+          # During Kernel #39 hardening, test against the companion kernel-layout
+          # contract fix. Switch back to main after kernel-layout #5 is merged.
+          git clone --depth 1 --branch fix-framework-template https://github.com/aisphereio/kernel-layout.git "$RUNNER_TEMP/kernel-layout"
           mkdir -p "$RUNNER_TEMP/kernel-generated"
           "$GITHUB_WORKSPACE/.bin/kernel" new "$RUNNER_TEMP/kernel-generated/boundary-smoke" \
             --repo "$RUNNER_TEMP/kernel-layout" \
