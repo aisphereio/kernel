@@ -1,0 +1,76 @@
+name: framework-boundary-hardening
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+          cache: true
+
+      - name: Add real goose dependency and tidy
+        shell: bash
+        run: |
+          set -euxo pipefail
+          go get github.com/pressly/goose/v3@v3.27.3
+          go mod tidy
+
+      - name: Targeted framework tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          go test ./dbx ./dbrepo ./migrationx ./serverx -count=1
+          go test ./cmd/protoc-gen-go-gateway ./cmd/protoc-gen-go-kernel ./cmd/protoc-gen-go-authz ./cmd/protoc-gen-go-http ./cmd/buf-check-aisphere -count=1
+
+      - name: Build generators and regenerate API
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make tools
+          make api
+          make proto-check
+
+      - name: Compile generated contract surface
+        shell: bash
+        run: |
+          set -euxo pipefail
+          go test ./api/... ./serverx ./gatewayx ./requestx ./accessx ./authn ./authz -count=1
+
+      - name: Save module files
+        uses: actions/upload-artifact@v4
+        with:
+          name: framework-boundary-module-files
+          path: |
+            go.mod
+            go.sum
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Build source bundle
+        if: always()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          tar --exclude=.git --exclude=.bin --exclude='kernel-framework-boundary-code.tgz' -czf kernel-framework-boundary-code.tgz .
+
+      - name: Upload source bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-framework-boundary-code
+          path: kernel-framework-boundary-code.tgz
+          if-no-files-found: error
+          retention-days: 7
