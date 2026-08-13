@@ -43,8 +43,8 @@ type Config struct {
 	FailOnPending bool   `json:"fail_on_pending" yaml:"fail_on_pending"`
 
 	// AllowConcurrent is reserved for a future explicit distributed/advisory
-	// locking implementation. serverx currently fails closed for startup-time
-	// migration apply when replicas > 1, even if this field is true.
+	// locking implementation. It is currently normalized to false so service
+	// startup fails closed when replicas > 1 and mode applies migrations.
 	AllowConcurrent bool `json:"allow_concurrent" yaml:"allow_concurrent"`
 }
 
@@ -65,6 +65,9 @@ func (c Config) Normalize() Config {
 	if c.Dir == "" {
 		c.Dir = "migrations"
 	}
+	// Until Kernel exposes a concrete migration locker contract for every
+	// supported database, startup-time concurrent apply must remain fail-closed.
+	c.AllowConcurrent = false
 	return c
 }
 
