@@ -51,12 +51,19 @@ jobs:
 
       - name: Generate a real service with kernel new
         shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euxo pipefail
           rm -rf "$RUNNER_TEMP/kernel-layout" "$RUNNER_TEMP/kernel-generated"
-          # During Kernel #39 hardening, test against the companion kernel-layout
-          # contract fix. Switch back to main after kernel-layout #5 is merged.
-          git clone --depth 1 --branch fix-framework-template https://github.com/aisphereio/kernel-layout.git "$RUNNER_TEMP/kernel-layout"
+          layout_ref=main
+          # Kernel #39 is developed together with kernel-layout #5. Only this PR
+          # uses the companion branch; every subsequent Kernel PR validates the
+          # merged/default kernel-layout main branch.
+          if [ "$PR_NUMBER" = "39" ]; then
+            layout_ref=fix-framework-template
+          fi
+          git clone --depth 1 --branch "$layout_ref" https://github.com/aisphereio/kernel-layout.git "$RUNNER_TEMP/kernel-layout"
           mkdir -p "$RUNNER_TEMP/kernel-generated"
           "$GITHUB_WORKSPACE/.bin/kernel" new "$RUNNER_TEMP/kernel-generated/boundary-smoke" \
             --repo "$RUNNER_TEMP/kernel-layout" \
