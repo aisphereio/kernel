@@ -140,7 +140,7 @@ func (r *ResourceRepository[T]) Get(ctx context.Context, id any) (*T, error) {
 	var row T
 	q := base.Where(r.cfg.IDColumn+" = ?", id)
 	if err := q.First(&row).Error; err != nil {
-		return nil, err
+		return nil, dbx.NormalizeGORMError(err)
 	}
 	return &row, nil
 }
@@ -159,7 +159,7 @@ func (r *ResourceRepository[T]) List(ctx context.Context, q Query) (*Page[T], er
 	}
 	var total int64
 	if err := dbq.Count(&total).Error; err != nil {
-		return nil, err
+		return nil, dbx.NormalizeGORMError(err)
 	}
 	if q.Sort != "" {
 		if !allowed(q.Sort, r.cfg.AllowedSorts) {
@@ -173,7 +173,7 @@ func (r *ResourceRepository[T]) List(ctx context.Context, q Query) (*Page[T], er
 	}
 	var items []T
 	if err := dbq.Offset((q.Page - 1) * q.Size).Limit(q.Size).Find(&items).Error; err != nil {
-		return nil, err
+		return nil, dbx.NormalizeGORMError(err)
 	}
 	return &Page[T]{Items: items, Total: total, Page: q.Page, Size: q.Size, HasMore: int64(q.Page*q.Size) < total}, nil
 }
@@ -201,7 +201,7 @@ func (r *ResourceRepository[T]) Create(ctx context.Context, row *T) error {
 		setTimeColumn(row, r.cfg.CreatedColumn, now)
 		setTimeColumn(row, r.cfg.UpdatedColumn, now)
 	}
-	return r.db.GORM(ctx).Table(r.cfg.Table).Create(row).Error
+	return dbx.NormalizeGORMError(r.db.GORM(ctx).Table(r.cfg.Table).Create(row).Error)
 }
 
 func (r *ResourceRepository[T]) Patch(ctx context.Context, id any, patch map[string]any) error {
@@ -223,7 +223,7 @@ func (r *ResourceRepository[T]) Patch(ctx context.Context, id any, patch map[str
 		return err
 	}
 	q := base.Where(r.cfg.IDColumn+" = ?", id)
-	return q.Updates(clean).Error
+	return dbx.NormalizeGORMError(q.Updates(clean).Error)
 }
 
 func (r *ResourceRepository[T]) Delete(ctx context.Context, id any) error {
@@ -233,9 +233,9 @@ func (r *ResourceRepository[T]) Delete(ctx context.Context, id any) error {
 	}
 	q := base.Where(r.cfg.IDColumn+" = ?", id)
 	if r.cfg.SoftDelete {
-		return q.Update(r.cfg.DeletedColumn, time.Now()).Error
+		return dbx.NormalizeGORMError(q.Update(r.cfg.DeletedColumn, time.Now()).Error)
 	}
-	return q.Delete(new(T)).Error
+	return dbx.NormalizeGORMError(q.Delete(new(T)).Error)
 }
 
 func (r *ResourceRepository[T]) base(ctx context.Context) (*gorm.DB, error) {
