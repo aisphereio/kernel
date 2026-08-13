@@ -21,22 +21,12 @@ jobs:
           go-version: '1.26.4'
           cache: true
 
-      - name: Add real goose dependency and tidy
+      - name: Verify module graph is committed
         shell: bash
         run: |
           set -euxo pipefail
-          go get github.com/pressly/goose/v3@v3.27.3
           go mod tidy
-
-      - name: Save resolved module files
-        uses: actions/upload-artifact@v4
-        with:
-          name: framework-boundary-module-files
-          path: |
-            go.mod
-            go.sum
-          if-no-files-found: error
-          retention-days: 7
+          git diff --exit-code -- go.mod go.sum
 
       - name: Targeted framework tests
         shell: bash
