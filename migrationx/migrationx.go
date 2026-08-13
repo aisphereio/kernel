@@ -27,6 +27,9 @@ const (
 	ModeValidate    = "validate"
 	ModeGORMDevAuto = "gorm_dev_auto"
 
+	EngineGoose     = "goose"
+	EngineKernelSQL = "kernel_sql"
+
 	defaultTable = "kernel_schema_migrations"
 )
 
@@ -39,9 +42,9 @@ type Config struct {
 	Mode          string `json:"mode" yaml:"mode"`
 	FailOnPending bool   `json:"fail_on_pending" yaml:"fail_on_pending"`
 
-	// AllowConcurrent explicitly allows startup-time applying migrations while
-	// the deployment has more than one replica. Leave false for production unless
-	// an external migration job or database advisory lock strategy is in place.
+	// AllowConcurrent is reserved for a future explicit distributed/advisory
+	// locking implementation. serverx currently fails closed for startup-time
+	// migration apply when replicas > 1, even if this field is true.
 	AllowConcurrent bool `json:"allow_concurrent" yaml:"allow_concurrent"`
 }
 
@@ -54,7 +57,7 @@ func (c Config) Normalize() Config {
 		}
 	}
 	if c.Engine == "" {
-		c.Engine = "goose"
+		c.Engine = EngineGoose
 	}
 	if c.Table == "" {
 		c.Table = defaultTable
@@ -65,7 +68,9 @@ func (c Config) Normalize() Config {
 	return c
 }
 
-// Migration is one discovered SQL migration.
+// Migration is one discovered SQL migration. This type belongs to the legacy
+// kernel_sql runner and is kept for tests/backward compatibility. New services
+// should use EngineGoose so SQL parsing/execution is delegated to goose.
 type Migration struct {
 	Version  string
 	Name     string
@@ -75,7 +80,7 @@ type Migration struct {
 	Checksum string
 }
 
-// Status is one migration's observed state.
+// Status is one migration's observed state for the legacy kernel_sql runner.
 type Status struct {
 	Version  string
 	Name     string
@@ -84,6 +89,11 @@ type Status struct {
 }
 
 // Apply opens the configured migration directory and applies or validates it.
+//
+// EngineGoose is the production/default path. EngineKernelSQL retains the old
+// simple runner only for compatibility and tests; it must not be used for
+// complex SQL because Kernel intentionally does not attempt to reimplement a
+// database migration parser.
 func Apply(ctx context.Context, db dbx.DB, cfg Config) error {
 	cfg = cfg.Normalize()
 	switch cfg.Mode {
@@ -96,20 +106,31 @@ func Apply(ctx context.Context, db dbx.DB, cfg Config) error {
 	if db == nil {
 		return fmt.Errorf("migrationx: nil db")
 	}
-	migs, err := LoadDir(os.DirFS(cfg.Dir), ".")
-	if err != nil {
-		return err
+
+	switch strings.ToLower(strings.TrimSpace(cfg.Engine)) {
+	case EngineGoose:
+		return applyGoose(ctx, db, cfg)
+	case EngineKernelSQL:
+		migs, err := LoadDir(os.DirFS(cfg.Dir), ".")
+		if err != nil {
+			return err
+		}
+		return ApplyMigrations(ctx, db, cfg, migs)
+	default:
+		return fmt.Errorf("migrationx: unsupported engine %q", cfg.Engine)
 	}
-	return ApplyMigrations(ctx, db, cfg, migs)
 }
 
-// LoadDir loads goose-compatible SQL migrations from an fs.FS.
+// LoadDir loads SQL migrations for the legacy kernel_sql engine.
 //
 // Supported forms:
 //
 //	000001_create_skills.sql       with -- +goose Up / -- +goose Down sections
 //	000001_create_skills.up.sql    split up file
 //	000001_create_skills.down.sql  split down file
+//
+// Deprecated: production services should use EngineGoose. This loader remains
+// useful for deterministic unit tests and compatibility only.
 func LoadDir(fsys fs.FS, root string) ([]Migration, error) {
 	if root == "" {
 		root = "."
@@ -214,7 +235,8 @@ func parseGooseSections(s string) (up, down string) {
 	return upb.String(), downb.String()
 }
 
-// ApplyMigrations applies or validates a prepared migration set.
+// ApplyMigrations applies or validates a prepared migration set using the
+// legacy kernel_sql engine.
 func ApplyMigrations(ctx context.Context, db dbx.DB, cfg Config, migrations []Migration) error {
 	cfg = cfg.Normalize()
 	g := db.GORM(ctx)
@@ -249,7 +271,8 @@ func ApplyMigrations(ctx context.Context, db dbx.DB, cfg Config, migrations []Mi
 	return nil
 }
 
-// Validate checks pending and checksum drift without applying SQL.
+// Validate checks pending and checksum drift for the legacy kernel_sql engine
+// without applying SQL.
 func Validate(ctx context.Context, sqlDB *sql.DB, cfg Config, migrations []Migration) error {
 	cfg = cfg.Normalize()
 	if err := ensureTable(ctx, sqlDB, cfg.Table); err != nil {
