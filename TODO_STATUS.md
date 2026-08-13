@@ -46,6 +46,8 @@ Kernel runtime tree 只保留框架能力。场景验证、generated-shape 实�
 20. [x] Goose 依赖和 `go.mod/go.sum` 已正式提交；CI 通过 `go mod tidy + git diff --exit-code` 阻止模块依赖漂移。
 21. [x] README、docs/README、AGENTS、package-status、runtime-api-boundary 改为中文主线。
 22. [x] `validation/` 从 runtime API 和 CI 默认包图移除。
+23. [x] 真实 `kernel new -> make api -> make verify` 生成项目成为 release gate，不再只依赖 generated-equivalent demo。
+24. [x] `serverx` 对缺失 generated gRPC/HTTP registrar fail-closed，避免服务启动但业务 RPC 未注册。
 
 ## 2026-08-13 框架边界硬化验收
 
@@ -63,18 +65,24 @@ make tools
 make api
 make proto-check
 generated contract compile
+kernel new boundary-smoke
+生成项目 make tools-local
+生成项目 make verify
 source artifact packaging
 ```
 
 同时通过现有：
 
 ```text
+verify
 dbflow
 platform-real-grpc
 governance-demo
 kernel-cli-smoke
 taskx
 ```
+
+真实生成项目 gate 同时发现并修复了 `kernel-layout` 中的 proto contract 漂移、废弃 config generator、业务测试旧生成类型和提交 generated artifacts 不同步问题。Kernel #39 联调期间只对 PR #39 使用 companion layout branch；后续 Kernel PR 自动回到 `kernel-layout/main`，不留下长期 feature-branch 依赖。
 
 ## 当前验证方式
 
@@ -118,12 +126,12 @@ go test ./gatewayx ./bootx ./requestx ./admissionx ./middleware/autowire ./ratel
 ## 下一步（P1/P2，不再混入本轮 P0）
 
 1. [ ] 完成 `serverx.Clients()` 正式 client factory，业务不再碰 raw client。
-2. [ ] 用真实 `kernel new -> make api -> make verify` 生成项目作为端到端 release gate，进一步淘汰手写 generated-equivalent demo。
-3. [ ] 为 Kernel Gateway 增加 route watcher + immutable/atomic route snapshot，避免请求热路径重复构建 matcher。
-4. [ ] 为 Gateway 补 `/gateway/routes`、`/gateway/snapshot`、reload status 系统路由。
-5. [ ] 为 `gatewayx.EtcdRegistry` 接入真实 etcd clientv3 adapter 或统一 `etcdx.Store`。
-6. [ ] 补 IAM demo service 的登录、token relay、service-auth、authz、audit 三段真实联调验证。
-7. [ ] 补 `kernel db migration create/up/status/down` CLI。
-8. [ ] 为生产 migration 设计显式 `MigrationLocker` contract；在实现 PG/MySQL 锁后再允许多副本 startup apply。
-9. [ ] 补真实 PG/MySQL migration + CRUD 集成验证，优先走 GitHub Actions/Testcontainers。
-10. [ ] 补 `kernel db inspect`，从表结构生成 Row/Repo skeleton。
+2. [ ] 为 Kernel Gateway 增加 route watcher + immutable/atomic route snapshot，避免请求热路径重复构建 matcher。
+3. [ ] 为 Gateway 补 `/gateway/routes`、`/gateway/snapshot`、reload status 系统路由。
+4. [ ] 为 `gatewayx.EtcdRegistry` 接入真实 etcd clientv3 adapter 或统一 `etcdx.Store`。
+5. [ ] 补 IAM demo service 的登录、token relay、service-auth、authz、audit 三段真实联调验证。
+6. [ ] 补 `kernel db migration create/up/status/down` CLI。
+7. [ ] 为生产 migration 设计显式 `MigrationLocker` contract；在实现 PG/MySQL 锁后再允许多副本 startup apply。
+8. [ ] 补真实 PG/MySQL migration + CRUD 集成验证，优先走 GitHub Actions/Testcontainers。
+9. [ ] 补 `kernel db inspect`，从表结构生成 Row/Repo skeleton。
+10. [ ] 把默认 layout 的 cache/objectstore/DTM/logger/metrics 进一步收敛为统一 RuntimeDeps/ResourceFactory，使 `cmd/server/main.go` 更薄。
