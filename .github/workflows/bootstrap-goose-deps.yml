@@ -1,0 +1,41 @@
+name: bootstrap-goose-deps
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  commit-deps:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix-framework-boundary'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+          cache: true
+
+      - name: Resolve goose dependency
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if grep -q 'github.com/pressly/goose/v3 v3.27.3' go.mod; then
+            echo 'goose dependency already committed'
+            exit 0
+          fi
+          go get github.com/pressly/goose/v3@v3.27.3
+          go mod tidy
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add go.mod go.sum
+          git commit -m 'deps: add goose migration engine'
+          git push origin HEAD:${{ github.head_ref }}
