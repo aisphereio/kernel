@@ -10,7 +10,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,6 +48,28 @@ jobs:
         run: |
           set -euxo pipefail
           go test ./api/... ./serverx ./gatewayx ./requestx ./accessx ./authn ./authz -count=1
+
+      - name: Generate a real service with kernel new
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf "$RUNNER_TEMP/kernel-layout" "$RUNNER_TEMP/kernel-generated"
+          git clone --depth 1 https://github.com/aisphereio/kernel-layout.git "$RUNNER_TEMP/kernel-layout"
+          mkdir -p "$RUNNER_TEMP/kernel-generated"
+          "$GITHUB_WORKSPACE/.bin/kernel" new "$RUNNER_TEMP/kernel-generated/boundary-smoke" \
+            --repo "$RUNNER_TEMP/kernel-layout" \
+            --kernel-version dev \
+            --timeout 180s
+
+      - name: Verify generated service against this Kernel commit
+        shell: bash
+        working-directory: ${{ runner.temp }}/kernel-generated/boundary-smoke
+        run: |
+          set -euxo pipefail
+          go mod edit -replace github.com/aisphereio/kernel="$GITHUB_WORKSPACE"
+          go mod tidy
+          make tools-local KERNEL_LOCAL="$GITHUB_WORKSPACE"
+          make verify KERNEL_LOCAL="$GITHUB_WORKSPACE"
 
       - name: Build source bundle
         if: always()
