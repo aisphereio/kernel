@@ -6,6 +6,16 @@ modules:
 lint:
   use:
     - STANDARD
+  # Kernel's canonical public contracts live under api/. The repository also
+  # carries compatibility wrappers, examples and test fixtures that deliberately
+  # do not conform to the public API layout. make proto-check scopes lint/build
+  # to api/; these two legacy naming rules are retained for compatibility until
+  # the next explicit proto breaking-change window.
+  ignore_only:
+    PACKAGE_DIRECTORY_MATCH:
+      - api
+    ENUM_VALUE_PREFIX:
+      - api
 deps:
   - buf.build/googleapis/googleapis
   - buf.build/grpc-ecosystem/grpc-gateway
