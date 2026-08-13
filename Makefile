@@ -6,6 +6,7 @@ COVERPROFILE ?= coverage.out
 FUZZTIME ?= 30s
 RELEASE_VERSION ?=
 KERNEL_TEST_PACKAGES ?= ./authn ./authz ./accessx ./serverx ./gatewayx ./requestx ./middleware/... ./cmd/...
+KERNEL_PROTO_PATH ?= api
 
 ifeq ($(OS),Windows_NT)
 LOCAL_BIN := $(CURDIR)\.bin
@@ -18,7 +19,7 @@ help:
 	@echo "Aisphere Kernel repository targets:"
 	@echo "  make tools             build Kernel CLI and generator tools into .bin"
 	@echo "  make api               generate Kernel protobuf/grpc/http/gateway/openapi code"
-	@echo "  make proto-check       run buf lint and buf-check-aisphere on Kernel proto contracts"
+	@echo "  make proto-check       lint/check canonical Kernel API contracts under $(KERNEL_PROTO_PATH)"
 	@echo "  make test              run Kernel runtime/tooling tests"
 	@echo "  make test-cmd          run command package tests"
 	@echo "  make verify            run the normal Kernel repository gate"
@@ -108,13 +109,16 @@ endif
 api: proto
 	@echo "✓ kernel api generation complete"
 
+# Only canonical public Kernel contracts under api/ are part of the framework
+# contract gate. Compatibility wrappers, examples and test fixtures have their
+# own tests and must not redefine the public API lint boundary.
 proto-check: tools
 ifeq ($(OS),Windows_NT)
-	@if exist .bin\buf.exe (.bin\buf.exe lint) else (buf lint)
-	@if exist .bin\buf.exe (.bin\buf.exe build -o - | .bin\buf-check-aisphere.exe) else (buf build -o - | buf-check-aisphere)
+	@if exist .bin\buf.exe (.bin\buf.exe lint --path $(KERNEL_PROTO_PATH)) else (buf lint --path $(KERNEL_PROTO_PATH))
+	@if exist .bin\buf.exe (.bin\buf.exe build --path $(KERNEL_PROTO_PATH) -o - | .bin\buf-check-aisphere.exe) else (buf build --path $(KERNEL_PROTO_PATH) -o - | buf-check-aisphere)
 else
-	@if [ -x "$(LOCAL_BIN)/buf" ]; then $(LOCAL_BIN)/buf lint; else buf lint; fi
-	@if [ -x "$(LOCAL_BIN)/buf" ]; then $(LOCAL_BIN)/buf build -o - | $(LOCAL_BIN)/buf-check-aisphere; else buf build -o - | buf-check-aisphere; fi
+	@if [ -x "$(LOCAL_BIN)/buf" ]; then $(LOCAL_BIN)/buf lint --path $(KERNEL_PROTO_PATH); else buf lint --path $(KERNEL_PROTO_PATH); fi
+	@if [ -x "$(LOCAL_BIN)/buf" ]; then $(LOCAL_BIN)/buf build --path $(KERNEL_PROTO_PATH) -o - | $(LOCAL_BIN)/buf-check-aisphere; else buf build --path $(KERNEL_PROTO_PATH) -o - | buf-check-aisphere; fi
 endif
 
 contract: proto-check
