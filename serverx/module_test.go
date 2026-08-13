@@ -102,3 +102,29 @@ func TestBuildServiceFromFactoryRejectsConcurrentMigrationApply(t *testing.T) {
 		t.Fatalf("expected concurrent migration guard, got %v", err)
 	}
 }
+
+func TestBuildServiceFromFactoryIgnoresUnsafeConcurrentMigrationOverride(t *testing.T) {
+	mod := ServiceModule{
+		Name: "skill-service",
+		RequestInfoResolver: func(context.Context, string, any) (requestx.Info, bool, error) {
+			return requestx.Info{Operation: "/svc/Get"}, true, nil
+		},
+		AccessResolver: func(context.Context, string, any) (accessx.Check, bool, error) { return accessx.Check{}, true, nil },
+	}
+	cfg := Config{
+		Name:       "skill-service",
+		HTTP:       HTTPConfig{Enabled: true},
+		Deployment: bootx.Deployment{Replicas: 2},
+		Database: DatabaseConfig{Enabled: true, Migration: migrationx.Config{
+			Enabled:         true,
+			Mode:            migrationx.ModeApply,
+			AllowConcurrent: true,
+		}},
+	}
+	_, err := BuildServiceFromFactory(context.Background(), cfg, mod, func(context.Context, ServiceDeps) (any, error) {
+		return struct{}{}, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "single replica") {
+		t.Fatalf("expected fail-closed concurrent migration guard, got %v", err)
+	}
+}
