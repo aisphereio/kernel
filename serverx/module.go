@@ -40,7 +40,8 @@ type ServiceModule struct {
 	RegisterGRPC func(*transportgrpc.Server, any) error
 
 	// RegisterHTTP registers generated HTTP/JSON routes against Kernel's managed
-	// HTTP transport. Optional for services that only expose gRPC internally.
+	// HTTP transport. Optional for services that only expose gRPC internally or
+	// only use HTTP for Kernel-owned system routes.
 	RegisterHTTP func(*transporthttp.Server, any) error
 
 	// RegisterGatewayInvokers registers generated Gateway -> gRPC operation
@@ -174,6 +175,9 @@ func BuildServiceFromFactory(ctx context.Context, cfg Config, module ServiceModu
 	if factory == nil {
 		return nil, fmt.Errorf("serverx: service factory is nil")
 	}
+	if err := validateGeneratedTransportBindings(cfg, module); err != nil {
+		return nil, err
+	}
 
 	bo := &buildOptions{}
 	for _, opt := range opts {
@@ -235,23 +239,39 @@ func BuildServiceFromFactory(ctx context.Context, cfg Config, module ServiceModu
 		Providers: providers,
 	})
 	if err != nil {
-		if app.db != nil {
-			_ = app.db.Close()
-		}
+		closeBuildDB(app)
 		return nil, err
 	}
 
-	if app.GRPC() != nil && module.RegisterGRPC != nil {
+	if app.GRPC() != nil {
 		if err := module.RegisterGRPC(app.GRPC(), svc); err != nil {
+			closeBuildDB(app)
 			return nil, err
 		}
 	}
 	if app.HTTP() != nil && module.RegisterHTTP != nil {
 		if err := module.RegisterHTTP(app.HTTP(), svc); err != nil {
+			closeBuildDB(app)
 			return nil, err
 		}
 	}
 	return app, nil
+}
+
+func validateGeneratedTransportBindings(cfg Config, module ServiceModule) error {
+	if cfg.GRPC.Enabled && module.RegisterGRPC == nil {
+		return fmt.Errorf("serverx: service module %s enables gRPC but is missing generated gRPC registration", module.ModuleName())
+	}
+	if cfg.HTTP.Enabled && len(module.GatewayManifest.Routes) > 0 && module.RegisterHTTP == nil {
+		return fmt.Errorf("serverx: service module %s exposes HTTP routes but is missing generated HTTP registration", module.ModuleName())
+	}
+	return nil
+}
+
+func closeBuildDB(app *App) {
+	if app != nil && app.db != nil {
+		_ = app.db.Close()
+	}
 }
 
 func validateMigrationConcurrency(cfg Config) error {
@@ -265,7 +285,7 @@ func validateMigrationConcurrency(cfg Config) error {
 		return nil
 	}
 	if cfg.Deployment.Replicas > 1 && !migration.AllowConcurrent {
-		return fmt.Errorf("serverx: migration apply requires a single replica or migration.allow_concurrent=true")
+		return fmt.Errorf("serverx: migration apply requires a single replica or an external migration job/explicit migration locker; concurrent startup apply is currently disabled")
 	}
 	return nil
 }

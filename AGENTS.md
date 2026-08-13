@@ -5,17 +5,20 @@
 ## 1. 总原则
 
 ```text
-proto contract
+kernel new service
+  -> proto contract
   -> buf-check-aisphere
   -> protoc generators
-  -> requestx.Info
+  -> generated ServiceModule
   -> serverx/autowire
+  -> authn/authz/accessx/audit
+  -> dbx/migrationx/dbrepo
   -> admissionx
   -> business service
   -> errorx negotiated response
 ```
 
-业务组件只写领域逻辑。ctx、trace、authn、authz、audit、rate limit、retry、breaker、timeout、error 协议转换由 Kernel 统一提供。
+业务组件只写领域逻辑。ctx、trace、authn、authz、audit、rate limit、retry、breaker、timeout、error 协议转换、DB 连接和 migration 生命周期由 Kernel 统一提供。
 
 如果 Kernel 当前表达不了需求，必须先修 Kernel，再写业务代码。
 
@@ -30,7 +33,7 @@ errorx logx configx metricsx serverx securityx bootx contextx
 transportx/http transportx/grpc
 requestx accessx authn authz auditx
 gatewayx admissionx ratelimitx clientpolicyx
-dbx cachex objectstorex dtmx
+dbx dbrepo migrationx cachex objectstorex dtmx
 selectorx registry encodingx
 kubernetesx
 ```
@@ -62,12 +65,12 @@ grpcgatewayx
 
 | 目录 | 职责 | 规则 |
 |---|---|---|
-| `api/` | proto option、公共契约 | 新 RPC 必须声明 access policy |
+| `api/` | canonical proto option、公共契约 | 新 RPC 必须声明 access policy；`make proto-check` 只以这里为正式 API gate |
 | `cmd/kernel` | CLI | 默认从 `aisphereio/kernel-layout` 拉取服务模板 |
 | `cmd/protoc-gen-*` | 代码生成器 | 生成 glue code，业务不 import |
 | `cmd/buf-check-*` | 契约检查 | 失败即阻断 |
 | `requestx/` | 请求元信息中心 | 中间件、审计、限流、鉴权都读 `requestx.Info` |
-| `serverx/` | 一键服务装配 | 业务组件必须通过它启动服务 |
+| `serverx/` | 一键服务装配 | 业务组件必须通过它启动服务；Data/Provider 通过 `ServiceDeps` 注入 |
 | `securityx/` | 安全配置与 provider-neutral runtime | 不是 middleware 装配层，由 `serverx.RuntimeProviders` 消费 |
 | `transportx/` | HTTP/gRPC transport | 新代码使用 transportx |
 | `accessx/` | 访问控制 guard | 统一组合 authn/authz/audit |
@@ -75,10 +78,13 @@ grpcgatewayx
 | `clientpolicyx/` | 服务间调用策略 | 下游 timeout/retry/breaker 进入这里 |
 | `admissionx/` | 准入插件链 | 跨接口默认值和校验放这里 |
 | `gatewayx/` | Gateway runtime | route manifest、registry、matcher、dispatcher |
+| `dbx/` | 数据库执行层 | GORM、连接池、事务、PG/MySQL driver、错误归一化 |
+| `migrationx/` | schema migration 集成层 | SQL 是唯一真实来源；生产默认委托真实 goose |
+| `dbrepo/` | AI 友好的资源 repository | tenant/owner 必须 fail-closed，过滤/排序/patch 必须受约束 |
 | `registry/` | 服务注册发现 runtime API | 保持现有包名，不再在文档里写成不存在的 `registryx` |
 | `docs/` | 中文规范文档 | 能力变化必须同步文档 |
 
-更多说明参考：`docs/contracts/runtime-api-boundary.md`、`docs/contracts/package-status.md` 和 `docs/ai/advanced-feature-playbook.md`。
+更多说明参考：`docs/contracts/runtime-api-boundary.md`、`docs/contracts/package-status.md`、`docs/contracts/dbx-data-development.md` 和 `docs/ai/advanced-feature-playbook.md`。
 
 ## 4. 业务开发硬规则
 
@@ -124,16 +130,49 @@ Gateway 只做边界路由和边界准入。资源级授权必须在业务服务
 
 业务代码禁止裸返回 `errors.New`、`fmt.Errorf` 或 `panic(err)`。必须使用 `errorx`。
 
+基础设施 adapter 内部可以接收第三方错误，但进入业务边界前必须归一化。例如 `dbrepo` 的 GORM/driver 错误必须经 `dbx.NormalizeGORMError` 转换。
+
+### 4.9 数据库必须使用 Kernel 数据范式
+
+- SQL migration 是 schema 的唯一真实来源，不得把建表 SQL 塞进 proto。
+- 业务不得直接 `sql.Open`、`gorm.Open`；连接由 `serverx` + `dbx` 生命周期管理。
+- 生产 migration 默认使用 `migrationx` 的真实 goose engine；`kernel_sql` 仅用于 legacy/test。
+- `TenantScoped=true` / `OwnerScoped=true` 必须 fail-closed，缺 scope 不能退化为全表访问。
+- 普通 CRUD 优先使用 `dbrepo.ResourceRepository` 或专用 repository，不允许 handler 到处拼 GORM 查询。
+- Patch 必须有字段约束，禁止修改 id/tenant/owner/created/deleted 等保护字段。
+- 多副本服务不得在启动阶段无锁执行 `apply/dev_apply`；当前必须使用单副本迁移或外部 migration Job，业务服务生产推荐 `validate`。
+- Data bundle 必须经 `ServiceModule.RegisterData -> ServiceDeps.Data -> ServiceFactory` 注入业务实例，不得在 handler 内临时构造 repository。
+
+### 4.10 Proto gate 只验证 canonical contract
+
+`api/` 是 Kernel 正式 proto contract 根。兼容 wrapper、examples、internal/testdata 可以保留用于兼容和生成器测试，但不得污染正式发布门禁。
+
+提交涉及公共契约时必须通过：
+
+```bash
+make api
+make proto-check
+```
+
+`make proto-check` 必须检查 canonical `api/`，不能因为方便而改成全仓库 test fixture lint，也不能绕过 `buf-check-aisphere`。
+
 ## 5. 提交前检查
 
 至少运行：
 
 ```bash
 go test ./serverx ./bootx ./requestx ./admissionx ./middleware/autowire ./ratelimitx ./clientpolicyx ./middleware/retry ./middleware/timeout
+go test ./dbx ./dbrepo ./migrationx
 govulncheck ./...
 ```
 
-如果涉及 proto 或生成器，还要运行对应 `cmd/protoc-gen-*` 和 `cmd/buf-check-*` 测试。
+如果涉及 proto 或生成器，还要运行：
+
+```bash
+go test ./cmd/protoc-gen-go-kernel ./cmd/protoc-gen-go-gateway ./cmd/protoc-gen-go-authz ./cmd/protoc-gen-go-http ./cmd/buf-check-aisphere
+make api
+make proto-check
+```
 
 ## 6. 文档要求
 
